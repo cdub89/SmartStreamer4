@@ -8,8 +8,11 @@ namespace SDRIQStreamer.CWSkimmer;
 /// single background loop coalesces updates and sends only what changed —
 /// no command is emitted while desired state matches last-sent.
 ///
-/// Replaces the previous mix of event-push, debounce queues, stability
-/// resends, and telnet-layer duplicate suppression.
+/// Replaces the previous mix of event-push, debounce queues, and
+/// telnet-layer duplicate suppression. After a successful LO emit the
+/// VFO last-sent value is invalidated so a stale QSY (sent against the
+/// old LO context before a panadapter recenter event arrived) is
+/// re-asserted on the next iteration.
 /// </summary>
 public sealed class CwSkimmerSyncTracker : IAsyncDisposable
 {
@@ -87,16 +90,25 @@ public sealed class CwSkimmerSyncTracker : IAsyncDisposable
                 desiredVfo = _desiredVfoMHz;
             }
 
+            bool loEmitted = false;
             if (desiredLo.HasValue && desiredLo != _lastSentLoHz)
             {
                 try
                 {
                     await _telnet.SendLoFreqAsync(desiredLo.Value, ct);
                     _lastSentLoHz = desiredLo;
+                    loEmitted = true;
                 }
                 catch (OperationCanceledException) { return; }
                 catch (Exception ex) { _onStatus?.Invoke($"LO sync failed: {ex.Message}"); }
             }
+
+            // Re-assert VFO/QSY after a successful LO change. FlexLib's slice
+            // event can arrive before the matching panadapter-center event;
+            // invalidating last-sent here forces a fresh QSY in the new LO
+            // context once the LO catches up.
+            if (loEmitted)
+                _lastSentVfoMHz = null;
 
             if (desiredVfo.HasValue && desiredVfo != _lastSentVfoMHz)
             {

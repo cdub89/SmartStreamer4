@@ -5,7 +5,6 @@ License: MIT (see `LICENSE`).
 
 <img width="620" alt="SmartStreamer4 operating view" src="Assets/README/operating-screenshot-v0.1.11b.png" />
 
-
 ## 1) Quick Start
 
 ### First-Time Setup / Get Started
@@ -69,7 +68,7 @@ The Reset button is disabled while CW Skimmer is running, and only deletes gener
 - Runtime sync model:
   - Slice frequency updates drive channel-matched `SKIMMER/QSY`.
   - Pan center or band changes trigger channel-matched `SKIMMER/LO_FREQ` plus an immediate effective-RX `SKIMMER/QSY` re-assert.
-  - A short delayed QSY stability resend follows pan/band-driven LO updates to keep CW Skimmer VFO display aligned after transient UI/state shifts.
+  - On any `SKIMMER/LO_FREQ` change the matching `SKIMMER/QSY` is re-asserted in the same iteration so CW Skimmer's VFO display tracks panadapter recenters and cross-band slice tunes even when slice and pan events arrive out of order.
 - Parse `DX de` lines and forward valid spots to radio when spot forwarding is enabled.
 - Preserve CW Skimmer-owned config sections while writing runtime-managed sections (`[Audio]`, `[Telnet]`).
 
@@ -133,6 +132,7 @@ gh release create v<version> \
 ```
 
 > **Notes:**
+>
 > - Always attach the **zip** file, not the raw exe — browsers may block direct exe downloads.
 > - Always use `--latest` (never `--prerelease`) so the new release becomes the default download on the GitHub releases page.
 
@@ -208,7 +208,7 @@ No application source code changes were required. The breaking API changes in Fl
 
 `FlexLib_API_v4.2.18.41174` is not included in version control. Download the FlexLib API source from FlexRadio and extract it to the project root so the folder exists at:
 
-```
+```text
 SmartSDR-IQ-Streamer/
 └── FlexLib_API_v4.2.18.41174/
     └── FlexLib/
@@ -218,4 +218,3 @@ SmartSDR-IQ-Streamer/
 ### Migration reference
 
 `Flexlib4-2-Migration-Guide.md` in the repository root documents the full 4.1.5 → 4.2.18 API surface change, including all breaking changes, deprecations, and new features.
-

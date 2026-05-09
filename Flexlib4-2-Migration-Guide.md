@@ -31,6 +31,7 @@ The fault event on the `HAAPI` class was renamed and its delegate signature chan
 | `event HAAPI.AmplifierFaultEventHandler AmplifierFault` | `event HAAPI.HaapiFaultEventHandler HaapiFault` |
 
 **Old**:
+
 ```csharp
 radio.HAAPI.AmplifierFault += OnAmplifierFault;
 
@@ -41,6 +42,7 @@ void OnAmplifierFault(string noun, string reason)
 ```
 
 **New**:
+
 ```csharp
 radio.HAAPI.HaapiFault += OnHaapiFault;
 
@@ -127,6 +129,7 @@ radio.NAVTEX.Send(msg);
 **NAVTEXMsgStatus values**: `Pending`, `Queued`, `Sent`, `Error`
 
 **Broadcast frequency constants**:
+
 ```csharp
 NAVTEX.INTERNATIONAL_BROADCAST_FREQ_HZ           // 518,000 Hz
 NAVTEX.LOCAL_BROADCAST_FREQ_HZ                   // 490,000 Hz
@@ -140,6 +143,7 @@ NAVTEX.MARINE_SAFETY_INFORMATION_BROADCAST_FREQ_HZ // 4,209,500 Hz
 In addition to the renamed fault event, `HAAPI` now exposes warning events and an explicit mode-change method.
 
 **New events**:
+
 ```csharp
 // Warning raised (state becomes WARNING)
 radio.HAAPI.HaapiWarning += (noun, reason) =>
@@ -155,6 +159,7 @@ radio.HAAPI.HaapiWarningCleared += (noun) =>
 ```
 
 **New method — change amplifier mode**:
+
 ```csharp
 // Request mode change (result confirmed via AmpMode PropertyChanged)
 radio.HAAPI.HaapiChangeMode(AmplifierMode.OPERATE);
@@ -162,6 +167,7 @@ radio.HAAPI.HaapiChangeMode(AmplifierMode.STANDBY);
 ```
 
 **New metering events** (subscribe to live data from the Overlord PA):
+
 ```csharp
 radio.HAAPI.HaapiFwdPwrDataReady  += (data) => { /* forward power, watts */ };
 radio.HAAPI.HaapiVswrDataReady    += (data) => { /* SWR */ };
@@ -363,9 +369,11 @@ Primarily a maintenance release: .NET 8.0 multi-targeting, dependency updates, n
 ### Target Framework Changes
 
 **Previous**:
+
 - .NET Framework 4.6.2
 
 **Current**:
+
 - .NET Framework 4.6.2
 - .NET 8.0 (new)
 
@@ -402,7 +410,7 @@ dotnet add package System.Collections.Immutable --version 9.0.0
 
 This was a major version update with significant breaking changes.
 
-### Breaking Changes
+### v3 to v4 Breaking Changes
 
 #### 1. Namespace Changes
 
@@ -474,6 +482,7 @@ radio.RequestDAXRXAudioStream(1);
 ### Complete Before/After Example
 
 **Before (v3.x)**:
+
 ```csharp
 using FlexLib;
 
@@ -497,6 +506,7 @@ class Program
 ```
 
 **After (v4.x)**:
+
 ```csharp
 using Flex.Smoothlake.FlexLib;
 
@@ -556,6 +566,7 @@ Subscribe to events **before** calling `API.Init()` so you do not miss radios di
 ### UI freezing with events
 
 Events fire on background threads. Dispatch UI updates:
+
 ```csharp
 radio.PropertyChanged += (s, e) =>
     Dispatcher.Invoke(() => { /* update UI */ });
@@ -575,4 +586,4 @@ radio.PropertyChanged += (s, e) =>
 
 ---
 
-**Questions?** See [Getting Started](Getting-Started.md) or contact support@flexradio.com.
+**Questions?** See [Getting Started](Getting-Started.md) or contact <support@flexradio.com>.
