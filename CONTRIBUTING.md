@@ -19,7 +19,7 @@ For non-trivial changes (new features, refactors, anything touching FlexRadio or
 
 ### 1. Start from main
 
-```
+```bash
 git checkout main && git pull
 ```
 
@@ -27,7 +27,7 @@ git checkout main && git pull
 
 Name it after what it does and include the issue number when available. Use the bare number — no `#` — because `#` becomes `%23` in GitHub URLs:
 
-```
+```bash
 git checkout -b fix/29-dax-not-running-gate
 git checkout -b feature/42-skimmer-port-config
 ```
@@ -40,7 +40,7 @@ Keep each branch to one bug or one feature. Small scope = fast review.
 
 Run these gates before committing — all must pass:
 
-```
+```bash
 dotnet build SmartSDRIQStreamer.csproj
 dotnet test tests/SmartSDRIQStreamer.CWSkimmer.Tests
 ```
@@ -53,7 +53,7 @@ Then live-test the change in the running app. Unit tests verify code correctness
 
 Stage specific files rather than `git add -A`:
 
-```
+```bash
 git add MainWindow.axaml.cs MainWindowViewModel.cs
 git commit -m "Add DAX.exe-running startup gate (#29)"
 ```
@@ -66,7 +66,7 @@ Write commit messages that explain *why*, not just *what*. The diff shows what c
 
 Collaborators:
 
-```
+```bash
 git push -u origin fix/29-dax-not-running-gate
 gh pr create --base main --title "Add DAX.exe-running startup gate" --body "..."
 ```

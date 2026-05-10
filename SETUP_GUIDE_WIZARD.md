@@ -70,13 +70,13 @@ CW Skimmer:
 
 Typical CwSkimmer.exe path:
 
-```
+```text
 C:\Program Files (x86)\Afreet\CwSkimmer\CwSkimmer.exe
 ```
 
 Typical CwSkimmer.ini path (replace user name with your own):
 
-```
+```text
 C:\Users\chris\AppData\Roaming\Afreet\Products\CwSkimmer\CwSkimmer.ini
 ```
 

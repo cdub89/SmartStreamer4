@@ -22,3 +22,7 @@
 .cursor/*
 !.cursor/rules/
 !.cursor/rules/**
+
+# Claude Code local state
+.claude/settings.local.json
+.claude/worktrees/

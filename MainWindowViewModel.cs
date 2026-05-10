@@ -200,6 +200,7 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     private readonly Dictionary<string, (bool RitEnabled, double RitOffsetHz)> _lastRitStateBySlice = new();
     private readonly Dictionary<int, (double FreqMHz, DateTime Utc)> _lastOutboundQsyByChannel = new();
     private readonly Dictionary<int, (double FreqMHz, DateTime Utc)> _lastInboundClickByChannel = new();
+    private readonly Dictionary<int, (long LoHz, double? RxMHz)> _lastLoggedPanSyncByChannel = new();
     private bool _isApplyingStartupSettings;
 
     private const double EchoSuppressToleranceMHz = 0.000010; // 10 Hz
@@ -472,6 +473,7 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
                 ResetDisplayedNetworkStatus();
                 _lastCwDevicePreviewByChannel.Clear();
                 _lastRitStateBySlice.Clear();
+                _lastLoggedPanSyncByChannel.Clear();
                 lock (_syncDampenGate)
                 {
                     _lastOutboundQsyByChannel.Clear();
@@ -1979,8 +1981,19 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         }
 
         var daxIqChannel = ResolveSliceDaxIqChannel(slice);
-        if (daxIqChannel > 0)
-            _launcher.RequestSkimmerSync(daxIqChannel, vfoMHz: effectiveRxFreqMHz);
+        if (daxIqChannel <= 0)
+            return;
+
+        // Pass current panadapter center as loHz on every slice-frequency change.
+        // FlexLib may fire the slice event before propagating a cross-band pan
+        // recenter; including loHz here lets the tracker sequence LO_FREQ + QSY
+        // correctly whenever the pan model is already up to date.
+        var pan = _connection.Panadapters.FirstOrDefault(p => p.StreamId == slice.PanadapterStreamId);
+        var loHz = pan is not null && pan.CenterFreqMHz > 0
+            ? (long)Math.Round(pan.CenterFreqMHz * 1_000_000d)
+            : (long?)null;
+
+        _launcher.RequestSkimmerSync(daxIqChannel, loHz: loHz, vfoMHz: effectiveRxFreqMHz);
     }
 
     private bool IsOwnStationSlice(SliceInfo slice)
@@ -2074,15 +2087,31 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
 
         _launcher.RequestSkimmerSync(daxIqChannel, loHz: centerHz, vfoMHz: effectiveRxFreqMHz);
 
+        // FlexLib emits multiple panadapter and DAX-stream property change events
+        // for a single band change (zoom, bandwidth, sample rate, ...). Dedup by
+        // (LO, RX?) so the [TELNET] log gets one line per real (LO,RX) state
+        // transition per channel instead of one per FlexLib event. RX may be
+        // transiently null mid-band-change while the slice/pan mapping is in flux;
+        // the same dict tracks that state so transitions in/out of it log once.
         if (effectiveRxFreqMHz.HasValue)
         {
-            AddTelnetStatus(
-                $"LO/QSY sync ({reason}): ch {daxIqChannel}, LO {centerHz} Hz, RX {effectiveRxFreqMHz.Value:F6} MHz.");
+            var current = (centerHz, (double?)Math.Round(effectiveRxFreqMHz.Value, 6));
+            if (!_lastLoggedPanSyncByChannel.TryGetValue(daxIqChannel, out var previous) || previous != current)
+            {
+                _lastLoggedPanSyncByChannel[daxIqChannel] = current;
+                AddTelnetStatus(
+                    $"LO/QSY sync ({reason}): ch {daxIqChannel}, LO {centerHz} Hz, RX {effectiveRxFreqMHz.Value:F6} MHz.");
+            }
         }
         else
         {
-            AddTelnetStatus(
-                $"LO sync ({reason}): ch {daxIqChannel} -> {centerHz} Hz; slice frequency unavailable.");
+            var current = (centerHz, (double?)null);
+            if (!_lastLoggedPanSyncByChannel.TryGetValue(daxIqChannel, out var previous) || previous != current)
+            {
+                _lastLoggedPanSyncByChannel[daxIqChannel] = current;
+                AddTelnetStatus(
+                    $"LO sync ({reason}): ch {daxIqChannel} -> {centerHz} Hz; slice frequency unavailable.");
+            }
         }
     }
 
