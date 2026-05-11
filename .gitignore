@@ -9,6 +9,9 @@
 **/obj/
 /artifacts/
 
+# Release notes (transient; fed to gh release create --notes-file, then deleted)
+/RELEASE_NOTES-v*.md
+
 # Test outputs
 **/TestResults/
 

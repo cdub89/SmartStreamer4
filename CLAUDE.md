@@ -28,9 +28,12 @@ attached to GitHub Releases.
   `FlexLib_API_v4.2.18.41174/`) are gitignored and live outside the
   compiled tree. Only 4.2.18 is project-referenced; 4.1.5 is kept on
   disk for historical reference only.
-- **Release**: `publish-release.ps1` builds, signs, and zips
-  `SmartStreamer4-v0.1.X-b.zip`. Notes pulled from
-  `RELEASE_NOTES-v0.1.Xb.md` (gitignored).
+- **Release**: `publish-release.ps1` is a two-phase script. Phase 1
+  (default) builds, verifies the embedded version, zips
+  `SmartStreamer4-v0.1.Xb.zip`, and updates
+  `artifacts/release/SHA256SUMS.txt`. Phase 2 (`-Publish`) commits the
+  SHA256SUMS bump and runs `gh release create --latest`. Notes pulled
+  from `RELEASE_NOTES-v0.1.Xb.md` (gitignored).
 
 ## Modernization Philosophy
 
@@ -57,8 +60,17 @@ type is obvious, pattern matching with property patterns over chained
 
 **Build gate**: **After every `.cs` change, immediately run
 `dotnet build` and fix any errors or warnings before proceeding.** This
-is a blocking gate. Zero errors, zero warnings allowed. If a warning
-seems unavoidable, raise it before suppressing.
+is a blocking gate. Zero errors and zero first-party warnings allowed.
+
+Third-party transitive warnings are exempt: the
+`FlexLib_API_v4.2.18.41174/` csprojs (UiWpfFramework, Util, Vita,
+FlexLib) emit ~40 MSB3245 / MSB3243 / MSB3277 warnings about WPF
+assembly resolution on every build, including `main`. They are out of
+our control. When counting warnings against the gate, exclude any
+whose source path contains `FlexLib_API_v4.2.18.41174/`.
+
+If a new warning seems unavoidable in first-party code, raise it before
+suppressing.
 
 **Test gate**: **After any change in
 `src/SmartSDRIQStreamer.CWSkimmer/`, `src/SmartSDRIQStreamer.FlexRadio/`,
@@ -255,49 +267,70 @@ pushing).
 dotnet build                                          # debug build
 dotnet build -c Release                               # release build
 dotnet test                                           # run all tests
-.\publish-release.ps1                                 # build + sign + zip
+.\publish-release.ps1                                 # phase 1: build + verify + zip + SHA256SUMS bump
+.\publish-release.ps1 -Publish                        # phase 2: commit SHA256SUMS, push, gh release create
 ```
 
-Release publishing flow:
+Release versioning conventions:
 
-1. Update `<Version>` in `SmartSDRIQStreamer.csproj` (e.g. `0.1.18-b`).
-2. Run `.\publish-release.ps1` — produces `SmartStreamer4-v0.1.18b.zip`.
-   The csproj keeps the dash in `<Version>`; the script strips it for
-   the release zip name.
-3. Write release notes to `RELEASE_NOTES-v0.1.18b.md`. **This file is
-   gitignored** — pipe it into `gh release create --notes-file`, do
-   not try to commit it.
-4. Verify the local build matches what will be tagged. `gh release
-   create` creates the tag on the remote at the default branch's HEAD,
-   not at your local HEAD. If those diverge, the zip in the release
-   (built from your local working tree) won't match the commit the tag
-   points at. Before publishing:
+- `vMAJOR.MINOR.PATCHb` — beta release (e.g. `v0.1.18b`).
+- `vMAJOR.MINOR.PATCHbN` — bug-fix patch on top of a beta (e.g.
+  `v0.1.18b1` is the first patch on `v0.1.18b`).
+- The next beta after `v0.1.18b` (or `v0.1.18b1`, `v0.1.18b2`, ...) is
+  `v0.1.19b`.
 
-   ```powershell
-   git fetch origin main
-   git rev-parse HEAD
-   git rev-parse origin/main
-   ```
+Release publishing flow. Two automated phases bracket three manual
+gates. The script does not pause for human input — gates happen between
+script invocations, so a hung session can never strand a release.
 
-   The two SHAs must match. If they don't, push or rebase first, or
-   pass `--target <sha>` to `gh release create` to pin the tag
-   explicitly.
+### Phase 1 — build (`.\publish-release.ps1`)
 
-5. Publish:
+1. Tag the local HEAD with the release label: `git tag v0.1.18b`. The
+   csproj `<Version>` stays at the clean numeric default; release
+   version comes from the tag.
+2. Run `.\publish-release.ps1`. The script:
+   - Refuses to run if the tag at HEAD is absent or doesn't match the
+     version regex.
+   - Builds with `-p:InformationalVersion=<label>+<commit-sha>` so the
+     in-app About display and update check report the right version.
+   - Verifies the published exe's embedded `ProductVersion` matches
+     `<label>+<commit-sha>`. Refuses to package the zip if not.
+   - Produces `SmartStreamer4-v0.1.18b.zip`.
+   - Appends (or replaces, idempotently) the matching line in
+     `artifacts/release/SHA256SUMS.txt`. Does not commit it; a failed
+     live test means no commit.
 
-   ```powershell
-   gh release create v0.1.18b --latest `
-     --notes-file RELEASE_NOTES-v0.1.18b.md `
-     SmartStreamer4-v0.1.18b.zip
-   ```
+### Human gates between phases
 
-   Always `--latest`. Never `--prerelease` (the `b` suffix has caused
-   wrong-flag mistakes before). The tag `v0.1.18b` is created on the
-   remote as a side effect; run `git fetch --tags` if you want it
-   locally afterwards.
+1. Live-test the zip: extract to a temp directory **outside the repo**
+   (so the runtime version resolver can't fall back to `git describe`),
+   run the exe, confirm About / status shows `v0.1.18b (<sha>)`, and
+   trigger an update check to confirm it resolves the current tag
+   correctly. If anything is wrong, delete the local tag, fix, retag,
+   re-run phase 1.
+2. Push the tag once the zip is good: `git push origin v0.1.18b`.
+3. Confirm `RELEASE_NOTES-v0.1.18b.md` exists at the repo root and is
+   finalized. The file is gitignored. Claude drafts it from commits
+   since the prior tag; the operator reviews and edits in place.
 
-6. Attach the zip, not a raw `.exe` — browsers block `.exe` downloads
-   from GitHub Releases.
+### Phase 2 — publish (`.\publish-release.ps1 -Publish`)
+
+1. Run `.\publish-release.ps1 -Publish`. The script:
+   - Fails fast on any missing precondition: tag on `origin`, zip
+     present, `SHA256SUMS.txt` line matches the zip, notes file
+     present + non-empty.
+   - Commits the SHA256SUMS bump (idempotent — skipped if already
+     committed) and pushes to `origin`.
+   - Runs `gh release create $tag $zip --title ... --notes-file ...
+     --latest`. `--latest` is hard-coded; the script does not expose
+     `--prerelease` (the `b` suffix has caused that wrong-flag mistake
+     before).
+   - Attaches the zip, not a raw `.exe` (browsers block `.exe`
+     downloads from GitHub Releases).
+2. Post-publish (manual). Re-launch a clean install of the prior
+   release (e.g. `v0.1.17b` on a tester machine) and confirm it sees
+   `v0.1.18b` as available. Then install `v0.1.18b` and confirm it
+   reports "up to date". If either fails, pull the release immediately.
 
 ## Quick Start After /clear
 

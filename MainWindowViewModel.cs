@@ -1748,9 +1748,13 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
 
         try
         {
-            var location = assembly.Location;
-            if (!string.IsNullOrWhiteSpace(location) && File.Exists(location))
-                return File.GetLastWriteTime(location).ToString("M/d/yyyy");
+            // Environment.ProcessPath: the running executable's path. Works for
+            // both single-file published builds and standalone exes. Assembly.Location
+            // returns empty in single-file mode (IL3000), so shipped releases were
+            // falling through to "--" instead of showing a real file-mtime date.
+            var processPath = Environment.ProcessPath;
+            if (!string.IsNullOrWhiteSpace(processPath) && File.Exists(processPath))
+                return File.GetLastWriteTime(processPath).ToString("M/d/yyyy");
         }
         catch
         {

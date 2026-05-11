@@ -58,17 +58,21 @@ The tests cover INI generation and the CW Skimmer sync tracker. They do not exer
 
 ## Release
 
-Releases are produced by [`publish-release.ps1`](publish-release.ps1):
+Releases are produced by [`publish-release.ps1`](publish-release.ps1) in two phases, with live-test, tag push, and release-notes review happening between them:
 
 ```powershell
-.\publish-release.ps1
+git tag v0.1.18b
+.\publish-release.ps1            # phase 1: build, verify embedded version, zip, update SHA256SUMS
+# live-test the zip, then: git push origin v0.1.18b
+# confirm RELEASE_NOTES-v0.1.18b.md is finalized
+.\publish-release.ps1 -Publish   # phase 2: commit SHA256SUMS, push, gh release create --latest
 ```
 
-The script runs tests, publishes a self-contained single-file exe, zips it, and prints the SHA256 plus the `gh release create` command to run next.
+Phase 1 runs tests, publishes a self-contained single-file exe, verifies its embedded `ProductVersion` matches `<tag>+<sha>`, zips it as `SmartStreamer4-v0.1.18b.zip`, and updates `artifacts/release/SHA256SUMS.txt`. Phase 2 fails fast if the tag isn't on `origin`, the zip is missing, the SHA256SUMS line doesn't match, or the notes file is empty; otherwise it commits the SHA256SUMS bump, pushes, and creates the GitHub release with the zip attached (browsers block `.exe` downloads, so always ship the zip). `--latest` is hard-coded.
 
-Versioning: `<Version>` in [SmartSDRIQStreamer.csproj](SmartSDRIQStreamer.csproj) keeps the dash (e.g. `0.1.18-b`); the script strips it for the release zip and tag (`v0.1.18b`).
+Versioning: the git tag at HEAD is the single source of truth. The csproj `<Version>` stays at a clean numeric default; the script reads the tag and embeds `<tag>+<sha>` in the published exe so the in-app version display and update check report the right release. Beta tags follow `vMAJOR.MINOR.PATCHb` (e.g. `v0.1.18b`); bug-fix patches on a beta use `vMAJOR.MINOR.PATCHbN` (e.g. `v0.1.17b1`).
 
-After publishing, attach the zip (not a raw exe) and pass `--latest`. See [PLAN.md](PLAN.md) for what's slated for the next beta.
+See [PLAN.md](PLAN.md) for what's slated for the next beta.
 
 ## Repo layout
 

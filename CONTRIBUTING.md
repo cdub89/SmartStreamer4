@@ -4,7 +4,8 @@
 
 SmartStreamer4 uses a branch-per-change workflow with pull requests. All development targets the `main` branch.
 
-- **Listed collaborators** work directly in branches off `main` in this repo.
+- **Project owner** (@cdub89) commits directly to `main` for routine work. The PR workflow below is still encouraged for non-trivial changes that benefit from a paper trail or review.
+- **Listed collaborators** work in branches off `main` in this repo and merge via PR.
 - **Outside contributors** fork the repo on GitHub, push branches to your fork, and open PRs from there.
 
 For non-trivial changes (new features, refactors, anything touching FlexRadio or DAX-IQ integration), please open an issue first so we can agree on the approach before you invest time.
