@@ -68,7 +68,7 @@ git tag v0.1.18b
 .\publish-release.ps1 -Publish   # phase 2: commit SHA256SUMS, push, gh release create --latest
 ```
 
-Phase 1 runs tests, publishes a self-contained single-file exe, verifies its embedded `ProductVersion` matches `<tag>+<sha>`, zips it as `SmartStreamer4-v0.1.18b.zip`, and updates `artifacts/release/SHA256SUMS.txt`. Phase 2 fails fast if the tag isn't on `origin`, the zip is missing, the SHA256SUMS line doesn't match, or the notes file is empty; otherwise it commits the SHA256SUMS bump, pushes, and creates the GitHub release with the zip attached (browsers block `.exe` downloads, so always ship the zip). `--latest` is hard-coded.
+Phase 1 runs tests, publishes a self-contained single-file exe, verifies its embedded `ProductVersion` matches `<tag>+<sha>`, zips it as `SmartStreamer4-v0.1.18b-win-x64.zip` (runtime suffix matches the `-Runtime` parameter), and updates `artifacts/release/SHA256SUMS.txt`. Phase 2 fails fast if the tag isn't on `origin`, the zip is missing, the SHA256SUMS line doesn't match, or the notes file is empty; otherwise it commits the SHA256SUMS bump, pushes, and creates the GitHub release with the zip attached (browsers block `.exe` downloads, so always ship the zip). `--latest` is hard-coded.
 
 Versioning: the git tag at HEAD is the single source of truth. The csproj `<Version>` stays at a clean numeric default; the script reads the tag and embeds `<tag>+<sha>` in the published exe so the in-app version display and update check report the right release. Beta tags follow `vMAJOR.MINOR.PATCHb` (e.g. `v0.1.18b`); bug-fix patches on a beta use `vMAJOR.MINOR.PATCHbN` (e.g. `v0.1.17b1`).
 

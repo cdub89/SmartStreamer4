@@ -30,7 +30,7 @@ attached to GitHub Releases.
   disk for historical reference only.
 - **Release**: `publish-release.ps1` is a two-phase script. Phase 1
   (default) builds, verifies the embedded version, zips
-  `SmartStreamer4-v0.1.Xb.zip`, and updates
+  `SmartStreamer4-v0.1.Xb-win-x64.zip`, and updates
   `artifacts/release/SHA256SUMS.txt`. Phase 2 (`-Publish`) commits the
   SHA256SUMS bump and runs `gh release create --latest`. Notes pulled
   from `RELEASE_NOTES-v0.1.Xb.md` (gitignored).
@@ -295,7 +295,8 @@ script invocations, so a hung session can never strand a release.
      in-app About display and update check report the right version.
    - Verifies the published exe's embedded `ProductVersion` matches
      `<label>+<commit-sha>`. Refuses to package the zip if not.
-   - Produces `SmartStreamer4-v0.1.18b.zip`.
+   - Produces `SmartStreamer4-v0.1.18b-win-x64.zip` (runtime suffix
+     matches the `-Runtime` parameter; default `win-x64`).
    - Appends (or replaces, idempotently) the matching line in
      `artifacts/release/SHA256SUMS.txt`. Does not commit it; a failed
      live test means no commit.

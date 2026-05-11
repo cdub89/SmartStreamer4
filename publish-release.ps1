@@ -56,7 +56,7 @@ if ($tag -notmatch '^v\d+\.\d+\.\d+(b\d*)?$') {
 $releaseLabel = $tag.Substring(1)   # strip leading 'v' for the embedded version string (SemVer convention)
 $sha = (& git rev-parse HEAD).Substring(0, 8).ToLowerInvariant()
 $infoVersion = "${releaseLabel}+${sha}"
-$zipLabel = "SmartStreamer4-${tag}.zip"
+$zipLabel = "SmartStreamer4-${tag}-${Runtime}.zip"
 $zipPath = Join-Path $publishDir $zipLabel
 $notesPath = Join-Path $PSScriptRoot "RELEASE_NOTES-${tag}.md"
 
