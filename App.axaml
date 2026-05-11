@@ -2,7 +2,14 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="SDRIQStreamer.App.App"
              RequestedThemeVariant="Default">
+    <Application.Resources>
+        <FontFamily x:Key="ContentControlThemeFontFamily">Cascadia Mono, Consolas, Courier New, monospace</FontFamily>
+    </Application.Resources>
+
     <Application.Styles>
         <FluentTheme />
+        <Style Selector="Window">
+            <Setter Property="FontFamily" Value="Cascadia Mono, Consolas, Courier New, monospace" />
+        </Style>
     </Application.Styles>
 </Application>
