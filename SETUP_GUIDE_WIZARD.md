@@ -112,6 +112,25 @@ reference material if you are diagnosing what the wizard wrote.
 - **Channels**: `Left/Right = I / Q`
 - **Shift Right Channel Data by**: `0 samples`
 
+#### DAX IQ endpoint friendly names
+
+The Signal I/O Device dropdown the wizard auto-fills shows different
+friendly names depending on which SmartSDR version installed the DAX
+driver. The wizard matches on the `DAX IQ {N}` prefix so both forms
+work, but the strings you see in the dropdown (and in the Windows
+Sound control panel) differ:
+
+| Channel | SmartSDR 4.2.x             | SmartSDR 4.1.5                              |
+| ------- | -------------------------- | ------------------------------------------- |
+| 1       | `DAX IQ 1 (FlexRadio DAX)` | `DAX IQ RX 1 (FlexRadio Systems DAX IQ)`    |
+| 2       | `DAX IQ 2 (FlexRadio DAX)` | `DAX IQ RX 2 (FlexRadio Systems DAX IQ)`    |
+| 3       | `DAX IQ 3 (FlexRadio DAX)` | `DAX IQ RX 3 (FlexRadio Systems DAX IQ)`    |
+| 4       | `DAX IQ 4 (FlexRadio DAX)` | `DAX IQ RX 4 (FlexRadio Systems DAX IQ)`    |
+
+If neither form appears in the dropdown, DAX is not installed or the
+DAX service is not running. The startup gate (added in v0.1.18b)
+catches the second case before you reach this step.
+
 ### Operator and Network tabs
 
 These are not rewritten by the streamer (Network telnet port is the
