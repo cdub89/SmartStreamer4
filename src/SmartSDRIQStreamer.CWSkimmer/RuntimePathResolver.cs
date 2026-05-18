@@ -1,7 +1,18 @@
 namespace SDRIQStreamer.CWSkimmer;
 
-internal static class RuntimePathResolver
+public static class RuntimePathResolver
 {
+    /// <summary>
+    /// Per-user appdata folder the root app resolved at startup (typically
+    /// <c>%APPDATA%\SmartStreamer4</c>, or <c>%APPDATA%\SDRIQStreamer</c> in the
+    /// locked-fallback case when the issue #34 rename couldn't run). The root
+    /// app sets this in <c>Program.Main</c> after <c>AppDataPaths.EnsureMigrated</c>
+    /// so this module writes INIs and logs to the same folder the root app uses.
+    /// When null (tests, standalone consumers), the deployed-path branch falls
+    /// back to a hardcoded <c>%APPDATA%\SmartStreamer4</c> path.
+    /// </summary>
+    public static string? AppDataRootOverride { get; set; }
+
     public static string ResolveCwSkimmerIniDir()
         => Path.Combine(ResolveArtifactsRoot(), "cwskimmer", "ini");
 
@@ -9,21 +20,20 @@ internal static class RuntimePathResolver
         => Path.Combine(ResolveArtifactsRoot(), "logs");
 
     private static string ResolveArtifactsRoot()
+        => ResolveArtifactsRoot(AppContext.BaseDirectory, Environment.CurrentDirectory);
+
+    internal static string ResolveArtifactsRoot(string baseDir, string currentDir)
     {
-        var repoRoot = TryFindRepoRoot(new DirectoryInfo(AppContext.BaseDirectory))
-            ?? TryFindRepoRoot(new DirectoryInfo(Environment.CurrentDirectory));
+        var repoRoot = TryFindRepoRoot(new DirectoryInfo(baseDir))
+            ?? TryFindRepoRoot(new DirectoryInfo(currentDir));
 
         if (repoRoot is not null)
             return Path.Combine(repoRoot.FullName, "artifacts");
 
-        // Folder name kept in sync with AppDataPaths.CurrentFolderName in the
-        // root project (issue #34 rename). The CWSkimmer module is a library
-        // and can't reference the root project, so the name is duplicated; the
-        // root project performs the legacy-to-current rename at startup before
-        // any code here runs, so this resolver always sees the current folder.
-        var appDataRoot = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "SmartStreamer4");
+        var appDataRoot = AppDataRootOverride
+            ?? Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "SmartStreamer4");
         return Path.Combine(appDataRoot, "artifacts");
     }
 
