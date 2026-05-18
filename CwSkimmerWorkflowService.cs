@@ -91,11 +91,24 @@ public sealed class CwSkimmerWorkflowService
 
     private string FormatLaunchSuccess()
     {
+        // Bug fix 2026-05-18: pre-fix line showed "Baseline WdmSignalDev/AudioDev"
+        // because Contains() picked the first matching line in the diagnostic,
+        // which is always the master-INI calibration baseline regardless of mode.
+        // Now picks the runtime-effective MME or WDM field by StartsWith (skipping
+        // the "Baseline " prefix) and tags the line with the active mode so the
+        // operator can see at a glance which driver family the channel uses and
+        // what indices were written to the channel INI.
         var diag = _launcher.LastDiagnostics;
-        var loLine = diag.Split('\n').FirstOrDefault(l => l.Contains("CenterFreq"))?.Trim() ?? "";
-        var signalLine = diag.Split('\n').FirstOrDefault(l => l.Contains("WdmSignalDev"))?.Trim() ?? "";
-        var audioLine = diag.Split('\n').FirstOrDefault(l => l.Contains("WdmAudioDev"))?.Trim() ?? "";
-        return $"CW Skimmer running  |  {loLine}  |  {signalLine}  |  {audioLine}";
+        var wdmMode = IsWdmModeSelected();
+        var signalLabel = wdmMode ? "WdmSignalDev" : "MmeSignalDev";
+        var audioLabel  = wdmMode ? "WdmAudioDev"  : "MmeAudioDev";
+
+        var loLine     = diag.Split('\n').FirstOrDefault(l => l.Contains("CenterFreq"))?.Trim() ?? "";
+        var signalLine = diag.Split('\n').FirstOrDefault(l => l.TrimStart().StartsWith(signalLabel))?.Trim() ?? "";
+        var audioLine  = diag.Split('\n').FirstOrDefault(l => l.TrimStart().StartsWith(audioLabel))?.Trim()  ?? "";
+
+        var modeTag = wdmMode ? "WDM" : "MME";
+        return $"CW Skimmer running ({modeTag})  |  {loLine}  |  {signalLine}  |  {audioLine}";
     }
 
     private string FormatDeviceNotFound(int channel)
