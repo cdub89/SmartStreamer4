@@ -455,6 +455,8 @@
                                 Content="Setup Guide"
                                 HorizontalAlignment="Left"
                                 Classes="action-button"
+                                Foreground="DarkOrange"
+                                FontWeight="Bold"
                                 Click="OnOpenSetupWizard"/>
                         <Button Grid.Column="2"
                                 Content="Get Support"
