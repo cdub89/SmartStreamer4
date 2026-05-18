@@ -3,17 +3,22 @@ using System.Runtime.InteropServices;
 namespace SDRIQStreamer.CWSkimmer;
 
 /// <summary>
-/// Enumerates DirectSound capture and output devices in the same order
-/// CW Skimmer sees them in its WDM Audio tab dropdown.
+/// Enumerates DirectSound capture and output devices. Used for diagnostic
+/// logging only — see <c>CwSkimmerLauncher.BuildDiagnostics</c>.
 ///
-/// CW Skimmer's "WDM" mode uses DirectSound underneath, so the callback
-/// order returned here matches CW Skimmer's WDM slot numbering exactly:
-///   slot 1 (UI)  = callback index 0  (null GUID, "Primary Sound ... Driver")
-///   slot 2 (UI)  = callback index 1
-///   ...
+/// IMPORTANT: an earlier version of this header claimed the callback order
+/// here matches CW Skimmer's WDM Audio tab slot numbering. That is WRONG and
+/// was field-disproven 2026-05-18 on Dallas: CW Skimmer's WDM list had
+/// DAX IQ 1 at slot 4, while both WinMM and DirectSound put it at slot 13/14.
+/// CW Skimmer's WDM Audio tab is built from a different / filtered
+/// enumeration we cannot access from outside the app. Do not use the
+/// DirectSound enumeration to predict CW Skimmer's WDM slot numbers.
 ///
-/// INI value written to [Audio] WdmSignalDev / WdmAudioDev = callback index
-/// (0-based, matching CW Skimmer's UI display number minus 1).
+/// Empirically the WinMM and DirectSound lists track each other (DirectSound
+/// just adds a "Primary Sound Driver" entry at callback index 0), so the
+/// DirectSound dump in the diagnostic log is approximately the WinMM list
+/// shifted by one — useful as a sanity reference, not as a CW Skimmer
+/// proxy.
 /// </summary>
 internal static class DirectSoundProbe
 {

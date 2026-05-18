@@ -21,11 +21,15 @@ using System.Globalization;
 ///   master INI.
 ///
 /// WDM branch (operator opt-in; <c>UseWdm=true</c>):
-///   CW Skimmer's WDM device enumeration is opaque and not reproducible from
-///   outside the app (issue #19). When the operator supplies a per-channel
-///   <see cref="CwSkimmerConfig.OperatorWdmSignalDevIndex"/> from the wizard,
-///   the factory emits a WDM-mode INI with that index (converted 1-based UI
-///   → 0-based INI). Without an operator override the WDM fields from the
+///   CW Skimmer's WDM Audio tab list uses a private / filtered enumeration
+///   that does NOT match what DirectSound or WinMM report — field-verified
+///   2026-05-18, see <c>DirectSoundProbe</c> header for the data. So there
+///   is no reliable way to predict CW Skimmer's WDM slot for a given DAX-IQ
+///   channel from outside the app. The operator must enter WDM indices into
+///   the Setup Wizard by reading them off CW Skimmer's own Audio tab. When
+///   <see cref="CwSkimmerConfig.OperatorWdmSignalDevIndex"/> is set the
+///   factory emits a WDM-mode INI with that value (converted 1-based UI to
+///   0-based INI); without an operator override the WDM fields from the
 ///   master INI are propagated inertly under MME mode.
 /// </summary>
 public sealed class CwSkimmerIniModelFactory

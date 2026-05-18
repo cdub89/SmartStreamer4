@@ -317,7 +317,8 @@
                                 Click="OnResetChannelConfigRequested">
                             <TextBlock Text="Set Up Wizard"
                                        FontSize="10"
-                                       Foreground="#2A5DB0"
+                                       FontWeight="Bold"
+                                       Foreground="DarkOrange"
                                        TextDecorations="Underline"/>
                         </Button>
                         <Button Grid.Column="3"
@@ -455,8 +456,6 @@
                                 Content="Setup Guide"
                                 HorizontalAlignment="Left"
                                 Classes="action-button"
-                                Foreground="DarkOrange"
-                                FontWeight="Bold"
                                 Click="OnOpenSetupWizard"/>
                         <Button Grid.Column="2"
                                 Content="Get Support"

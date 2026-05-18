@@ -70,4 +70,25 @@ public sealed class AppSettings
     /// indices on PCs where WDM ordering differs from auto-derivation).
     /// </summary>
     public string SkimmerSoundcardDriverMode { get; set; } = "MME";
+
+    // ── Audio-index change-detection baselines (issue #38) ────────────────────
+    // Records the auto-derived MME DAX-IQ device indices observed at the last
+    // clean startup. Compared against the live probe on each session to
+    // detect index shifts caused by SmartSDR / DAX upgrades (e.g. the DAX
+    // v1 -> v2 renaming in SmartSDR 4.2). Separate from the operator-supplied
+    // MmeDeviceIndexCh1..4 wizard values, which capture operator intent;
+    // these track system state.
+    //
+    // MME only: WDM index detection is not feasible. CW Skimmer's WDM
+    // Audio tab uses a private/filtered enumeration that does not match
+    // either WinMM or DirectSound order (verified Dallas 2026-05-18 —
+    // CW Skimmer's WDM list had DAX IQ 1 at slot 4 while both WinMM and
+    // DirectSound put it at slot 13/14). No reliable WDM probe exists from
+    // outside CW Skimmer; the operator must verify WDM values manually
+    // after a SmartSDR upgrade.
+
+    public int? LastSeenMmeDeviceIndexCh1 { get; set; }
+    public int? LastSeenMmeDeviceIndexCh2 { get; set; }
+    public int? LastSeenMmeDeviceIndexCh3 { get; set; }
+    public int? LastSeenMmeDeviceIndexCh4 { get; set; }
 }

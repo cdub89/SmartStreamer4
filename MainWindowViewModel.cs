@@ -28,6 +28,7 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly FooterStatusBuffer _footerStatusBuffer;
     private readonly CwSkimmerWorkflowService _cwSkimmerWorkflow;
     private readonly IReleaseUpdateService _releaseUpdateService;
+    private readonly IAudioDeviceFinder _deviceFinder;
 private static readonly (string ReleaseTag, string CommitHash, string Display, string BuildDate) s_appBuildInfo =
         ResolveAppBuildInfo();
 
@@ -264,7 +265,8 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
 
     public MainWindowViewModel(IRadioDiscovery discovery, IRadioConnection connection,
                                ICwSkimmerLauncher launcher, AppSettingsSession settingsSession,
-                               IReleaseUpdateService releaseUpdateService)
+                               IReleaseUpdateService releaseUpdateService,
+                               IAudioDeviceFinder deviceFinder)
     {
         _discovery     = discovery;
         _connection    = connection;
@@ -272,6 +274,7 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         _settingsSession = settingsSession;
         _settings = _settingsSession.Settings;
         _releaseUpdateService = releaseUpdateService;
+        _deviceFinder = deviceFinder;
         _footerStatusBuffer = new FooterStatusBuffer(FooterStatusLines);
         _ritStatusEmitter = new ThrottledStatusEmitter(RitStatusMinInterval, UIPost, AddTelnetStatus);
         _cwSkimmerWorkflow = new CwSkimmerWorkflowService(_connection, _launcher, _settings);
@@ -496,6 +499,84 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         });
     }
 
+    // ── Audio-index change detection (issue #38) ──────────────────────────────
+
+    /// <summary>
+    /// Channels we've already run change-detection for in this session. Detection
+    /// fires once per channel per session; subsequent stream events for the same
+    /// channel skip the probe so the operator doesn't see duplicate notices.
+    /// </summary>
+    private readonly HashSet<int> _audioIndexChangeDetectionDoneByChannel = new();
+
+    /// <summary>
+    /// Set when at least one channel reported a change this session, used to
+    /// gate the one-shot "rerun the wizard" dialog so it fires only once even
+    /// if multiple channels shift.
+    /// </summary>
+    private bool _audioIndexChangeDialogShownThisSession;
+
+    /// <summary>
+    /// Raised by the ViewModel when one or more channels' audio index baselines
+    /// have shifted since the previous session. Carries summary lines suitable
+    /// for the dialog body. MainWindow subscribes and shows the dialog with an
+    /// "Open Set Up Wizard now" affordance.
+    /// </summary>
+    public event Action<IReadOnlyList<string>>? AudioIndexChangesDetected;
+
+    private void RunAudioIndexChangeDetection(int daxIqChannel)
+    {
+        if (daxIqChannel <= 0 || daxIqChannel > 4) return;
+        if (!_audioIndexChangeDetectionDoneByChannel.Add(daxIqChannel)) return;
+
+        var result = AudioIndexChangeDetection.Probe(daxIqChannel, _deviceFinder, _settings);
+
+        // Skip the channel entirely when the probe failed (DAX not exposing
+        // this channel yet); we'll retry the next session.
+        if (result.ProbeUnavailable)
+        {
+            _audioIndexChangeDetectionDoneByChannel.Remove(daxIqChannel);
+            return;
+        }
+
+        if (result.WasFirstRun)
+        {
+            AudioIndexChangeDetection.CommitBaseline(_settings, result);
+            AddStreamerStatus(
+                $"Audio index baseline recorded for ch {daxIqChannel}: MME={result.CurrentMme}.");
+            return;
+        }
+
+        if (!result.AnyChanged)
+            return;
+
+        var changeLine = $"MME was {result.PriorMme}, now {result.CurrentMme}";
+
+        AddStreamerStatus(
+            $"ch {daxIqChannel}: Audio Device Numbers may have changed: {changeLine}. "
+            + "Please rerun CW Skimmer Config Setup Wizard.");
+
+        AudioIndexChangeDetection.CommitBaseline(_settings, result);
+
+        if (!_audioIndexChangeDialogShownThisSession)
+        {
+            _audioIndexChangeDialogShownThisSession = true;
+            var summary = new List<string> { $"ch {daxIqChannel}: {changeLine}" };
+            AudioIndexChangesDetected?.Invoke(summary);
+        }
+    }
+
+    /// <summary>
+    /// Stops every running CW Skimmer instance. Used as a convenience hook by
+    /// the audio-index-change dialog so the operator can click straight through
+    /// to the Set Up Wizard (which refuses to run while Skimmer is up) without
+    /// having to stop channels manually first.
+    /// </summary>
+    public void StopAllCwSkimmerInstances()
+    {
+        if (IsCwSkimmerRunning)
+            _launcher.Stop();
+    }
+
     // ── GUI client snapshot logging (DAX-bound-radio check) ───────────────────
 
     private string _lastLoggedGuiClientsKey = string.Empty;
@@ -537,6 +618,7 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         RefreshAllPanStreamSummaries();
         RefreshSliceSkimmerStates();
         RefreshCwSkimmerDeviceInfo(normalized.DAXIQChannel);
+        RunAudioIndexChangeDetection(normalized.DAXIQChannel);
     }
 
     private void OnDaxIQStreamRemoved(DaxIQStreamInfo stream)
@@ -575,6 +657,7 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         RefreshAllPanStreamSummaries();
         RefreshSliceSkimmerStates();
         RefreshCwSkimmerDeviceInfo(normalized.DAXIQChannel);
+        RunAudioIndexChangeDetection(normalized.DAXIQChannel);
         TrySyncSkimmerForPanChange(
             normalized.DAXIQChannel,
             normalized.CenterFreqMHz,

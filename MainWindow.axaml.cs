@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -52,11 +53,31 @@ public partial class MainWindow : Window
     private void OnDataContextChanged(object? sender, EventArgs e)
     {
         if (_subscribedVm is not null)
+        {
             _subscribedVm.PropertyChanged -= OnViewModelPropertyChanged;
+            _subscribedVm.AudioIndexChangesDetected -= OnAudioIndexChangesDetected;
+        }
 
         _subscribedVm = DataContext as MainWindowViewModel;
         if (_subscribedVm is not null)
+        {
             _subscribedVm.PropertyChanged += OnViewModelPropertyChanged;
+            _subscribedVm.AudioIndexChangesDetected += OnAudioIndexChangesDetected;
+        }
+    }
+
+    private async void OnAudioIndexChangesDetected(IReadOnlyList<string> summary)
+    {
+        // Dispatch onto the UI thread; the VM raises on whichever thread the
+        // DAX-IQ event arrived on. Show the dialog after the current event
+        // pump tick so the launch sequence's other UI updates settle first.
+        await Dispatcher.UIThread.InvokeAsync(async () =>
+        {
+            if (DataContext is not MainWindowViewModel vm)
+                return;
+
+            await ShowAudioIndexChangedDialogAsync(vm, summary);
+        });
     }
 
     private async void OnMainWindowOpened(object? sender, EventArgs e)
@@ -441,4 +462,87 @@ public partial class MainWindow : Window
         return retryClicked;
     }
 
+    private async Task ShowAudioIndexChangedDialogAsync(MainWindowViewModel vm, IReadOnlyList<string> changeSummary)
+    {
+        var lines = new List<string>
+        {
+            "Audio Device Numbers may have changed:",
+            string.Empty
+        };
+        lines.AddRange(changeSummary.Select(s => "  " + s));
+        lines.AddRange(new[]
+        {
+            string.Empty,
+            "Please rerun the CW Skimmer Config Setup Wizard.",
+            string.Empty,
+            "Note: WDM index changes are not auto-detected. If you've upgraded SmartSDR or DAX, re-verify WDM values in the wizard too."
+        });
+
+        var message = new TextBlock
+        {
+            Text = string.Join(Environment.NewLine, lines),
+            TextWrapping = TextWrapping.Wrap,
+            MaxWidth = 460
+        };
+
+        var setupWizardButton = new Button
+        {
+            Content = "Set Up Wizard",
+            MinWidth = 120
+        };
+
+        var ignoreButton = new Button
+        {
+            Content = "Ignore",
+            MinWidth = 80,
+            IsDefault = true,
+            IsCancel = true
+        };
+
+        var dialog = new Window
+        {
+            Title = "Audio device numbers changed",
+            Width = 520,
+            SizeToContent = SizeToContent.Height,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Content = new StackPanel
+            {
+                Margin = new Thickness(16),
+                Spacing = 14,
+                Children =
+                {
+                    message,
+                    new StackPanel
+                    {
+                        Orientation = Avalonia.Layout.Orientation.Horizontal,
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                        Spacing = 8,
+                        Children = { setupWizardButton, ignoreButton }
+                    }
+                }
+            }
+        };
+
+        bool setupWizardClicked = false;
+        setupWizardButton.Click += (_, _) =>
+        {
+            setupWizardClicked = true;
+            dialog.Close();
+        };
+        ignoreButton.Click += (_, _) => dialog.Close();
+
+        await dialog.ShowDialog(this);
+
+        if (!setupWizardClicked)
+            return;
+
+        // Stop CW Skimmer as a convenience — the wizard refuses to run while
+        // Skimmer is up (channel INIs are being held open). The operator
+        // already signalled intent by clicking "Set Up Wizard"; saving them
+        // a manual stop-each-channel round trip.
+        vm.StopAllCwSkimmerInstances();
+
+        await ShowResetWizardAsync(vm);
+    }
 }

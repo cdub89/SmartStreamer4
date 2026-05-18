@@ -80,9 +80,9 @@ public interface ICwSkimmerLauncher
     /// <summary>
     /// Update the desired CW Skimmer state for a channel. Either parameter may
     /// be null to leave it unchanged. The per-channel sync tracker coalesces
-    /// rapid updates, sends only what differs from last-confirmed, and re-emits
-    /// on a slow heartbeat so a command missed during skimmer's startup race
-    /// lands on the next tick. No-op if the channel telnet is not connected.
+    /// rapid updates and sends only what differs from last-confirmed. No
+    /// heartbeat — idle channels produce zero telnet traffic (the
+    /// 7e8c58c 2026-05-02 fix). No-op if the channel telnet is not connected.
     /// </summary>
     void RequestSkimmerSync(int daxIqChannel, long? loHz = null, double? vfoMHz = null);
 

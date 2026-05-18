@@ -32,5 +32,5 @@ public sealed class AppServices
     }
 
     public MainWindowViewModel CreateMainWindowViewModel()
-        => new(Discovery, Connection, Launcher, SettingsSession, ReleaseUpdateService);
+        => new(Discovery, Connection, Launcher, SettingsSession, ReleaseUpdateService, DeviceFinder);
 }

@@ -218,11 +218,12 @@ public sealed class CwSkimmerLauncher : ICwSkimmerLauncher, IDisposable
 
                 if (config.TelnetClusterEnabled)
                 {
-                    // Bring the per-channel sync tracker online and seed it with
-                    // the initial desired state. The tracker's heartbeat re-emits
-                    // these values until CW Skimmer is ready to receive them,
-                    // which fixes the startup race where the first command is
-                    // dropped before skimmer's IQ pipeline finishes warming up.
+                    // Seed the per-channel sync tracker with the initial desired
+                    // LO/QSY state right after telnet connect. Tracker emits one
+                    // pair of commands and stays quiet until a panadapter or
+                    // slice event changes the desired values (no heartbeat —
+                    // that was removed in 7e8c58c on 2026-05-02 to stop telnet
+                    // log spam on idle channels).
                     var tracker = GetOrCreateSyncTracker(daxIqChannel, telnet);
                     tracker.RequestSync(
                         loHz:   initialLoFreqHz   > 0 ? initialLoFreqHz : null,
@@ -417,7 +418,7 @@ public sealed class CwSkimmerLauncher : ICwSkimmerLauncher, IDisposable
             sb.AppendLine($"  ch {ch}: {(idx >= 0 ? $"UI idx {idx}" : "NOT FOUND")}");
         }
         sb.AppendLine();
-        sb.AppendLine("--- DirectSound capture devices (CW Skimmer WDM order; INI value = idx) ---");
+        sb.AppendLine("--- DirectSound capture devices (NOT CW Skimmer's WDM list; see DirectSoundProbe header) ---");
         try
         {
             foreach (var dev in DirectSoundProbe.EnumerateCaptureDevices())
@@ -428,7 +429,7 @@ public sealed class CwSkimmerLauncher : ICwSkimmerLauncher, IDisposable
             sb.AppendLine($"  (enumeration failed: {ex.Message})");
         }
         sb.AppendLine();
-        sb.AppendLine("--- DirectSound output devices (CW Skimmer WDM order; INI value = idx) ---");
+        sb.AppendLine("--- DirectSound output devices (NOT CW Skimmer's WDM list; see DirectSoundProbe header) ---");
         try
         {
             foreach (var dev in DirectSoundProbe.EnumerateOutputDevices())
