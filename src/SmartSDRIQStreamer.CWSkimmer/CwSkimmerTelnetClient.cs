@@ -70,7 +70,7 @@ public sealed class CwSkimmerTelnetClient : ICwSkimmerTelnetClient
             await _tcp.ConnectAsync(host, port, ct);
             _stream = _tcp.GetStream();
 
-            await PerformLoginAsync(_stream, effectiveCallsign, password, ct);
+            var loginOutcome = await PerformLoginAsync(_stream, effectiveCallsign, password, ct);
 
             _writer = new StreamWriter(_stream, new UTF8Encoding(false), leaveOpen: true)
             {
@@ -83,6 +83,16 @@ public sealed class CwSkimmerTelnetClient : ICwSkimmerTelnetClient
             _isSessionReady = true;
             LogDiag("CONNECT success");
             EmitStatus($"Telnet connected ({host}:{port}).");
+
+            if (loginOutcome == LoginOutcome.TimedOutAfterCredentialsSent)
+            {
+                // Surfaces the LogDiag-only fallback so an unconfirmed login is
+                // visible in the Logs tab. Investigations like #30 (Maestro-C)
+                // depend on this breadcrumb to distinguish silent-auth-failure
+                // from real radio/DAX issues.
+                EmitStatus("Telnet login: no session-ready banner within 4s; treating as success. " +
+                           "If SKIMMER commands have no effect, verify callsign/password.");
+            }
         }
         catch (Exception ex)
         {
@@ -216,7 +226,13 @@ public sealed class CwSkimmerTelnetClient : ICwSkimmerTelnetClient
 
     // ── Login ────────────────────────────────────────────────────────────────
 
-    private static async Task PerformLoginAsync(
+    private enum LoginOutcome
+    {
+        Confirmed,                    // Server sent a session-ready banner.
+        TimedOutAfterCredentialsSent, // Credentials sent, no banner within window; assumed-success.
+    }
+
+    private static async Task<LoginOutcome> PerformLoginAsync(
         NetworkStream stream, string callsign, string password, CancellationToken ct)
     {
         var buf  = new byte[4096];
@@ -260,7 +276,7 @@ public sealed class CwSkimmerTelnetClient : ICwSkimmerTelnetClient
                     if (LooksLikeSessionReady(s))
                     {
                         LogDiag("LOGIN handshake complete");
-                        return;
+                        return LoginOutcome.Confirmed;
                     }
 
                     // No password prompt — login may not require one; wait briefly
@@ -275,7 +291,13 @@ public sealed class CwSkimmerTelnetClient : ICwSkimmerTelnetClient
 
             // Timeout after credentials sent — treat as likely success for tolerant servers.
             LogDiag("LOGIN timeout/cancelled after credentials (treated as success)");
+            return LoginOutcome.TimedOutAfterCredentialsSent;
         }
+
+        // Falls through when the read loop exits via EOF (n == 0). Preserves the
+        // pre-refactor semantics of returning normally — the connect flow continues
+        // and any real socket-closed condition surfaces on the next send attempt.
+        return LoginOutcome.Confirmed;
     }
 
     private static Task WriteLineToStream(NetworkStream stream, string text, CancellationToken ct)
