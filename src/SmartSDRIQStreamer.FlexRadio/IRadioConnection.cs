@@ -34,6 +34,14 @@ public interface IRadioConnection
     IReadOnlyList<SliceInfo>       Slices       { get; }
     IReadOnlyList<DaxIQStreamInfo> DaxIQStreams { get; }
 
+    /// <summary>
+    /// GUI clients currently connected to this radio (SmartSDR, Maestro, etc.)
+    /// as reported by FlexLib. Surfaced on the Logs tab as a multi-station
+    /// troubleshooting aid. Note: DAX-the-app does not register here on tested
+    /// firmware, so this list is not a reliable "is DAX bound to us" signal.
+    /// </summary>
+    IReadOnlyList<GuiClientInfo> GuiClients { get; }
+
     /// <summary>Rolling average DAX bandwidth in kbps (all DAX channels combined).</summary>
     int AvgDAXKbps { get; }
 
@@ -69,6 +77,9 @@ public interface IRadioConnection
 
     /// <summary>Fires when network quality or RTT values change.</summary>
     event Action<NetworkStatusInfo> NetworkStatusChanged;
+
+    /// <summary>Fires when the GUI client list changes (client connects or disconnects).</summary>
+    event Action<IReadOnlyList<GuiClientInfo>> GuiClientsChanged;
 
     /// <summary>
     /// Tune the given slice to <paramref name="freqMHz"/>.

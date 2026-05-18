@@ -295,6 +295,7 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
             UpdateDisplayedDaxKbps();
         });
         _connection.NetworkStatusChanged   += status => UIPost(() => ApplyNetworkStatus(status));
+        _connection.GuiClientsChanged      += clients => UIPost(() => OnGuiClientsChanged(clients));
 
         // Re-evaluate Launch command whenever the stream list changes
         DaxIQStreams.CollectionChanged += (_, _) =>
@@ -459,6 +460,7 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
                 ApplyNetworkStatus(_connection.NetworkStatus);
                 AddStreamerStatus($"Connected to {_connection.ConnectedModel}.");
                 AddStreamerStatus($"Control station: {SelectedControlStation}");
+                LogGuiClientsSnapshot(_connection.GuiClients);
             }
             else
             {
@@ -488,9 +490,33 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
                     _streamRemovedDebounceCtsByChannel.Clear();
                 }
                 _ritStatusEmitter.Clear();
+                _lastLoggedGuiClientsKey = string.Empty;
                 AddStreamerStatus("Disconnected.");
             }
         });
+    }
+
+    // ── GUI client snapshot logging (DAX-bound-radio check) ───────────────────
+
+    private string _lastLoggedGuiClientsKey = string.Empty;
+
+    private void OnGuiClientsChanged(IReadOnlyList<GuiClientInfo> clients)
+    {
+        if (!IsConnected) return;
+        LogGuiClientsSnapshot(clients);
+    }
+
+    private void LogGuiClientsSnapshot(IReadOnlyList<GuiClientInfo> clients)
+    {
+        var key = string.Join("|",
+            clients.OrderBy(c => c.ClientHandle).Select(c => $"{c.ClientHandle:X}:{c.Program}:{c.Station}"));
+        if (key == _lastLoggedGuiClientsKey) return;
+        _lastLoggedGuiClientsKey = key;
+
+        var list = clients.Count == 0
+            ? "(none reported)"
+            : string.Join(", ", clients.Select(c => c.DisplayLabel));
+        AddStreamerStatus($"Clients on {_connection.ConnectedModel ?? "radio"}: {list}");
     }
 
     // ── DAX-IQ stream tracking ────────────────────────────────────────────────

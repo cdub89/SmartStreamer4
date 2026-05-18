@@ -66,6 +66,7 @@ public sealed class FlexLibRadioConnection : IRadioConnection
 
         _maxObservedNetworkPing = -1;
         PublishNetworkStatus();
+        RefreshGuiClients();
 
         return true;
     }
@@ -94,6 +95,8 @@ public sealed class FlexLibRadioConnection : IRadioConnection
         _maxObservedNetworkPing = -1;
         NetworkStatus = NetworkStatusInfo.Empty;
         NetworkStatusChanged?.Invoke(NetworkStatus);
+        _guiClients = Array.Empty<GuiClientInfo>();
+        GuiClientsChanged?.Invoke(_guiClients);
         ConnectionStateChanged?.Invoke(false);
     }
 
@@ -121,6 +124,9 @@ public sealed class FlexLibRadioConnection : IRadioConnection
             case "NetworkPing":
             case "RemoteNetworkQuality":
                 PublishNetworkStatus();
+                break;
+            case "GuiClients":
+                RefreshGuiClients();
                 break;
         }
     }
@@ -350,8 +356,37 @@ public sealed class FlexLibRadioConnection : IRadioConnection
     public int AvgDAXKbps => _radio?.AvgDAXkbps ?? 0;
     public event Action<int>? AvgDAXKbpsChanged;
     public event Action<NetworkStatusInfo>? NetworkStatusChanged;
+    public event Action<IReadOnlyList<GuiClientInfo>>? GuiClientsChanged;
 
     public NetworkStatusInfo NetworkStatus { get; private set; } = NetworkStatusInfo.Empty;
+
+    // ── GUI clients (for DAX-bound-radio check) ──────────────────────────────
+
+    private IReadOnlyList<GuiClientInfo> _guiClients = Array.Empty<GuiClientInfo>();
+
+    public IReadOnlyList<GuiClientInfo> GuiClients => _guiClients;
+
+    private void RefreshGuiClients()
+    {
+        var radio = _radio;
+        if (radio is null)
+        {
+            _guiClients = Array.Empty<GuiClientInfo>();
+            GuiClientsChanged?.Invoke(_guiClients);
+            return;
+        }
+
+        List<GuiClientInfo> snapshot;
+        lock (radio.GuiClientsLockObj)
+        {
+            snapshot = radio.GuiClients
+                .Select(c => new GuiClientInfo(c.ClientHandle, c.Program ?? string.Empty, c.Station ?? string.Empty))
+                .ToList();
+        }
+
+        _guiClients = snapshot;
+        GuiClientsChanged?.Invoke(_guiClients);
+    }
 
     public void ResetNetworkStatus()
     {

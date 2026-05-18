@@ -55,6 +55,14 @@ public sealed record DaxIQStreamInfo(
         $"DAX-IQ ch {DAXIQChannel}  {(IsActive ? "Active" : "Off")}";
 }
 
+public sealed record GuiClientInfo(
+    uint   ClientHandle,
+    string Program,
+    string Station)
+{
+    public string DisplayLabel => $"{Program}/{Station}";
+}
+
 public enum NetworkHealthLevel
 {
     Unknown,
