@@ -835,7 +835,7 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     [RelayCommand(CanExecute = nameof(CanLaunchCwSkimmerForChannel))]
     private async Task LaunchCwSkimmerForChannelAsync(DaxIQStreamInfo? stream)
     {
-        await _cwSkimmerWorkflow.LaunchForChannelAsync(stream, CwSkimmerExePath, AddSkimmerStatus);
+        await _cwSkimmerWorkflow.LaunchForChannelAsync(stream, SelectedControlStation, CwSkimmerExePath, AddSkimmerStatus);
         UpdateTelnetIniSummary();
         RefreshDaxStreamPanBindings();
         RefreshSliceSkimmerStates();
@@ -854,7 +854,14 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
             return;
         }
 
-        await LaunchCwSkimmerForChannelAsync(stream);
+        // Slice-launch path: use the slice's own ClientStation so the pan/slice
+        // lookup in LaunchForChannelAsync stays consistent with what the operator
+        // clicked, even if SelectedControlStation has been overridden elsewhere.
+        var station = sliceVm?.Slice.ClientStation ?? SelectedControlStation;
+        await _cwSkimmerWorkflow.LaunchForChannelAsync(stream, station, CwSkimmerExePath, AddSkimmerStatus);
+        UpdateTelnetIniSummary();
+        RefreshDaxStreamPanBindings();
+        RefreshSliceSkimmerStates();
     }
 
     private bool CanLaunchCwSkimmerForSlice(SliceViewModel? sliceVm)
@@ -2075,18 +2082,25 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         if (daxIqChannel <= 0)
             return null;
 
-        var panForChannel = _connection.Panadapters
-            .FirstOrDefault(p => p.DAXIQChannel == daxIqChannel &&
-                                 string.Equals(p.ClientStation, SelectedControlStation, StringComparison.OrdinalIgnoreCase))
-            ?? _connection.Panadapters.FirstOrDefault(p => p.DAXIQChannel == daxIqChannel);
+        // Bug fix 2026-05-18 (issue #40): pre-fix code had cross-station ??
+        // fallbacks (Panadapters.FirstOrDefault any pan, Slices.FirstOrDefault
+        // any slice on that pan). Didn't bite in the same live test that
+        // exposed the launcher bug, but it's a latent leak: when our station
+        // has the pan but no slice yet, the slice fallback would pull a
+        // foreign-station slice's freq and emit it as our QSY. Filter strictly
+        // by SelectedControlStation now; return null when no match, which the
+        // caller (TrySyncSkimmerForPanChange) already treats as "slice freq
+        // unavailable" and just logs without emitting a wrong QSY.
+        var panForChannel = _connection.Panadapters.FirstOrDefault(p =>
+            p.DAXIQChannel == daxIqChannel &&
+            string.Equals(p.ClientStation, SelectedControlStation, StringComparison.OrdinalIgnoreCase));
 
         if (panForChannel is null)
             return null;
 
         var slice = _connection.Slices.FirstOrDefault(s =>
             s.PanadapterStreamId == panForChannel.StreamId &&
-            IsOwnStationSlice(s))
-            ?? _connection.Slices.FirstOrDefault(s => s.PanadapterStreamId == panForChannel.StreamId);
+            IsOwnStationSlice(s));
 
         if (slice is null)
             return null;

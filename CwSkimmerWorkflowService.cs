@@ -33,22 +33,54 @@ public sealed class CwSkimmerWorkflowService
     public bool CanStop(DaxIQStreamInfo? stream) =>
         stream is not null && _launcher.IsChannelRunning(stream.DAXIQChannel);
 
-    public async Task LaunchForChannelAsync(DaxIQStreamInfo? stream, string exePath, Action<string> addStatus)
+    public async Task LaunchForChannelAsync(
+        DaxIQStreamInfo? stream,
+        string clientStation,
+        string exePath,
+        Action<string> addStatus)
     {
         if (stream is null) return;
 
-        if (stream.CenterFreqMHz <= 0)
+        if (string.IsNullOrWhiteSpace(clientStation))
         {
-            addStatus($"ch {stream.DAXIQChannel}: center frequency not yet available.");
+            addStatus($"ch {stream.DAXIQChannel}: no control station selected — connect to a radio first.");
             return;
         }
 
-        var pan = _connection.Panadapters.FirstOrDefault(p => p.DAXIQChannel == stream.DAXIQChannel);
-        var slice = pan is not null
-            ? _connection.Slices.FirstOrDefault(s => s.PanadapterStreamId == pan.StreamId)
-            : _connection.Slices.FirstOrDefault();
+        // Bug fix 2026-05-18 (issue #40): pre-fix code did
+        //   Panadapters.FirstOrDefault(p => p.DAXIQChannel == ch)
+        //   Slices.FirstOrDefault(s => s.PanadapterStreamId == pan.StreamId)
+        // which mixed pan/slice from any client station the radio had. In a
+        // multi-station setup where both stations have DAX-IQ ch N assigned,
+        // the launcher could pick the wrong station's slice and send a foreign
+        // QSY to CW Skimmer at startup (live-test 2026-05-18: connected to
+        // Maestro with slice 7.030700, launcher sent QSY 7.060 — WX7V-M's
+        // slice on the same radio). Filter by clientStation here and also use
+        // pan.CenterFreqMHz instead of stream.CenterFreqMHz, since the same
+        // FirstOrDefault leak exists in FlexLibRadioConnection.ToDaxIQStreamInfo.
+        var pan = _connection.Panadapters.FirstOrDefault(p =>
+            p.DAXIQChannel == stream.DAXIQChannel &&
+            string.Equals(p.ClientStation, clientStation, StringComparison.OrdinalIgnoreCase));
 
-        var centerFreqHz = (long)(stream.CenterFreqMHz * 1_000_000);
+        if (pan is null)
+        {
+            addStatus($"ch {stream.DAXIQChannel}: no panadapter on '{clientStation}' is assigned to DAX-IQ channel {stream.DAXIQChannel}.");
+            return;
+        }
+
+        if (pan.CenterFreqMHz <= 0)
+        {
+            addStatus($"ch {stream.DAXIQChannel}: panadapter on '{clientStation}' has no center frequency yet.");
+            return;
+        }
+
+        // Slice may be null on a fresh pan with no slice opened yet; tracker
+        // catches up on the first SliceUpdated event after telnet connect.
+        var slice = _connection.Slices.FirstOrDefault(s =>
+            s.PanadapterStreamId == pan.StreamId &&
+            string.Equals(s.ClientStation, clientStation, StringComparison.OrdinalIgnoreCase));
+
+        var centerFreqHz = (long)Math.Round(pan.CenterFreqMHz * 1_000_000d);
 
         var config = new CwSkimmerConfig
         {
