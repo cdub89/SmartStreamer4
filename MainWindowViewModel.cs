@@ -1619,22 +1619,29 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
 
     private static string? ResolveReleaseTag(Assembly assembly, string? informationalVersion)
     {
-        // Prefer an explicit tag on HEAD when present.
+        // Prefer an explicit tag on HEAD when present (shipped builds: publish-release.ps1
+        // packages from a tagged HEAD).
         var exactTag = TryGetGitTag(pointsAtHead: true);
         if (!string.IsNullOrWhiteSpace(exactTag))
             return exactTag;
 
-        // Otherwise trust assembly/package version so release builds without a new git tag
-        // still report the intended release version (for example alpha.5 before tagging).
+        // Bug fix 2026-05-17: dotnet run was showing "v0.1.0" because the csproj
+        // <Version> fallback ran before git describe. csproj <Version> is permanently
+        // 0.1.0 (clean numeric default; MSBuild's condition evaluator OOMs on the
+        // trailing 'b' of our release labels), so trusting it produced a meaningless
+        // version for any dev build past the last tag. Try git describe first and tag
+        // the result with -dev so it's obvious it isn't a shipped build.
+        var latestTag = TryGetGitTag(pointsAtHead: false);
+        if (!string.IsNullOrWhiteSpace(latestTag))
+            return $"{latestTag}-dev";
+
+        // Final fallback for non-git environments (shipped exe extracted from zip):
+        // pull the version out of InformationalVersion, which publish-release.ps1
+        // injects as <label>+<sha>.
         var assemblyVersion = ExtractVersion(informationalVersion)
             ?? assembly.GetName().Version?.ToString(3);
         if (!string.IsNullOrWhiteSpace(assemblyVersion))
             return assemblyVersion;
-
-        // Final fallback: latest repository tag.
-        var latestTag = TryGetGitTag(pointsAtHead: false);
-        if (!string.IsNullOrWhiteSpace(latestTag))
-            return latestTag;
 
         return null;
     }
@@ -1756,14 +1763,15 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
 
     private string ResolveReleaseTagForUpdateChecks()
     {
-        var assembly = Assembly.GetEntryAssembly() ?? Assembly.GetExecutingAssembly();
-        var informationalVersion =
-            assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
-        var assemblyVersion = ExtractVersion(informationalVersion);
-        if (!string.IsNullOrWhiteSpace(assemblyVersion))
-            return NormalizeVersionDisplayTag(assemblyVersion);
-
-        return AppReleaseTag;
+        // AppReleaseTag is the source of truth post the 2026-05-17 dotnet-run fix:
+        // either an exact-HEAD tag, "{latest-tag}-dev" for dev builds past the last
+        // tag, or the InformationalVersion-derived label for shipped builds. Strip
+        // the -dev suffix so update checks compare against the base tag rather than
+        // a nonexistent "v0.1.18b-dev" release.
+        var tag = AppReleaseTag;
+        if (tag.EndsWith("-dev", StringComparison.OrdinalIgnoreCase))
+            tag = tag[..^"-dev".Length];
+        return NormalizeVersionDisplayTag(tag);
     }
 
     private string ResolveConnectedRadioDisplayName()
