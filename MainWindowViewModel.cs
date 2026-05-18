@@ -16,7 +16,7 @@ using SDRIQStreamer.FlexRadio;
 
 namespace SDRIQStreamer.App;
 
-public partial class MainWindowViewModel : ObservableObject
+public partial class MainWindowViewModel : ObservableObject, IDaxStationConfirmer
 {
     private static readonly object s_streamerLogSync = new();
     private static readonly object s_spotPayloadLogSync = new();
@@ -277,7 +277,7 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         _deviceFinder = deviceFinder;
         _footerStatusBuffer = new FooterStatusBuffer(FooterStatusLines);
         _ritStatusEmitter = new ThrottledStatusEmitter(RitStatusMinInterval, UIPost, AddTelnetStatus);
-        _cwSkimmerWorkflow = new CwSkimmerWorkflowService(_connection, _launcher, _settings);
+        _cwSkimmerWorkflow = new CwSkimmerWorkflowService(_connection, _launcher, _settings, this);
 
         _discovery.RadioAdded   += OnRadioAdded;
         _discovery.RadioRemoved += OnRadioRemoved;
@@ -600,6 +600,54 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         AddStreamerStatus($"Clients on {_connection.ConnectedModel ?? "radio"}: {list}");
     }
 
+    // ── Issue #39: DAX-IQ channel collision detection ─────────────────────────
+
+    /// <summary>
+    /// Raised when the workflow service needs the operator to confirm DAX-the-app's
+    /// station selection (multi-station ch collision). The handler must show a
+    /// modal dialog and complete the TaskCompletionSource with the operator's choice.
+    /// </summary>
+    public event Func<DaxStationConfirmRequest, Task<DaxStationConfirmResult>>? DaxStationConfirmRequested;
+
+    Task<DaxStationConfirmResult> IDaxStationConfirmer.ConfirmAsync(int daxIqChannel, string ownStation, string otherStation)
+    {
+        var handler = DaxStationConfirmRequested;
+        if (handler is null)
+            return Task.FromResult(DaxStationConfirmResult.Cancel);
+
+        return handler(new DaxStationConfirmRequest(daxIqChannel, ownStation, otherStation));
+    }
+
+    private readonly Dictionary<int, string> _lastLoggedDaxCollisionByChannel = new();
+
+    private void EvaluateDaxChannelCollisions()
+    {
+        if (!IsConnected) return;
+        var ownStation = _connection.OwnClientStation;
+        if (string.IsNullOrWhiteSpace(ownStation)) return;
+
+        var ourChannels = _connection.Panadapters
+            .Where(p => p.DAXIQChannel > 0 &&
+                        string.Equals(p.ClientStation, ownStation, StringComparison.OrdinalIgnoreCase))
+            .Select(p => p.DAXIQChannel)
+            .Distinct();
+
+        foreach (var channel in ourChannels)
+        {
+            var foreign = DaxChannelOwnership.GetForeignOwners(_connection.Panadapters, channel, ownStation);
+            var key = foreign.Count == 0 ? string.Empty : string.Join(",", foreign);
+
+            _lastLoggedDaxCollisionByChannel.TryGetValue(channel, out var lastKey);
+            if (key == lastKey) continue;
+
+            _lastLoggedDaxCollisionByChannel[channel] = key;
+            if (foreign.Count == 0) continue;
+
+            AddStreamerStatus(
+                $"DAX-IQ ch {channel} also assigned to {foreign[0]}. In the SmartSDR DAX application, select {ownStation} to launch CW Skimmer properly.");
+        }
+    }
+
     // ── DAX-IQ stream tracking ────────────────────────────────────────────────
 
     private void OnDaxIQStreamAdded(DaxIQStreamInfo stream)
@@ -694,6 +742,7 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         LaunchCwSkimmerForSliceCommand.NotifyCanExecuteChanged();
         StopCwSkimmerForSliceCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(VisibleClientGroups));
+        EvaluateDaxChannelCollisions();
     }
 
     private void RemovePan(PanadapterInfo pan)
@@ -716,6 +765,7 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         LaunchCwSkimmerForSliceCommand.NotifyCanExecuteChanged();
         StopCwSkimmerForSliceCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(VisibleClientGroups));
+        EvaluateDaxChannelCollisions();
     }
 
     private void UpdatePan(PanadapterInfo pan)
@@ -752,6 +802,7 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
             pan.CenterFreqMHz,
             sampleRate,
             "Panadapter update");
+        EvaluateDaxChannelCollisions();
     }
 
     private void AddSlice(SliceInfo slice)
@@ -834,11 +885,15 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
             return;
         }
 
-        var stream = DaxIQStreams.FirstOrDefault(s => s.DAXIQChannel == ch);
+        // Bug fix 2026-05-18 (issue #39): filter by (channel, owning station's
+        // handle) so a foreign station's stream cannot leak its summary into
+        // this pan's row when both stations share the same DAX-IQ channel.
+        var stream = DaxIQStreams.FirstOrDefault(s =>
+            s.DAXIQChannel == ch && s.ClientHandle == panGroup.Pan.ClientHandle);
         if (stream is null)
         {
             var centerHz = (long)(panGroup.Pan.CenterFreqMHz * 1_000_000);
-            panGroup.StreamSummary = $"DAX-IQ ch {ch}: Center Frequency {centerHz} Hz, {GetSampleRateForChannel(ch)} kHz, Off";
+            panGroup.StreamSummary = $"DAX-IQ ch {ch}: Center Frequency {centerHz} Hz, {GetSampleRateForChannel(ch, panGroup.Pan.ClientHandle)} kHz, Off";
             return;
         }
 
@@ -863,7 +918,11 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
 
     private DaxIQStreamInfo NormalizeStreamForPan(DaxIQStreamInfo stream)
     {
-        var pan = _connection.Panadapters.FirstOrDefault(p => p.DAXIQChannel == stream.DAXIQChannel);
+        // Bug fix 2026-05-18 (issue #39): join pan by (channel, ClientHandle)
+        // so a stream owned by station A is never rebound to station B's pan
+        // when both stations have the same channel assigned.
+        var pan = _connection.Panadapters.FirstOrDefault(p =>
+            p.DAXIQChannel == stream.DAXIQChannel && p.ClientHandle == stream.ClientHandle);
         return pan is null
             ? stream with
             {
@@ -890,8 +949,8 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         DaxIQStreams[idx] = stream;
     }
 
-    private int GetSampleRateForChannel(int daxChannel)
-        => DaxIQStreams.FirstOrDefault(s => s.DAXIQChannel == daxChannel)?.SampleRate / 1000 ?? 48;
+    private int GetSampleRateForChannel(int daxChannel, uint clientHandle)
+        => DaxIQStreams.FirstOrDefault(s => s.DAXIQChannel == daxChannel && s.ClientHandle == clientHandle)?.SampleRate / 1000 ?? 48;
 
     private void UpdateDisplayedDaxKbps()
     {
@@ -1060,8 +1119,13 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
             return null;
 
         var channel = pan.DAXIQChannel;
-        var stream = DaxIQStreams.FirstOrDefault(s => s.DAXIQChannel == channel)
-            ?? _connection.DaxIQStreams.FirstOrDefault(s => s.DAXIQChannel == channel);
+        // Bug fix 2026-05-18 (issue #39): filter by (channel, ClientHandle) so
+        // a foreign station's stream on the same channel cannot satisfy a
+        // launch resolution for our slice.
+        var stream = DaxIQStreams.FirstOrDefault(s =>
+                s.DAXIQChannel == channel && s.ClientHandle == pan.ClientHandle)
+            ?? _connection.DaxIQStreams.FirstOrDefault(s =>
+                s.DAXIQChannel == channel && s.ClientHandle == pan.ClientHandle);
 
         if (stream is not null)
         {
@@ -1079,7 +1143,8 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
             DAXIQChannel: channel,
             SampleRate: 48000,
             IsActive: false,
-            CenterFreqMHz: pan.CenterFreqMHz)
+            CenterFreqMHz: pan.CenterFreqMHz,
+            ClientHandle: pan.ClientHandle)
         {
             IsSkimmerRunning = _launcher.IsChannelRunning(channel)
         };

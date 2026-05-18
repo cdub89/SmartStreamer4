@@ -444,7 +444,7 @@ public sealed class FlexLibRadioConnection : IRadioConnection
     // ── Mapping helpers ──────────────────────────────────────────────────────
 
     private PanadapterInfo ToPanadapterInfo(Panadapter pan) =>
-        new(pan.StreamID, pan.CenterFreq, pan.DAXIQChannel, ResolveStation(pan.ClientHandle));
+        new(pan.StreamID, pan.CenterFreq, pan.DAXIQChannel, ResolveStation(pan.ClientHandle), pan.ClientHandle);
 
     private SliceInfo ToSliceInfo(Slice slc) =>
         new(slc.Letter    ?? string.Empty,
@@ -579,13 +579,19 @@ public sealed class FlexLibRadioConnection : IRadioConnection
 
     private DaxIQStreamInfo ToDaxIQStreamInfo(DAXIQStream iq)
     {
-        // iq.Pan may be null or unpopulated when the stream is first created.
-        // Look up the centre-freq from the already-tracked panadapters instead.
+        // Bug fix 2026-05-18 (issue #39): pre-fix lookup was station-blind
+        // (FirstOrDefault on DAXIQChannel alone), so in a multi-station setup
+        // where both stations had the same channel assigned, our stream's
+        // CenterFreqMHz could be attributed to the other station's pan and
+        // leak that frequency into the connected station's UI section. Filter
+        // by (DAXIQChannel, ClientHandle) to bind the stream to its owning
+        // station's panadapter. Reported 2026-05-18 during multi-station test
+        // on a Dallas FLEX-6400 with WX7V + Maestro both holding ch 1.
         var centerFreqMHz = _panadapters.Values
-            .FirstOrDefault(p => p.DAXIQChannel == iq.DAXIQChannel)
+            .FirstOrDefault(p => p.DAXIQChannel == iq.DAXIQChannel && p.ClientHandle == iq.ClientHandle)
             ?.CenterFreqMHz ?? 0.0;
 
-        return new(iq.DAXIQChannel, iq.SampleRate, iq.IsActive, centerFreqMHz);
+        return new(iq.DAXIQChannel, iq.SampleRate, iq.IsActive, centerFreqMHz, iq.ClientHandle);
     }
 
     private static string SliceKey(Slice slc)

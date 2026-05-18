@@ -13,35 +13,42 @@ public sealed class CwSkimmerWorkflowServiceTests
     private const string OtherStation   = "WX7V-M";
     private const string FakeExePath    = @"C:\fake\CwSkimmer.exe"; // any non-empty string; launcher is stubbed.
 
+    private static CwSkimmerWorkflowService CreateService(
+        IRadioConnection conn,
+        ICwSkimmerLauncher launcher,
+        IDaxStationConfirmer? confirmer = null) =>
+        new(conn, launcher, new AppSettings(), confirmer);
+
     [Fact]
-    public async Task LaunchForChannelAsync_PicksPanAndSliceForRequestedStation_NotForeignStation()
+    public async Task LaunchForChannelAsync_PicksOwnStationsPanAndSlice()
     {
+        // No collision: only our station holds ch 1. Verifies the pan/slice
+        // resolution still respects the requested station (issue #40 fix).
         var conn = new FakeConnection
         {
             Panadapters =
             [
                 new PanadapterInfo(StreamId: 100, CenterFreqMHz: 7.041691, DAXIQChannel: 1, ClientStation: MaestroStation),
-                new PanadapterInfo(StreamId: 200, CenterFreqMHz: 7.060000, DAXIQChannel: 1, ClientStation: OtherStation),
             ],
             Slices =
             [
                 new SliceInfo("A", "CW", 7.030700, false, 0, 0, PanadapterStreamId: 100, ClientStation: MaestroStation),
-                new SliceInfo("A", "CW", 7.060000, false, 0, 0, PanadapterStreamId: 200, ClientStation: OtherStation),
             ],
         };
-        var launcher = new FakeLauncher();
-        var service  = new CwSkimmerWorkflowService(conn, launcher, new AppSettings());
+        var launcher  = new FakeLauncher();
+        var confirmer = new FakeDaxStationConfirmer();
+        var service   = CreateService(conn, launcher, confirmer);
 
         var stream = new DaxIQStreamInfo(1, 48_000, true, 7.041691);
         var status = new List<string>();
 
         await service.LaunchForChannelAsync(stream, MaestroStation, FakeExePath, status.Add);
 
-        // Launch must have happened with Maestro's pan center (LO) and Maestro's slice (initial VFO).
         Assert.NotNull(launcher.LastConfig);
         Assert.Equal(7_041_691L, launcher.LastCenterFreqHz);
         Assert.Equal(7.030700, launcher.LastConfig!.InitialSliceFreqMHz);
         Assert.Equal(7_041_691L, launcher.LastConfig.InitialLoFreqHz);
+        Assert.Equal(0, confirmer.CallCount); // no collision -> no dialog
     }
 
     [Fact]
@@ -50,6 +57,8 @@ public sealed class CwSkimmerWorkflowServiceTests
         var conn = new FakeConnection
         {
             // Only the foreign station has DAX-IQ ch 1; our station has nothing.
+            // The early-exit in the #39 collision check defers to the existing
+            // pan-lookup gate so the message is the actionable "no panadapter".
             Panadapters =
             [
                 new PanadapterInfo(StreamId: 200, CenterFreqMHz: 7.060000, DAXIQChannel: 1, ClientStation: OtherStation),
@@ -59,15 +68,17 @@ public sealed class CwSkimmerWorkflowServiceTests
                 new SliceInfo("A", "CW", 7.060000, false, 0, 0, PanadapterStreamId: 200, ClientStation: OtherStation),
             ],
         };
-        var launcher = new FakeLauncher();
-        var service  = new CwSkimmerWorkflowService(conn, launcher, new AppSettings());
+        var launcher  = new FakeLauncher();
+        var confirmer = new FakeDaxStationConfirmer();
+        var service   = CreateService(conn, launcher, confirmer);
 
         var stream = new DaxIQStreamInfo(1, 48_000, true, 7.060000);
         var status = new List<string>();
 
         await service.LaunchForChannelAsync(stream, MaestroStation, FakeExePath, status.Add);
 
-        Assert.Null(launcher.LastConfig); // launcher was not called
+        Assert.Null(launcher.LastConfig);
+        Assert.Equal(0, confirmer.CallCount); // no own-station pan -> no dialog (gate below handles it)
         Assert.Contains(status, s => s.Contains($"no panadapter on '{MaestroStation}'", StringComparison.Ordinal));
     }
 
@@ -76,7 +87,6 @@ public sealed class CwSkimmerWorkflowServiceTests
     {
         var conn = new FakeConnection
         {
-            // Our station has the pan but no slice opened on it yet.
             Panadapters =
             [
                 new PanadapterInfo(StreamId: 100, CenterFreqMHz: 7.041691, DAXIQChannel: 1, ClientStation: MaestroStation),
@@ -88,7 +98,7 @@ public sealed class CwSkimmerWorkflowServiceTests
             ],
         };
         var launcher = new FakeLauncher();
-        var service  = new CwSkimmerWorkflowService(conn, launcher, new AppSettings());
+        var service  = CreateService(conn, launcher);
 
         var stream = new DaxIQStreamInfo(1, 48_000, true, 7.041691);
         var status = new List<string>();
@@ -97,7 +107,7 @@ public sealed class CwSkimmerWorkflowServiceTests
 
         Assert.NotNull(launcher.LastConfig);
         Assert.Equal(7_041_691L, launcher.LastConfig!.InitialLoFreqHz);
-        Assert.Equal(0d, launcher.LastConfig.InitialSliceFreqMHz); // no slice → 0, not the foreign 7.060
+        Assert.Equal(0d, launcher.LastConfig.InitialSliceFreqMHz);
     }
 
     [Fact]
@@ -105,7 +115,7 @@ public sealed class CwSkimmerWorkflowServiceTests
     {
         var conn     = new FakeConnection();
         var launcher = new FakeLauncher();
-        var service  = new CwSkimmerWorkflowService(conn, launcher, new AppSettings());
+        var service  = CreateService(conn, launcher);
 
         var stream = new DaxIQStreamInfo(1, 48_000, true, 7.041691);
         var status = new List<string>();
@@ -116,7 +126,90 @@ public sealed class CwSkimmerWorkflowServiceTests
         Assert.Contains(status, s => s.Contains("no control station selected", StringComparison.Ordinal));
     }
 
+    // ── Issue #39: DAX station mismatch detection ──────────────────────────────
+
+    [Fact]
+    public async Task LaunchForChannelAsync_ChannelCollision_PromptsAndCancelsBlockLaunch()
+    {
+        // Both stations have ch 1. Confirmer says Cancel; launch must be blocked.
+        var conn = new FakeConnection
+        {
+            Panadapters =
+            [
+                new PanadapterInfo(StreamId: 100, CenterFreqMHz: 14.05, DAXIQChannel: 1, ClientStation: MaestroStation),
+                new PanadapterInfo(StreamId: 200, CenterFreqMHz: 7.058, DAXIQChannel: 1, ClientStation: OtherStation),
+            ],
+        };
+        var launcher  = new FakeLauncher();
+        var confirmer = new FakeDaxStationConfirmer();
+        confirmer.Responses.Enqueue(DaxStationConfirmResult.Cancel);
+        var service = CreateService(conn, launcher, confirmer);
+
+        var stream = new DaxIQStreamInfo(1, 48_000, true, 14.05);
+        var status = new List<string>();
+
+        await service.LaunchForChannelAsync(stream, MaestroStation, FakeExePath, status.Add);
+
+        Assert.Null(launcher.LastConfig);
+        Assert.Equal(1, confirmer.CallCount);
+        Assert.Equal(MaestroStation, confirmer.Calls[0].OwnStation);
+        Assert.Equal(OtherStation, confirmer.Calls[0].OtherStation);
+        Assert.Equal(1, confirmer.Calls[0].Channel);
+        Assert.Contains(status, s => s.Contains("launch cancelled", StringComparison.Ordinal));
+        Assert.Contains(status, s => s.Contains($"also assigned to {OtherStation}", StringComparison.Ordinal));
+        Assert.Contains(status, s => s.Contains("In the SmartSDR DAX application", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task LaunchForChannelAsync_ChannelCollision_StartLetsLaunchProceed()
+    {
+        // Both stations have ch 1. Confirmer returns Start (operator confirmed
+        // they updated DAX). Launch proceeds. The collision is a soft warning
+        // since FlexLib does not expose DAX-the-app's actual station binding.
+        var conn = new FakeConnection
+        {
+            Panadapters =
+            [
+                new PanadapterInfo(StreamId: 100, CenterFreqMHz: 14.05, DAXIQChannel: 1, ClientStation: MaestroStation),
+                new PanadapterInfo(StreamId: 200, CenterFreqMHz: 7.058, DAXIQChannel: 1, ClientStation: OtherStation),
+            ],
+            Slices =
+            [
+                new SliceInfo("A", "CW", 14.054, false, 0, 0, PanadapterStreamId: 100, ClientStation: MaestroStation),
+            ],
+        };
+        var launcher  = new FakeLauncher();
+        var confirmer = new FakeDaxStationConfirmer();
+        confirmer.Responses.Enqueue(DaxStationConfirmResult.Start);
+        var service = CreateService(conn, launcher, confirmer);
+
+        var stream = new DaxIQStreamInfo(1, 48_000, true, 14.05);
+        var status = new List<string>();
+
+        await service.LaunchForChannelAsync(stream, MaestroStation, FakeExePath, status.Add);
+
+        Assert.NotNull(launcher.LastConfig);
+        Assert.Equal(1, confirmer.CallCount);
+        Assert.Equal(14_050_000L, launcher.LastCenterFreqHz);
+        Assert.Equal(14.054, launcher.LastConfig!.InitialSliceFreqMHz);
+    }
+
     // ── Fakes ─────────────────────────────────────────────────────────────────
+
+    private sealed class FakeDaxStationConfirmer : IDaxStationConfirmer
+    {
+        public Queue<DaxStationConfirmResult> Responses { get; } = new();
+        public int CallCount { get; private set; }
+        public List<(int Channel, string OwnStation, string OtherStation)> Calls { get; } = new();
+
+        public Task<DaxStationConfirmResult> ConfirmAsync(int daxIqChannel, string ownStation, string otherStation)
+        {
+            CallCount++;
+            Calls.Add((daxIqChannel, ownStation, otherStation));
+            // Default to Cancel if the test didn't pre-load a response; avoids accidental infinite loops.
+            return Task.FromResult(Responses.TryDequeue(out var r) ? r : DaxStationConfirmResult.Cancel);
+        }
+    }
 
     private sealed class FakeConnection : IRadioConnection
     {

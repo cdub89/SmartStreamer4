@@ -6,6 +6,31 @@ using SDRIQStreamer.FlexRadio;
 
 namespace SDRIQStreamer.App;
 
+public enum DaxStationConfirmResult { Start, Cancel }
+
+public sealed record DaxStationConfirmRequest(
+    int DaxIqChannel,
+    string OwnStation,
+    string OtherStation);
+
+/// <summary>
+/// Operator-facing confirmation hook for issue #39: when the requested DAX-IQ
+/// channel is assigned on multiple stations, the workflow service blocks the
+/// launch and asks the operator to verify DAX-the-app is set to the right
+/// station. Implementations are expected to surface a modal dialog.
+/// </summary>
+public interface IDaxStationConfirmer
+{
+    Task<DaxStationConfirmResult> ConfirmAsync(int daxIqChannel, string ownStation, string otherStation);
+}
+
+/// <summary>Safe default: when no confirmer is wired, treat a collision as a Cancel.</summary>
+internal sealed class CancelingDaxStationConfirmer : IDaxStationConfirmer
+{
+    public Task<DaxStationConfirmResult> ConfirmAsync(int daxIqChannel, string ownStation, string otherStation)
+        => Task.FromResult(DaxStationConfirmResult.Cancel);
+}
+
 /// <summary>
 /// Encapsulates CW Skimmer launch/stop workflow and status formatting.
 /// </summary>
@@ -14,15 +39,18 @@ public sealed class CwSkimmerWorkflowService
     private readonly IRadioConnection _connection;
     private readonly ICwSkimmerLauncher _launcher;
     private readonly AppSettings _settings;
+    private readonly IDaxStationConfirmer _daxStationConfirmer;
 
     public CwSkimmerWorkflowService(
         IRadioConnection connection,
         ICwSkimmerLauncher launcher,
-        AppSettings settings)
+        AppSettings settings,
+        IDaxStationConfirmer? daxStationConfirmer = null)
     {
         _connection = connection;
         _launcher = launcher;
         _settings = settings;
+        _daxStationConfirmer = daxStationConfirmer ?? new CancelingDaxStationConfirmer();
     }
 
     public bool CanLaunch(DaxIQStreamInfo? stream, string exePath) =>
@@ -45,6 +73,36 @@ public sealed class CwSkimmerWorkflowService
         {
             addStatus($"ch {stream.DAXIQChannel}: no control station selected — connect to a radio first.");
             return;
+        }
+
+        // Issue #39 (2026-05-18): when the requested DAX-IQ channel is also
+        // assigned on another station's panadapter, DAX-the-app on this PC
+        // can only bridge one station at a time, and we can't tell from any
+        // FlexLib query which one is selected. Live-test on Dallas FLEX-6400:
+        // DAX bound to WX7V while streamer connected as Maestro produced
+        // silently-wrong CW Skimmer decoding (~18.5 kHz offset). Surface a
+        // soft confirmation so the operator owns the DAX-set-correctly check
+        // (we can't observe it). Only fire when our station also holds the
+        // channel; otherwise the existing pan-lookup gate below produces the
+        // actionable "no panadapter on '{clientStation}'" message instead.
+        var foreignOwners = DaxChannelOwnership.GetForeignOwners(
+            _connection.Panadapters, stream.DAXIQChannel, clientStation);
+        var ownHasChannel = _connection.Panadapters.Any(p =>
+            p.DAXIQChannel == stream.DAXIQChannel &&
+            string.Equals(p.ClientStation, clientStation, StringComparison.OrdinalIgnoreCase));
+
+        if (foreignOwners.Count > 0 && ownHasChannel)
+        {
+            var otherStation = foreignOwners[0];
+            var confirmResult = await _daxStationConfirmer.ConfirmAsync(
+                stream.DAXIQChannel, clientStation, otherStation);
+
+            if (confirmResult == DaxStationConfirmResult.Cancel)
+            {
+                addStatus($"ch {stream.DAXIQChannel}: launch cancelled. DAX-IQ ch {stream.DAXIQChannel} also assigned to {otherStation}. In the SmartSDR DAX application, select {clientStation} to launch CW Skimmer properly.");
+                return;
+            }
+            // Start: fall through to launch.
         }
 
         // Bug fix 2026-05-18 (issue #40): pre-fix code did

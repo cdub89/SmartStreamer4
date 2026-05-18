@@ -41,6 +41,8 @@ public partial class MainWindow : Window
         if (_subscribedVm is not null)
         {
             _subscribedVm.PropertyChanged -= OnViewModelPropertyChanged;
+            _subscribedVm.AudioIndexChangesDetected -= OnAudioIndexChangesDetected;
+            _subscribedVm.DaxStationConfirmRequested -= OnDaxStationConfirmRequested;
             _subscribedVm = null;
         }
 
@@ -56,6 +58,7 @@ public partial class MainWindow : Window
         {
             _subscribedVm.PropertyChanged -= OnViewModelPropertyChanged;
             _subscribedVm.AudioIndexChangesDetected -= OnAudioIndexChangesDetected;
+            _subscribedVm.DaxStationConfirmRequested -= OnDaxStationConfirmRequested;
         }
 
         _subscribedVm = DataContext as MainWindowViewModel;
@@ -63,8 +66,12 @@ public partial class MainWindow : Window
         {
             _subscribedVm.PropertyChanged += OnViewModelPropertyChanged;
             _subscribedVm.AudioIndexChangesDetected += OnAudioIndexChangesDetected;
+            _subscribedVm.DaxStationConfirmRequested += OnDaxStationConfirmRequested;
         }
     }
+
+    private Task<DaxStationConfirmResult> OnDaxStationConfirmRequested(DaxStationConfirmRequest request)
+        => Dispatcher.UIThread.InvokeAsync(() => ShowDaxStationConfirmDialogAsync(request));
 
     private async void OnAudioIndexChangesDetected(IReadOnlyList<string> summary)
     {
@@ -544,5 +551,83 @@ public partial class MainWindow : Window
         vm.StopAllCwSkimmerInstances();
 
         await ShowResetWizardAsync(vm);
+    }
+
+    private async Task<DaxStationConfirmResult> ShowDaxStationConfirmDialogAsync(DaxStationConfirmRequest request)
+    {
+        // Issue #39 (2026-05-18): same-radio multi-station with same DAX-IQ
+        // channel produces silently-wrong audio at CW Skimmer when DAX-the-app
+        // is bound to the wrong station. We cannot query DAX's binding via
+        // FlexLib so we ask the operator to verify it manually before launching.
+        var messageText = string.Join(Environment.NewLine, new[]
+        {
+            $"DAX-IQ ch {request.DaxIqChannel} also assigned to {request.OtherStation}.",
+            string.Empty,
+            $"In the SmartSDR DAX application, select {request.OwnStation} to launch CW Skimmer properly.",
+            string.Empty,
+            "Click Start once you have updated the station in the SmartSDR DAX application.",
+        });
+
+        var message = new TextBlock
+        {
+            Text = messageText,
+            TextWrapping = TextWrapping.Wrap,
+            MaxWidth = 460,
+            FontSize = 13
+        };
+
+        var startButton = new Button
+        {
+            Content = "Start",
+            MinWidth = 80
+        };
+
+        var cancelButton = new Button
+        {
+            Content = "Cancel",
+            MinWidth = 80,
+            IsDefault = true,
+            IsCancel = true
+        };
+
+        var dialog = new Window
+        {
+            Title = "DAX-IQ Channel Conflict",
+            Width = 520,
+            SizeToContent = SizeToContent.Height,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Content = new StackPanel
+            {
+                Margin = new Thickness(16),
+                Spacing = 14,
+                Children =
+                {
+                    message,
+                    new StackPanel
+                    {
+                        Orientation = Avalonia.Layout.Orientation.Horizontal,
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                        Spacing = 8,
+                        Children = { startButton, cancelButton }
+                    }
+                }
+            }
+        };
+
+        var result = DaxStationConfirmResult.Cancel;
+        startButton.Click += (_, _) =>
+        {
+            result = DaxStationConfirmResult.Start;
+            dialog.Close();
+        };
+        cancelButton.Click += (_, _) =>
+        {
+            result = DaxStationConfirmResult.Cancel;
+            dialog.Close();
+        };
+
+        await dialog.ShowDialog(this);
+        return result;
     }
 }

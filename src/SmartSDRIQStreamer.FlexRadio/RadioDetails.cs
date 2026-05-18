@@ -12,7 +12,8 @@ public sealed record PanadapterInfo(
     uint   StreamId,
     double CenterFreqMHz,
     int    DAXIQChannel,
-    string ClientStation)
+    string ClientStation,
+    uint   ClientHandle = 0)
 {
     private long CenterFreqHz => (long)Math.Round(CenterFreqMHz * 1_000_000d);
 
@@ -40,7 +41,8 @@ public sealed record DaxIQStreamInfo(
     int    DAXIQChannel,
     int    SampleRate,
     bool   IsActive,
-    double CenterFreqMHz)
+    double CenterFreqMHz,
+    uint   ClientHandle = 0)
 {
     public bool IsSkimmerRunning { get; init; }
 
