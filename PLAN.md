@@ -4,36 +4,36 @@ Working notes for the next beta release. For the architecture this plan applies 
 
 ## Current state
 
-- **Branch.** `fix/skimmer-resync-after-band-change`
-- **Last shipped beta.** v0.1.17b (2026-05-02). Field-validated as the best beta to date; sync tracking spot-on across SmartSDR 4.1.5 and 4.2.
-- **Working version.** `0.1.17-b` in [SmartSDRIQStreamer.csproj](SmartSDRIQStreamer.csproj). Next beta cuts as `v0.1.18b`.
+- **Branch.** `main`.
+- **Last shipped beta.** v0.1.18b (2026-05-11).
+- **Working version.** csproj `<Version>` is `0.1.0` (clean numeric default). Release version comes from the git tag at HEAD per [publish-release.ps1](publish-release.ps1). Next beta cuts as `v0.1.19b`.
 
-The CW Skimmer cross-band resync fix shipped on this branch in commit `0e618c7`: Layer 1 in [CwSkimmerSyncTracker](src/SmartSDRIQStreamer.CWSkimmer/CwSkimmerSyncTracker.cs) (post-LO VFO invalidation) plus Layer 2 in [MainWindowViewModel.TrySyncSliceToSkimmer](MainWindowViewModel.cs) (pass current pan centre on every slice change). Covered by [CwSkimmerSyncTrackerTests](tests/SmartSDRIQStreamer.CWSkimmer.Tests/CwSkimmerSyncTrackerTests.cs).
+Three commits are on `main` ahead of `origin/main`, queued for the Windows handoff that will start `v0.1.19b` work:
 
-## Beta-blocking before next release
+- `7492096` Update `CwSkimmerIniModelFactory` doc to reflect both driver families (closes the first bullet of the old §2 doc-drift item).
+- `4f07c4a` Surface CW Skimmer telnet login-timeout-as-success to the Logs tab (closes the old §3).
+- `cd19ed5` Attach `SHA256SUMS.txt` to the GitHub Release instead of committing it (partially addresses [#35](https://github.com/cdub89/SmartStreamer4/issues/35)).
 
-### 1. Triage open issue #30 (Maestro-C)
+## Beta-blocking before v0.1.19b
 
-[Issue #30](https://github.com/cdub89/SmartStreamer4/issues/30) reports that v0.1.17b works with SmartSDR / DAX but not Maestro-C. Either reproduce and fix, or document as a known limitation in the v0.1.18b release notes. We can't ship the next beta as a regression on top of an unconfirmed regression.
+### 1. Finish [#35](https://github.com/cdub89/SmartStreamer4/issues/35) — release-pipeline tail commit
 
-### 2. Code-side doc drift (caught during audit)
+`cd19ed5` stops the SHA256 line from being committed before the release is published, which removes the "1 commit ahead of release" footgun on the v0.1.18b release page. Validate end-to-end by cutting v0.1.19b through the new flow and confirming the tag at HEAD matches the release tag on `gh release view`, with no trailing SHA256SUMS commit.
 
-All in [CwSkimmerIniModelFactory.cs](src/SmartSDRIQStreamer.CWSkimmer/CwSkimmerIniModelFactory.cs):
+### 2. Triage open issue [#30](https://github.com/cdub89/SmartStreamer4/issues/30) (Maestro-C)
 
-- Class doc comment ([lines 5-22](src/SmartSDRIQStreamer.CWSkimmer/CwSkimmerIniModelFactory.cs#L5)) claims "Generated channel INIs always set UseWdm=false." The code at [line 74](src/SmartSDRIQStreamer.CWSkimmer/CwSkimmerIniModelFactory.cs#L74) supports operator-supplied WDM and writes `UseWdm=true` when present. Update the comment to match.
-- Comment at [lines 139-141](src/SmartSDRIQStreamer.CWSkimmer/CwSkimmerIniModelFactory.cs#L139) says "We accept the calibration if WDM fields are present (legacy users) OR if MmeAudioDev is set." The `return` immediately below only checks the WDM path. Decide which is right and align both.
-- Misleading test name in [CwSkimmerIniTests.cs](tests/SmartSDRIQStreamer.CWSkimmer.Tests/CwSkimmerIniTests.cs): `Build_AlwaysForcesUseWdmFalse_RegardlessOfMasterIniSetting`. Rename to describe actual behaviour (e.g. `Build_DefaultsToMmeMode_WhenNoOperatorWdmIndex`) and add a paired `Build_EmitsWdmMode_WhenOperatorWdmIndexSupplied`.
+v0.1.17b works with SmartSDR / DAX but not Maestro-C, per Steve AI9T. v0.1.18b has not been reconfirmed with Maestro-C. Either reproduce and fix, or document as a known limitation in the v0.1.19b release notes. We cannot ship another beta as a silent regression on top of an unconfirmed regression.
 
-### 3. Surface telnet login-timeout-as-success
+### 3. Remaining `CwSkimmerIniModelFactory` doc/code drift
 
-[CwSkimmerTelnetClient.PerformLoginAsync](src/SmartSDRIQStreamer.CWSkimmer/CwSkimmerTelnetClient.cs) treats a missing login banner as success after a short timeout. The branch is logged via `LogDiag` but not surfaced to the Logs tab. Add an `EmitStatus` line so a real login failure is visible to the operator without scraping diagnostic logs.
+In [CwSkimmerIniModelFactory.cs](src/SmartSDRIQStreamer.CWSkimmer/CwSkimmerIniModelFactory.cs), the comment at lines 147-149 says we accept the calibration if WDM fields are present OR if `MmeAudioDev` is set, but the `return` on line 150 only checks the WDM pair (`wdmIQ1 >= 0 && wdmAudio >= 0`). Decide which is right for post-pivot MME calibrations and align both. If MME is in fact accepted, pin it with a test in [CwSkimmerIniTests.cs](tests/SmartSDRIQStreamer.CWSkimmer.Tests/CwSkimmerIniTests.cs).
 
-### 4. Decide on issues #25 and #26
+### 4. Decide on [#34](https://github.com/cdub89/SmartStreamer4/issues/34) and [#36](https://github.com/cdub89/SmartStreamer4/issues/36) scope for v0.1.19b
 
-Both paused before v0.1.17b. Cheap to ship if included; safe to defer if cut.
+Both are post-v0.1.18b feedback items.
 
-- [#26 Wizard MME / WDM clarity](https://github.com/cdub89/SmartStreamer4/issues/26). Markdown-only edit to the embedded [SETUP_GUIDE_WIZARD.md](SETUP_GUIDE_WIZARD.md) Step 2 section. Low risk, recommend include.
-- [#25 Avalonia font rendering](https://github.com/cdub89/SmartStreamer4/issues/25). First attempt was reverted; next try is the FluentTheme resource-key path. Has failed once. Recommend defer unless the FluentTheme path lands cleanly without churn.
+- **[#34 Rename `%APPDATA%\SDRIQStreamer\` → `%APPDATA%\SmartStreamer4\`](https://github.com/cdub89/SmartStreamer4/issues/34).** Two-release rollout per the issue: v0.1.19b does the copy + marker file and leaves the old folder intact; v0.1.20b deletes the old folder. Migrate-only side is bounded and low-risk if we leave the old folder alone. Recommend include in v0.1.19b.
+- **[#36 Install update in place](https://github.com/cdub89/SmartStreamer4/issues/36).** Currently we surface "update available"; the ask is a download + install + relaunch flow. Larger scope (download verification, unpack-over-running-exe handling, restart). Recommend defer past v0.1.19b unless the implementation lands cleanly.
 
 ## Deferred to post-beta
 
@@ -68,13 +68,15 @@ A single `Action<string> reportError` (or use existing `AddStreamerStatus`) plum
 
 ### Open enhancement issues
 
-- [#27 Channel-specific INI and log storage](https://github.com/cdub89/SmartStreamer4/issues/27). Requires layout changes to `artifacts/`.
 - [#28 FT8 / WSJTX layout support](https://github.com/cdub89/SmartStreamer4/issues/28). UI work, broader scope than a beta point release.
+- [#36 in-place update](https://github.com/cdub89/SmartStreamer4/issues/36). See §4 above; track here if cut from v0.1.19b.
 
 ## Sequencing recommendation
 
-1. Triage #30. If reproducible, fix on a branch off the current branch or off `main` depending on scope.
-2. Code-side doc drift fixes plus the `SETUP_GUIDE_WIZARD.md` edit for #26 in one small PR.
-3. Telnet login-timeout status surface in its own PR.
-4. Cut v0.1.18b.
-5. Phase 2 / 3 / 4 / #25 / #27 / #28 in any order after the beta.
+1. Push the three queued commits on `main` to `origin/main` to clear the Windows handoff.
+2. Validate the new SHA256SUMS-on-release pipeline end-to-end on the v0.1.19b cut (#35).
+3. Triage #30. If reproducible, fix on a branch off `main`.
+4. `CwSkimmerIniModelFactory` second doc-drift bullet plus its test, in one small PR.
+5. #34 migrate-only half (no delete), in its own PR with a stand-alone test for the copy + marker logic.
+6. Cut v0.1.19b.
+7. Phase 2 / 3 / 4 / #28 / #36 in any order after the beta. #34 delete half lands in v0.1.20b.
