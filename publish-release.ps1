@@ -14,17 +14,22 @@ $ErrorActionPreference = "Stop"
 #
 # Phase 1 (default):  .\publish-release.ps1
 #   Tag at HEAD -> tests -> build -> embed-version gate -> zip -> SHA256
-#   -> append/replace line in artifacts\release\SHA256SUMS.txt (uncommitted).
+#   -> write SHA256SUMS.txt sidecar next to the zip in the publish dir.
 #
 # Phase 2 (-Publish): .\publish-release.ps1 -Publish
-#   Precondition checks (tag on origin, zip present, SHA256SUMS entry matches,
-#   release notes file present + non-empty) -> commit + push SHA256SUMS bump
-#   -> gh release create with --latest.
+#   Precondition checks (tag on origin, zip present, SHA256SUMS present + matches,
+#   release notes file present + non-empty) -> gh release create with --latest,
+#   attaching both the zip and SHA256SUMS.txt as release assets.
 #
 # Between phases, the human:
 #   1. Live-tests the zip.
 #   2. Pushes the tag:  git push origin <tag>.
 #   3. Confirms RELEASE_NOTES-<tag>.md is finalized.
+#
+# SHA256SUMS lives only on the GitHub Release page (per-release asset). The
+# legacy artifacts\release\SHA256SUMS.txt tracked file is a frozen v0.1.18b
+# snapshot of cumulative release hashes and is no longer updated by this script.
+# This keeps the release commit == tag commit (no "1 commit ahead").
 #
 # Version source: the git tag at HEAD (e.g. v0.1.18b, v0.1.17b1). csproj
 # <Version> stays at a clean numeric default; MSBuild's condition evaluator
@@ -33,7 +38,7 @@ $ErrorActionPreference = "Stop"
 
 $projectPath = Join-Path $PSScriptRoot "SmartSDRIQStreamer.csproj"
 $publishDir = Join-Path $PSScriptRoot "bin/$Configuration/net8.0-windows/$Runtime/publish"
-$sumsPath = Join-Path $PSScriptRoot "artifacts/release/SHA256SUMS.txt"
+$sumsPath = Join-Path $publishDir "SHA256SUMS.txt"
 
 Write-Host "== SmartStreamer4 release publish ==" -ForegroundColor Cyan
 Write-Host "Phase:          $(if ($Publish) { 'PUBLISH (gh release create)' } else { 'BUILD (zip + SHA256)' })"
@@ -69,7 +74,7 @@ Write-Host "Notes file:     RELEASE_NOTES-${tag}.md"
 # Phase 2: Publish to GitHub.
 # -----------------------------------------------------------------------------
 if ($Publish) {
-    Write-Host "`n[1/4] Checking preconditions..." -ForegroundColor Yellow
+    Write-Host "`n[1/2] Checking preconditions..." -ForegroundColor Yellow
 
     $remoteTag = (& git ls-remote --tags origin "refs/tags/$tag" 2>$null)
     if (-not $remoteTag) {
@@ -103,25 +108,12 @@ if ($Publish) {
     }
     Write-Host "  Release notes present:   OK"
 
-    Write-Host "`n[2/4] Committing SHA256SUMS.txt (if changed)..." -ForegroundColor Yellow
-    # Idempotent: if the bump was already committed (e.g. publish phase ran before
-    # and failed at gh release create), skip the commit step and proceed.
-    $sumsStatus = (& git status --porcelain "artifacts/release/SHA256SUMS.txt")
-    if ($sumsStatus) {
-        & git add "artifacts/release/SHA256SUMS.txt"
-        & git commit -m "Add SHA256 for $tag release"
-        Write-Host "  Committed."
-    } else {
-        Write-Host "  No changes to commit (already up to date)."
-    }
-
-    Write-Host "`n[3/4] Pushing commit to origin..." -ForegroundColor Yellow
-    & git push origin HEAD
-
-    Write-Host "`n[4/4] Creating GitHub release..." -ForegroundColor Yellow
+    Write-Host "`n[2/2] Creating GitHub release..." -ForegroundColor Yellow
     # --latest is hard-coded. The 'b' suffix on beta tags has tricked the wrong-flag
     # mistake (--prerelease) twice before; this script does not expose that choice.
-    & gh release create $tag $zipPath `
+    # SHA256SUMS.txt is attached alongside the zip; nothing is committed here, so
+    # origin/main HEAD == tag commit after publish.
+    & gh release create $tag $zipPath $sumsPath `
         --title "SmartStreamer4 $tag" `
         --notes-file $notesPath `
         --latest
@@ -192,33 +184,13 @@ $hash = (Get-FileHash $zipPath -Algorithm SHA256).Hash.ToLower()
 Write-Host "  $zipLabel" -ForegroundColor Green
 Write-Host "  SHA256: $hash" -ForegroundColor Green
 
-Write-Host "`n[6/6] Updating artifacts\release\SHA256SUMS.txt..." -ForegroundColor Yellow
-# Idempotent: re-runs replace the existing line for this zip rather than appending
-# duplicates, so a failed build + retag + rebuild leaves a clean SHA256SUMS.txt.
+Write-Host "`n[6/6] Writing SHA256SUMS.txt sidecar..." -ForegroundColor Yellow
+# Single-line per-release sidecar in the publish dir, attached as a release
+# asset alongside the zip by Phase 2. Not tracked in git -- the publish dir
+# is under bin/ which is gitignored.
 $newLine = "$hash  $zipLabel"
-if (-not (Test-Path $sumsPath)) {
-    Set-Content -Path $sumsPath -Value $newLine -Encoding ascii
-    Write-Host "  Created SHA256SUMS.txt with first entry." -ForegroundColor Green
-} else {
-    $lines = @(Get-Content $sumsPath)
-    $matchIdx = -1
-    for ($i = 0; $i -lt $lines.Count; $i++) {
-        if ($lines[$i].EndsWith("  $zipLabel")) {
-            $matchIdx = $i
-            break
-        }
-    }
-    if ($matchIdx -lt 0) {
-        Add-Content -Path $sumsPath -Value $newLine -Encoding ascii
-        Write-Host "  Appended new entry." -ForegroundColor Green
-    } elseif ($lines[$matchIdx] -eq $newLine) {
-        Write-Host "  Entry already present and matches (no change)." -ForegroundColor Green
-    } else {
-        $lines[$matchIdx] = $newLine
-        Set-Content -Path $sumsPath -Value $lines -Encoding ascii
-        Write-Host "  Replaced existing entry (hash changed)." -ForegroundColor Green
-    }
-}
+Set-Content -Path $sumsPath -Value $newLine -Encoding ascii
+Write-Host "  Wrote $sumsPath" -ForegroundColor Green
 
 Write-Host "`nBuild phase complete." -ForegroundColor Green
 Write-Host "`nNext steps (manual):" -ForegroundColor Yellow
