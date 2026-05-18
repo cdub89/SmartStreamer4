@@ -120,13 +120,13 @@ Avalonia compiled bindings are on by default (`AvaloniaUseCompiledBindingsByDefa
 
 ## Settings persistence
 
-[AppSettings](AppSettings.cs) is the persisted shape (CW Skimmer paths, callsign, telnet base port, spot defaults, window placement, per-channel device indices, soundcard driver mode). [AppSettingsStore](AppSettingsStore.cs) serializes it to `%AppData%\SDRIQStreamer\settings.json` via `System.Text.Json`. [AppSettingsSession](AppSettingsSession.cs) wraps the store with a debounced save so rapid in-session changes don't hammer disk.
+[AppSettings](AppSettings.cs) is the persisted shape (CW Skimmer paths, callsign, telnet base port, spot defaults, window placement, per-channel device indices, soundcard driver mode). [AppSettingsStore](AppSettingsStore.cs) serializes it to `%AppData%\SmartStreamer4\settings.json` via `System.Text.Json`. [AppSettingsSession](AppSettingsSession.cs) wraps the store with a debounced save so rapid in-session changes don't hammer disk. The folder was renamed from `SDRIQStreamer` to `SmartStreamer4` in v0.1.19b; [AppDataPaths](AppDataPaths.cs) auto-migrates the legacy folder on first launch via atomic `Directory.Move`.
 
 ## Runtime artifacts
 
 | Path | Owner | Purpose |
 |------|-------|---------|
-| `%AppData%\SDRIQStreamer\settings.json` | `AppSettingsStore` | Persisted user settings. |
+| `%AppData%\SmartStreamer4\settings.json` | `AppSettingsStore` | Persisted user settings. Legacy `SDRIQStreamer` folder auto-renamed on first launch of v0.1.19b. |
 | `artifacts/cwskimmer/ini/CwSkimmer-ch{N}.ini` | `CwSkimmerLauncher` | Generated per-channel CW Skimmer INI. |
 | `artifacts/cwskimmer/ini/device-diagnostic.txt` | `CwSkimmerLauncher` | Snapshot of WinMM / DirectSound enumeration written on every launch. |
 | `artifacts/logs/streamer-status.log` | `MainWindowViewModel` | Append-only `[STREAMER]` / `[SKIMMER]` / `[TELNET]` log. |

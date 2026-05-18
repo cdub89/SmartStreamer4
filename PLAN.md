@@ -8,12 +8,6 @@ Working notes for the next beta release. For the architecture this plan applies 
 - **Last shipped beta.** v0.1.18b (2026-05-11).
 - **Working version.** csproj `<Version>` is `0.1.0` (clean numeric default). Release version comes from the git tag at HEAD per [publish-release.ps1](publish-release.ps1). Next beta cuts as `v0.1.19b`.
 
-Three commits are on `main` ahead of `origin/main`, queued for the Windows handoff that will start `v0.1.19b` work:
-
-- `7492096` Update `CwSkimmerIniModelFactory` doc to reflect both driver families (closes the first bullet of the old §2 doc-drift item).
-- `4f07c4a` Surface CW Skimmer telnet login-timeout-as-success to the Logs tab (closes the old §3).
-- `cd19ed5` Attach `SHA256SUMS.txt` to the GitHub Release instead of committing it (partially addresses [#35](https://github.com/cdub89/SmartStreamer4/issues/35)).
-
 ## Beta-blocking before v0.1.19b
 
 ### 1. Finish [#35](https://github.com/cdub89/SmartStreamer4/issues/35) — release-pipeline tail commit
@@ -32,7 +26,7 @@ In [CwSkimmerIniModelFactory.cs](src/SmartSDRIQStreamer.CWSkimmer/CwSkimmerIniMo
 
 Both are post-v0.1.18b feedback items.
 
-- **[#34 Rename `%APPDATA%\SDRIQStreamer\` → `%APPDATA%\SmartStreamer4\`](https://github.com/cdub89/SmartStreamer4/issues/34).** Two-release rollout per the issue: v0.1.19b does the copy + marker file and leaves the old folder intact; v0.1.20b deletes the old folder. Migrate-only side is bounded and low-risk if we leave the old folder alone. Recommend include in v0.1.19b.
+- **[#34 Rename `%APPDATA%\SDRIQStreamer\` → `%APPDATA%\SmartStreamer4\`](https://github.com/cdub89/SmartStreamer4/issues/34).** Single-release atomic rename via `Directory.Move` on first launch of v0.1.19b, performed in `Program.Main` before any settings load or log file open. If the legacy folder is locked (AV scanner, Explorer handle), fall back to it for the session and retry next launch. Migration outcome is surfaced to the Logs tab. No two-folder state, no marker file, no v0.1.20b follow-up. Include in v0.1.19b.
 - **[#36 Install update in place](https://github.com/cdub89/SmartStreamer4/issues/36).** Currently we surface "update available"; the ask is a download + install + relaunch flow. Larger scope (download verification, unpack-over-running-exe handling, restart). Recommend defer past v0.1.19b unless the implementation lands cleanly.
 
 ## Deferred to post-beta
@@ -73,10 +67,9 @@ A single `Action<string> reportError` (or use existing `AddStreamerStatus`) plum
 
 ## Sequencing recommendation
 
-1. Push the three queued commits on `main` to `origin/main` to clear the Windows handoff.
-2. Validate the new SHA256SUMS-on-release pipeline end-to-end on the v0.1.19b cut (#35).
-3. Triage #30. If reproducible, fix on a branch off `main`.
-4. `CwSkimmerIniModelFactory` second doc-drift bullet plus its test, in one small PR.
-5. #34 migrate-only half (no delete), in its own PR with a stand-alone test for the copy + marker logic.
-6. Cut v0.1.19b.
-7. Phase 2 / 3 / 4 / #28 / #36 in any order after the beta. #34 delete half lands in v0.1.20b.
+1. Validate the new SHA256SUMS-on-release pipeline end-to-end on the v0.1.19b cut (#35).
+2. Triage #30. If reproducible, fix on a branch off `main`.
+3. `CwSkimmerIniModelFactory` second doc-drift bullet plus its test, in one small PR.
+4. #34 atomic rename in its own commit, with a stand-alone test for the migration logic (fresh / legacy-only / already-migrated / both-present / locked).
+5. Cut v0.1.19b.
+6. Phase 2 / 3 / 4 / #28 / #36 in any order after the beta.

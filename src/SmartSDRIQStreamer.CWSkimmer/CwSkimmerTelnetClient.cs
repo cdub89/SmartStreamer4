@@ -56,7 +56,7 @@ public sealed class CwSkimmerTelnetClient : ICwSkimmerTelnetClient
                                    CancellationToken ct = default)
     {
         var effectiveCallsign = string.IsNullOrWhiteSpace(callsign)
-            ? "SDRIQStreamer"
+            ? "SmartStreamer4"
             : callsign.Trim();
 
         LogDiag($"CONNECT start host={host} port={port} callsign={effectiveCallsign}");

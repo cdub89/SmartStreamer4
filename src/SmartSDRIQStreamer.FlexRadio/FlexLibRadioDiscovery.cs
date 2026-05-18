@@ -21,7 +21,7 @@ public sealed class FlexLibRadioDiscovery : IRadioDiscovery
 
     public void Start()
     {
-        API.ProgramName = "SDRIQStreamer";
+        API.ProgramName = "SmartStreamer4";
         API.IsGUI = false;
 
         API.RadioAdded += OnFlexRadioAdded;

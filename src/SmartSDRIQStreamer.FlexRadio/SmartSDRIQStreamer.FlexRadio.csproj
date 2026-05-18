@@ -3,7 +3,7 @@
     <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyName>SDRIQStreamer.FlexRadio</AssemblyName>
+    <AssemblyName>SmartStreamer4.FlexRadio</AssemblyName>
     <RootNamespace>SDRIQStreamer.FlexRadio</RootNamespace>
   </PropertyGroup>
   <ItemGroup>

@@ -55,6 +55,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="SmartSDRIQStreamer.App.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <AvaloniaResource Include="Assets\SetupWizard\**\*.png" />
   </ItemGroup>
 </Project>

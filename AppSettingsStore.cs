@@ -1,4 +1,3 @@
-using System;
 using System.IO;
 using System.Text.Json;
 
@@ -6,14 +5,13 @@ namespace SDRIQStreamer.App;
 
 /// <summary>
 /// Loads and saves <see cref="AppSettings"/> as JSON in
-/// <c>%AppData%\SDRIQStreamer\settings.json</c>.
+/// <c>%AppData%\SmartStreamer4\settings.json</c> (legacy
+/// <c>%AppData%\SDRIQStreamer\</c> path is renamed at startup by
+/// <see cref="AppDataPaths"/>).
 /// </summary>
 public sealed class AppSettingsStore
 {
-    private static readonly string FilePath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "SDRIQStreamer",
-        "settings.json");
+    private static string FilePath => Path.Combine(AppDataPaths.Root, "settings.json");
 
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 

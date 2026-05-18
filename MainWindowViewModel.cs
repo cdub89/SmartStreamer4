@@ -387,6 +387,8 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
 
         UpdateLogsFolderSummary();
         AddStreamerStatus($"Release: {AppReleaseTag} | Commit: {AppCommitHash}");
+        foreach (var line in AppDataPaths.DrainMigrationMessages())
+            AddStreamerStatus(line);
         StartUpdateChecks();
         _discovery.Start();
     }
@@ -1351,10 +1353,7 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         if (repoRoot is not null)
             return Path.Combine(repoRoot.FullName, "artifacts", "logs", "streamer-status.log");
 
-        var appDataRoot = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "SDRIQStreamer");
-        return Path.Combine(appDataRoot, "artifacts", "logs", "streamer-status.log");
+        return Path.Combine(AppDataPaths.Root, "artifacts", "logs", "streamer-status.log");
     }
 
     private static string ResolveSpotPayloadLogPath()
@@ -1365,10 +1364,7 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         if (repoRoot is not null)
             return Path.Combine(repoRoot.FullName, "artifacts", "logs", "spot-publish.log");
 
-        var appDataRoot = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "SDRIQStreamer");
-        return Path.Combine(appDataRoot, "artifacts", "logs", "spot-publish.log");
+        return Path.Combine(AppDataPaths.Root, "artifacts", "logs", "spot-publish.log");
     }
 
     private static string ResolveLogsFolderPath()
@@ -1385,10 +1381,7 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         if (repoRoot is not null)
             return Path.Combine(repoRoot.FullName, "artifacts", "cwskimmer", "ini");
 
-        var appDataRoot = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "SDRIQStreamer");
-        return Path.Combine(appDataRoot, "artifacts", "cwskimmer", "ini");
+        return Path.Combine(AppDataPaths.Root, "artifacts", "cwskimmer", "ini");
     }
 
     private static DirectoryInfo? TryFindRepoRoot(DirectoryInfo? start)
@@ -1579,10 +1572,7 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         if (repoRoot is not null)
             return Path.Combine(repoRoot.FullName, "artifacts", "cwskimmer", "ini");
 
-        var appDataRoot = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "SDRIQStreamer");
-        return Path.Combine(appDataRoot, "artifacts", "cwskimmer", "ini");
+        return Path.Combine(AppDataPaths.Root, "artifacts", "cwskimmer", "ini");
     }
 
     private static (string ReleaseTag, string CommitHash, string Display, string BuildDate) ResolveAppBuildInfo()

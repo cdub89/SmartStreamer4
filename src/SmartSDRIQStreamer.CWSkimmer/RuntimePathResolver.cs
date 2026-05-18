@@ -16,9 +16,14 @@ internal static class RuntimePathResolver
         if (repoRoot is not null)
             return Path.Combine(repoRoot.FullName, "artifacts");
 
+        // Folder name kept in sync with AppDataPaths.CurrentFolderName in the
+        // root project (issue #34 rename). The CWSkimmer module is a library
+        // and can't reference the root project, so the name is duplicated; the
+        // root project performs the legacy-to-current rename at startup before
+        // any code here runs, so this resolver always sees the current folder.
         var appDataRoot = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "SDRIQStreamer");
+            "SmartStreamer4");
         return Path.Combine(appDataRoot, "artifacts");
     }
 
