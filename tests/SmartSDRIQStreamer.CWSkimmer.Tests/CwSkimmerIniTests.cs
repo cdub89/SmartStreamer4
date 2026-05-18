@@ -437,13 +437,14 @@ UseWdm=1
         finally { File.Delete(path); }
     }
 
-    // ── Generated INIs always force MME mode ──────────────────────────────────
+    // ── Driver family: MME default, WDM on operator opt-in ────────────────────
 
     [Fact]
-    public void Build_AlwaysForcesUseWdmFalse_RegardlessOfMasterIniSetting()
+    public void Build_DefaultsToMmeMode_WhenNoOperatorWdmIndex()
     {
-        // Master has UseWdm=1. Generated channel INI must still force MME because
-        // CW Skimmer's WDM enumeration is opaque and unreliable.
+        // Master has UseWdm=1 but the config supplies no OperatorWdmSignalDevIndex.
+        // The factory defaults to MME — WDM is opt-in via the wizard, not
+        // inherited from the master INI's UseWdm setting.
         var path = WriteIni("""
 [Audio]
 WdmSignalDev=3
@@ -458,6 +459,38 @@ UseWdm=1
             var model   = factory.Build(2, 48000, 7_040_000L, new CwSkimmerConfig { SkimmerIniPath = path });
 
             Assert.False(model.UseWdm);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public void Build_EmitsWdmMode_WhenOperatorWdmIndexSupplied()
+    {
+        // When the wizard supplies an OperatorWdmSignalDevIndex (1-based UI index
+        // as the operator sees it in CW Skimmer), the factory emits a WDM-mode
+        // INI with the index converted to 0-based for the INI file.
+        var path = WriteIni("""
+[Audio]
+WdmSignalDev=3
+WdmAudioDev=15
+MmeSignalDev=8
+MmeAudioDev=3
+UseWdm=0
+""");
+        try
+        {
+            var factory = new CwSkimmerIniModelFactory(DaxV2Finder());
+            var model   = factory.Build(
+                2, 48000, 7_040_000L,
+                new CwSkimmerConfig
+                {
+                    SkimmerIniPath           = path,
+                    OperatorWdmSignalDevIndex = 19,   // wizard supplies 1-based UI index
+                });
+
+            Assert.True(model.UseWdm);
+            Assert.Equal(18, model.WdmSignalDevIndex);   // 19 - 1 → 0-based for INI
+            Assert.Equal(15, model.WdmAudioDevIndex);    // copied from master verbatim
         }
         finally { File.Delete(path); }
     }

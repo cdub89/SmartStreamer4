@@ -5,20 +5,28 @@ using System.Globalization;
 /// <summary>
 /// Builds a <see cref="CwSkimmerIniModel"/> for a specific DAX-IQ channel.
 ///
-/// Strategy: MME-only auto-derivation.
-///   CW Skimmer's WDM mode uses an opaque kernel-streaming enumeration whose
-///   slot ordering is non-monotonic and not reproducible from outside CW Skimmer
-///   (DirectSound and WinMM both produce a different ordering on the same machine).
-///   Without that ordering we cannot compute a correct WdmSignalDev for any
-///   channel beyond the user's manually-calibrated baseline channel.
+/// Two driver families are first-class; the operator picks one in the Setup
+/// Wizard and supplies the per-channel device numbers they see in CW Skimmer.
+/// We currently can't predict whether MME or WDM is the better choice on a
+/// given host (it varies between FlexLib 4.1.x and 4.2.x, and may be host-
+/// specific beyond that), so the factory trusts the wizard selection rather
+/// than forcing a mode.
 ///
-///   MME (WinMM) is fully enumerable by name, so per-channel MmeSignalDev is
-///   resolved by looking up "DAX IQ {N}" (DAX v2) or "DAX IQ RX {N}" (DAX v1)
-///   in the live device list. MmeAudioDev (the user's local speakers/headphones)
-///   is copied verbatim from the master INI.
+/// MME branch (default; <c>UseWdm=false</c>):
+///   WinMM device names are fully enumerable, so per-channel MmeSignalDev is
+///   resolved from <see cref="CwSkimmerConfig.OperatorMmeSignalDevIndex"/>
+///   (wizard input) when present, otherwise by looking up "DAX IQ {N}"
+///   (DAX v2) or "DAX IQ RX {N}" (DAX v1) in the live device list. MmeAudioDev
+///   (the user's local speakers/headphones) is copied verbatim from the
+///   master INI.
 ///
-///   Generated channel INIs always set UseWdm=false. WDM fields are propagated
-///   from the master INI for diagnostic/sanity but are inert at runtime.
+/// WDM branch (operator opt-in; <c>UseWdm=true</c>):
+///   CW Skimmer's WDM device enumeration is opaque and not reproducible from
+///   outside the app (issue #19). When the operator supplies a per-channel
+///   <see cref="CwSkimmerConfig.OperatorWdmSignalDevIndex"/> from the wizard,
+///   the factory emits a WDM-mode INI with that index (converted 1-based UI
+///   → 0-based INI). Without an operator override the WDM fields from the
+///   master INI are propagated inertly under MME mode.
 /// </summary>
 public sealed class CwSkimmerIniModelFactory
 {
