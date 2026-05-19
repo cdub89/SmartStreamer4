@@ -4,6 +4,9 @@
 /FlexLib_API*/
 /SmartSDR-IQ-Streamer.MDC
 
+# Beta tester issue reports (logs, screenshots submitted by testers)
+/betatesters/
+
 # Build outputs
 **/bin/
 **/obj/
