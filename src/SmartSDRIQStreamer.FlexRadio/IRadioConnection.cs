@@ -82,6 +82,14 @@ public interface IRadioConnection
     event Action<IReadOnlyList<GuiClientInfo>> GuiClientsChanged;
 
     /// <summary>
+    /// Fires when a connect-path / object-lifecycle diagnostic line is available.
+    /// Subscribers route these lines into `streamer-status.log` with a `[FLEX]`
+    /// category prefix. Fires per discrete event (connect, pan/slice/IQ add or
+    /// remove, GUI client add or remove, disconnect trigger). Not a hot path.
+    /// </summary>
+    event Action<string> DiagnosticEvent;
+
+    /// <summary>
     /// Tune the given slice to <paramref name="freqMHz"/>.
     /// No-op if the slice is not found or the radio is not connected.
     /// </summary>

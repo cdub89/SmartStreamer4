@@ -299,6 +299,7 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         });
         _connection.NetworkStatusChanged   += status => UIPost(() => ApplyNetworkStatus(status));
         _connection.GuiClientsChanged      += clients => UIPost(() => OnGuiClientsChanged(clients));
+        _connection.DiagnosticEvent        += line => UIPost(() => AddDiagnosticStatus(line));
 
         // Re-evaluate Launch command whenever the stream list changes
         DaxIQStreams.CollectionChanged += (_, _) =>
@@ -1479,17 +1480,32 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     internal void AddStreamerStatus(string message)
     {
         AddFooterStatus($"[STREAMER] {message}");
-        AppendStreamerLog(message);
+        AppendStreamerLog(message, "[STREAMER]");
     }
+
+    /// <summary>
+    /// Emits a `[FLEX]`-prefixed diagnostic line into both the footer and the
+    /// streamer log. Used for connect-path / object-lifecycle traces sourced
+    /// from the FlexRadio layer (see <c>IRadioConnection.DiagnosticEvent</c>).
+    /// Volume is bounded: fires per discrete event (connect, pan/slice/IQ
+    /// add or remove, GUI client add or remove, disconnect trigger), not in
+    /// steady state.
+    /// </summary>
+    internal void AddDiagnosticStatus(string message)
+    {
+        AddFooterStatus($"[FLEX] {message}");
+        AppendStreamerLog(message, "[FLEX]");
+    }
+
     private void AddSkimmerStatus(string message) => AddFooterStatus($"[SKIMMER] {message}");
     private void AddTelnetStatus(string message) => AddFooterStatus($"[TELNET] {message}");
 
-    private static void AppendStreamerLog(string message)
+    private static void AppendStreamerLog(string message, string tag)
     {
         try
         {
             var logPath = ResolveStreamerLogPath();
-            var line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [STREAMER] {message}{Environment.NewLine}";
+            var line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {tag} {message}{Environment.NewLine}";
 
             lock (s_streamerLogSync)
             {

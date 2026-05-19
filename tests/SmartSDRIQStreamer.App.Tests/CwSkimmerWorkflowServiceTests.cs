@@ -248,6 +248,7 @@ public sealed class CwSkimmerWorkflowServiceTests
         public event Action<int>? AvgDAXKbpsChanged;
         public event Action<NetworkStatusInfo>? NetworkStatusChanged;
         public event Action<IReadOnlyList<GuiClientInfo>>? GuiClientsChanged;
+        public event Action<string>? DiagnosticEvent;
 
         // Suppress unused-event warnings in tests.
         private void _Touch()
@@ -265,6 +266,7 @@ public sealed class CwSkimmerWorkflowServiceTests
             AvgDAXKbpsChanged?.Invoke(0);
             NetworkStatusChanged?.Invoke(default!);
             GuiClientsChanged?.Invoke([]);
+            DiagnosticEvent?.Invoke(string.Empty);
         }
     }
 

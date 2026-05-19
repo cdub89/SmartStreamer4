@@ -17,6 +17,13 @@ public sealed class FlexLibRadioConnection : IRadioConnection
     private const double SliceNoOpToleranceMHz = 0.000001; // 1 Hz
     private Radio? _radio;
     private int _maxObservedNetworkPing = -1;
+    private bool _disconnectInitiatedByUs;
+    private readonly HashSet<uint> _fallbackLoggedHandles = new();
+    private readonly object _fallbackLoggedHandlesLock = new();
+
+    public event Action<string>? DiagnosticEvent;
+
+    private void EmitDiag(string line) => DiagnosticEvent?.Invoke(line);
 
     // ── Connection ───────────────────────────────────────────────────────────
 
@@ -39,15 +46,32 @@ public sealed class FlexLibRadioConnection : IRadioConnection
         flexRadio.SliceRemoved       += OnSliceRemoved;
         flexRadio.DAXIQStreamAdded   += OnDAXIQStreamAdded;
         flexRadio.DAXIQStreamRemoved += OnDAXIQStreamRemoved;
+        flexRadio.GUIClientAdded     += OnGUIClientAdded;
+        flexRadio.GUIClientRemoved   += OnGUIClientRemoved;
         _radio = flexRadio;
+
+        EmitDiag($"Dialing {flexRadio.Model} at {flexRadio.IP}:{flexRadio.CommandPort} (serial={flexRadio.Serial}).");
 
         bool connected = await System.Threading.Tasks.Task.Run(() => flexRadio.Connect());
 
         if (!connected)
         {
+            EmitDiag($"Dial failed: {flexRadio.Model} at {flexRadio.IP}.");
             UnwireRadioEvents(flexRadio);
             _radio = null;
             return false;
+        }
+
+        EmitDiag($"Radio versions: {flexRadio.Versions ?? "(unavailable)"}.");
+        EmitDiag($"Radio GuiClientIPs={flexRadio.GuiClientIPs ?? "(none)"}, GuiClientHosts={flexRadio.GuiClientHosts ?? "(none)"}.");
+
+        // Snapshot GUI clients already present at connect time. The GUIClientAdded
+        // event fires only for clients that arrive *after* we subscribe, so
+        // discovery-populated entries would be silent without this loop.
+        lock (flexRadio.GuiClientsLockObj)
+        {
+            foreach (var existing in flexRadio.GuiClients)
+                OnGUIClientAdded(existing);
         }
 
         // Snapshot lists already populated by FlexLib during connect
@@ -76,6 +100,8 @@ public sealed class FlexLibRadioConnection : IRadioConnection
         if (_radio is null) return;
         var radio = _radio;
         _radio = null;
+        _disconnectInitiatedByUs = true;
+        EmitDiag("Disconnect: trigger=operator.");
         UnwireRadioEvents(radio);
 
         foreach (var pan in _flexPanadapters.Values)
@@ -97,7 +123,9 @@ public sealed class FlexLibRadioConnection : IRadioConnection
         NetworkStatusChanged?.Invoke(NetworkStatus);
         _guiClients = Array.Empty<GuiClientInfo>();
         GuiClientsChanged?.Invoke(_guiClients);
+        lock (_fallbackLoggedHandlesLock) _fallbackLoggedHandles.Clear();
         ConnectionStateChanged?.Invoke(false);
+        _disconnectInitiatedByUs = false;
     }
 
     private void UnwireRadioEvents(Radio radio)
@@ -109,6 +137,8 @@ public sealed class FlexLibRadioConnection : IRadioConnection
         radio.SliceRemoved       -= OnSliceRemoved;
         radio.DAXIQStreamAdded   -= OnDAXIQStreamAdded;
         radio.DAXIQStreamRemoved -= OnDAXIQStreamRemoved;
+        radio.GUIClientAdded     -= OnGUIClientAdded;
+        radio.GUIClientRemoved   -= OnGUIClientRemoved;
     }
 
     private void OnRadioPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -116,7 +146,12 @@ public sealed class FlexLibRadioConnection : IRadioConnection
         switch (e.PropertyName)
         {
             case "Connected":
-                ConnectionStateChanged?.Invoke(_radio?.Connected ?? false);
+                {
+                    var nowConnected = _radio?.Connected ?? false;
+                    if (!nowConnected && !_disconnectInitiatedByUs)
+                        EmitDiag("Disconnect: trigger=flexlib.");
+                    ConnectionStateChanged?.Invoke(nowConnected);
+                }
                 break;
             case "AvgDAXkbps":
                 if (_radio is not null) AvgDAXKbpsChanged?.Invoke(_radio.AvgDAXkbps);
@@ -145,6 +180,9 @@ public sealed class FlexLibRadioConnection : IRadioConnection
     private void OnPanadapterAdded(Panadapter pan, Waterfall _)
     {
         var info = TrackPanadapter(pan);
+        EmitDiag(
+            $"Panadapter added: streamId=0x{info.StreamId:X}, ClientHandle=0x{info.ClientHandle:X}, "
+            + $"station={info.ClientStation}, DAX-IQ ch={info.DAXIQChannel}, center={info.CenterFreqMHz:F6} MHz.");
         PanadapterAdded?.Invoke(info);
     }
 
@@ -153,7 +191,10 @@ public sealed class FlexLibRadioConnection : IRadioConnection
         pan.PropertyChanged -= OnPanadapterPropertyChanged;
         _flexPanadapters.TryRemove(pan.StreamID, out _);
         if (_panadapters.TryRemove(pan.StreamID, out var info))
+        {
+            EmitDiag($"Panadapter removed: streamId=0x{info.StreamId:X}, station={info.ClientStation}.");
             PanadapterRemoved?.Invoke(info);
+        }
     }
 
     private PanadapterInfo TrackPanadapter(Panadapter pan)
@@ -198,6 +239,9 @@ public sealed class FlexLibRadioConnection : IRadioConnection
     private void OnSliceAdded(Slice slc)
     {
         var info = TrackSlice(slc);
+        EmitDiag(
+            $"Slice added: {info.Letter}, station={info.ClientStation}, "
+            + $"pan=0x{info.PanadapterStreamId:X}, freq={info.FreqMHz:F6} MHz.");
         SliceAdded?.Invoke(info);
     }
 
@@ -206,7 +250,10 @@ public sealed class FlexLibRadioConnection : IRadioConnection
         slc.PropertyChanged -= OnSlicePropertyChanged;
         _flexSlices.TryRemove(SliceKey(slc), out _);
         if (_slices.TryRemove(SliceKey(slc), out var info))
+        {
+            EmitDiag($"Slice removed: {info.Letter}, station={info.ClientStation}.");
             SliceRemoved?.Invoke(info);
+        }
     }
 
     private SliceInfo TrackSlice(Slice slc)
@@ -288,6 +335,13 @@ public sealed class FlexLibRadioConnection : IRadioConnection
 
         var info = ToDaxIQStreamInfo(iq);
         _daxIQStreams[iq.DAXIQChannel] = info;
+        // The DAX-IQ stream's ClientHandle is the bridging session that opened
+        // the stream (typically DAX-the-app), not the GUI client that owns the
+        // panadapter. It's expected to be a non-GUI handle, so suppress the
+        // fallback warning for this resolve.
+        EmitDiag(
+            $"DAX-IQ stream added: ch={info.DAXIQChannel}, ClientHandle=0x{info.ClientHandle:X}, "
+            + $"station={ResolveStation(info.ClientHandle, logFallback: false)}, sampleRate={info.SampleRate}.");
         DaxIQStreamAdded?.Invoke(info);
     }
 
@@ -297,7 +351,10 @@ public sealed class FlexLibRadioConnection : IRadioConnection
         _flexDaxIQStreams.TryRemove(iq.DAXIQChannel, out _);
 
         if (_daxIQStreams.TryRemove(iq.DAXIQChannel, out var info))
+        {
+            EmitDiag($"DAX-IQ stream removed: ch={info.DAXIQChannel}.");
             DaxIQStreamRemoved?.Invoke(info);
+        }
     }
 
     private void OnDAXIQStreamPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -398,7 +455,9 @@ public sealed class FlexLibRadioConnection : IRadioConnection
     // ── Own client handle ────────────────────────────────────────────────────
 
     public uint OwnClientHandle    => _radio?.ClientHandle ?? 0;
-    public string OwnClientStation => ResolveStation(OwnClientHandle);
+    // Our own client handle is a non-GUI handle by definition (API.IsGUI = false),
+    // so it will never appear in GuiClients. Suppress the fallback warning.
+    public string OwnClientStation => ResolveStation(OwnClientHandle, logFallback: false);
 
     // ── Request DAX-IQ stream ────────────────────────────────────────────────
 
@@ -602,12 +661,55 @@ public sealed class FlexLibRadioConnection : IRadioConnection
         return $"{slc.ClientHandle:X8}:{letter}";
     }
 
-    private string ResolveStation(uint clientHandle)
+    /// <summary>
+    /// Resolve a station name from a client handle by looking it up in
+    /// <c>_radio.GuiClients</c>. If the handle is not in the list, returns
+    /// the hex form (<c>0x...</c>).
+    ///
+    /// <paramref name="logFallback"/>: emit a diagnostic warning when the
+    /// fallback path is taken. Pass <c>false</c> when calling from a context
+    /// where a non-GUI handle is expected (e.g. our own client handle, or
+    /// the DAX-the-app session handle that owns a DAX-IQ stream) so benign
+    /// not-in-list resolutions don't spam the log. Pass <c>true</c> (default)
+    /// when resolving a handle that should belong to a GUI client (pan owner,
+    /// slice owner) so genuinely orphaned attribution is surfaced. Dedup is
+    /// per handle per session via <c>_fallbackLoggedHandles</c>.
+    /// </summary>
+    private string ResolveStation(uint clientHandle, bool logFallback = true)
     {
         var client = _radio?.GuiClients?.FirstOrDefault(c => c.ClientHandle == clientHandle);
-        return string.IsNullOrWhiteSpace(client?.Station)
-            ? $"0x{clientHandle:X}"
-            : client.Station;
+        if (!string.IsNullOrWhiteSpace(client?.Station))
+            return client.Station;
+
+        if (logFallback)
+        {
+            bool firstSighting;
+            lock (_fallbackLoggedHandlesLock)
+                firstSighting = _fallbackLoggedHandles.Add(clientHandle);
+
+            if (firstSighting)
+            {
+                var count = _radio?.GuiClients?.Count ?? 0;
+                EmitDiag(
+                    $"ResolveStation fallback: handle=0x{clientHandle:X} not in GuiClients (n={count}), using hex name.");
+            }
+        }
+
+        return $"0x{clientHandle:X}";
+    }
+
+    // ── GUI clients — per-event diagnostic emission ──────────────────────────
+
+    private void OnGUIClientAdded(GUIClient client)
+    {
+        EmitDiag(
+            $"GUI client added: handle=0x{client.ClientHandle:X}, "
+            + $"program={client.Program ?? "(none)"}, station={client.Station ?? "(none)"}.");
+    }
+
+    private void OnGUIClientRemoved(GUIClient client)
+    {
+        EmitDiag($"GUI client removed: handle=0x{client.ClientHandle:X}, station={client.Station ?? "(none)"}.");
     }
 
     private static string NormalizeSource(string? source)
