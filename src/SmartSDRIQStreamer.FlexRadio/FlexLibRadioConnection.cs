@@ -62,7 +62,9 @@ public sealed class FlexLibRadioConnection : IRadioConnection
             return false;
         }
 
-        EmitDiag($"Radio versions: {flexRadio.Versions ?? "(unavailable)"}.");
+        // Versions is populated async by FlexLib's UpdateVersions reply handler
+        // (Radio.cs:7127); the [FLEX] log line lives in OnRadioPropertyChanged's
+        // "Versions" case so the value actually surfaces after the radio replies.
         EmitDiag($"Radio GuiClientIPs={flexRadio.GuiClientIPs ?? "(none)"}, GuiClientHosts={flexRadio.GuiClientHosts ?? "(none)"}.");
 
         // Snapshot GUI clients already present at connect time. The GUIClientAdded
@@ -162,6 +164,15 @@ public sealed class FlexLibRadioConnection : IRadioConnection
                 break;
             case "GuiClients":
                 RefreshGuiClients();
+                break;
+            // Bug fix 2026-05-19 (Radio versions always "(unavailable)" in
+            // [FLEX] log): flexRadio.Versions is populated async by FlexLib's
+            // UpdateVersions reply handler (Radio.cs:7127). Reading it
+            // synchronously right after Connect() returns is too early.
+            // Defer to this PropertyChanged event so the value surfaces.
+            case "Versions":
+                if (_radio?.Versions is { Length: > 0 } v)
+                    EmitDiag($"Radio versions: {v}.");
                 break;
         }
     }

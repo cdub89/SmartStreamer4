@@ -797,6 +797,18 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         StopCwSkimmerForSliceCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(VisibleClientGroups));
 
+        // Bug fix 2026-05-19 (multi-station LO leak, WX7V repro on b9affb64):
+        // SUPERWIN10's pan update was pushing its 7029 Hz center as LO_FREQ to
+        // CW Skimmer (running for Maestro C on 80m), held ~14s before recovery.
+        // Root cause: IsOwnStationPanChannel inside TrySyncSkimmerForPanChange
+        // only checks "any pan on this DAX-IQ ch belongs to control" — both
+        // stations had a pan on ch=1. Filter at the source instead.
+        if (!string.Equals(pan.ClientStation, SelectedControlStation, StringComparison.OrdinalIgnoreCase))
+        {
+            EvaluateDaxChannelCollisions();
+            return;
+        }
+
         var sampleRate = DaxIQStreams.FirstOrDefault(s => s.DAXIQChannel == pan.DAXIQChannel)?.SampleRate ?? 48_000;
         TrySyncSkimmerForPanChange(
             pan.DAXIQChannel,
