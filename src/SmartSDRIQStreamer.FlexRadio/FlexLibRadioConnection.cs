@@ -447,8 +447,14 @@ public sealed class FlexLibRadioConnection : IRadioConnection
         List<GuiClientInfo> snapshot;
         lock (radio.GuiClientsLockObj)
         {
+            // See ResolveStation for the issue #30 rationale: normalize station
+            // here too so the GuiClients[] snapshot (drives dropdown rebuild and
+            // LogGuiClientsSnapshot) agrees with pan/slice ClientStation values.
             snapshot = radio.GuiClients
-                .Select(c => new GuiClientInfo(c.ClientHandle, c.Program ?? string.Empty, c.Station ?? string.Empty))
+                .Select(c => new GuiClientInfo(
+                    c.ClientHandle,
+                    c.Program?.Trim() ?? string.Empty,
+                    c.Station?.Trim() ?? string.Empty))
                 .ToList();
         }
 
@@ -689,8 +695,16 @@ public sealed class FlexLibRadioConnection : IRadioConnection
     private string ResolveStation(uint clientHandle, bool logFallback = true)
     {
         var client = _radio?.GuiClients?.FirstOrDefault(c => c.ClientHandle == clientHandle);
-        if (!string.IsNullOrWhiteSpace(client?.Station))
-            return client.Station;
+        // Bug fix 2026-05-19 (issue #30, AI9T repro): Trim() the station name so
+        // a stray trailing space on the Maestro/SmartSDR side (operator-entered
+        // in the station-name field) doesn't desync from the discovery-trimmed
+        // dropdown selection. Without this, VisibleClientGroups filters out
+        // every pan/slice because "Maestro " (event-time) != "Maestro" (dropdown).
+        // FlexLibRadioDiscovery.ResolveStations already trims at discovery time;
+        // this aligns the runtime path with that.
+        var station = client?.Station?.Trim();
+        if (!string.IsNullOrEmpty(station))
+            return station;
 
         if (logFallback)
         {
