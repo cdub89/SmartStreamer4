@@ -709,6 +709,7 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         RunAudioIndexChangeDetection(normalized.DAXIQChannel);
         TrySyncSkimmerForPanChange(
             normalized.DAXIQChannel,
+            normalized.ClientHandle,
             normalized.CenterFreqMHz,
             normalized.SampleRate,
             "DAX stream update");
@@ -797,21 +798,10 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         StopCwSkimmerForSliceCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(VisibleClientGroups));
 
-        // Bug fix 2026-05-19 (multi-station LO leak, WX7V repro on b9affb64):
-        // SUPERWIN10's pan update was pushing its 7029 Hz center as LO_FREQ to
-        // CW Skimmer (running for Maestro C on 80m), held ~14s before recovery.
-        // Root cause: IsOwnStationPanChannel inside TrySyncSkimmerForPanChange
-        // only checks "any pan on this DAX-IQ ch belongs to control" — both
-        // stations had a pan on ch=1. Filter at the source instead.
-        if (!string.Equals(pan.ClientStation, SelectedControlStation, StringComparison.OrdinalIgnoreCase))
-        {
-            EvaluateDaxChannelCollisions();
-            return;
-        }
-
         var sampleRate = DaxIQStreams.FirstOrDefault(s => s.DAXIQChannel == pan.DAXIQChannel)?.SampleRate ?? 48_000;
         TrySyncSkimmerForPanChange(
             pan.DAXIQChannel,
+            pan.ClientHandle,
             pan.CenterFreqMHz,
             sampleRate,
             "Panadapter update");
@@ -2215,15 +2205,19 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         return string.Equals(slice.ClientStation, SelectedControlStation, StringComparison.OrdinalIgnoreCase);
     }
 
-    private bool IsOwnStationPanChannel(int daxIqChannel)
-    {
-        if (string.IsNullOrWhiteSpace(SelectedControlStation))
-            return false;
-
-        return _connection.Panadapters.Any(p =>
-            p.DAXIQChannel == daxIqChannel &&
-            string.Equals(p.ClientStation, SelectedControlStation, StringComparison.OrdinalIgnoreCase));
-    }
+    // Bug fix 2026-05-19 (multi-station LO leak, WX7V repro). With two
+    // stations on a shared DAX-IQ channel the prior channel-only gate
+    // returned true for any source ("any pan on ch=N ours?") and pushed
+    // the foreign center as our LO. Match the source ClientHandle to a
+    // pan owned by SelectedControlStation so only own-station pan AND
+    // stream updates drive the sync. Extends c908c58's UpdatePan-only
+    // fix to OnDaxIQStreamUpdated.
+    private bool IsOwnStationPanSource(int daxIqChannel, uint sourceClientHandle) =>
+        DaxChannelOwnership.IsSourceOwnedByStation(
+            _connection.Panadapters,
+            daxIqChannel,
+            sourceClientHandle,
+            SelectedControlStation);
 
     private static double GetEffectiveRxFrequencyMHz(SliceInfo slice)
     {
@@ -2285,14 +2279,19 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         return (long)Math.Round(effectiveRxMHz * 1_000_000d);
     }
 
-    private void TrySyncSkimmerForPanChange(int daxIqChannel, double centerFreqMHz, int sampleRateHz, string reason)
+    private void TrySyncSkimmerForPanChange(
+        int daxIqChannel,
+        uint sourceClientHandle,
+        double centerFreqMHz,
+        int sampleRateHz,
+        string reason)
     {
         if (!TelnetClusterEnabled ||
             !IsCwSkimmerRunning ||
             daxIqChannel <= 0 ||
             centerFreqMHz <= 0 ||
             sampleRateHz <= 0 ||
-            !IsOwnStationPanChannel(daxIqChannel))
+            !IsOwnStationPanSource(daxIqChannel, sourceClientHandle))
         {
             return;
         }

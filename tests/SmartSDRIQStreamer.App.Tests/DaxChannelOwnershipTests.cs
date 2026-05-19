@@ -150,4 +150,112 @@ public sealed class DaxChannelOwnershipTests
         Assert.Single(foreign);
         Assert.Equal(MaestroStation, foreign[0]);
     }
+
+    // Pins the LO-sync chokepoint gate. Reported 2026-05-19 by WX7V: two
+    // stations on a shared DAX-IQ channel could each push their own pan
+    // center as our LO because the prior gate only asked "any pan on this
+    // channel ours?" The fix passes the source ClientHandle and requires
+    // it to match a pan owned by SelectedControlStation.
+    private const uint MaestroHandle = 0x1000;
+    private const uint Wx7vHandle    = 0x2000;
+
+    [Fact]
+    public void IsSourceOwnedByStation_OwnPanOwnHandle_ReturnsTrue()
+    {
+        var pans = new List<PanadapterInfo>
+        {
+            new(StreamId: 100, CenterFreqMHz: 7.041, DAXIQChannel: 1,
+                ClientStation: MaestroStation, ClientHandle: MaestroHandle),
+        };
+
+        Assert.True(DaxChannelOwnership.IsSourceOwnedByStation(
+            pans, daxIqChannel: 1, sourceClientHandle: MaestroHandle, ownStation: MaestroStation));
+    }
+
+    [Fact]
+    public void IsSourceOwnedByStation_ForeignPanForeignHandle_ReturnsFalse()
+    {
+        // Original c908c58 repro: Maestro on 80m, SUPERWIN10's pan-update
+        // event arrives with the foreign handle and the foreign center.
+        var pans = new List<PanadapterInfo>
+        {
+            new(StreamId: 100, CenterFreqMHz: 3.555, DAXIQChannel: 1,
+                ClientStation: MaestroStation, ClientHandle: MaestroHandle),
+            new(StreamId: 200, CenterFreqMHz: 7.029, DAXIQChannel: 1,
+                ClientStation: Wx7vStation,    ClientHandle: Wx7vHandle),
+        };
+
+        Assert.False(DaxChannelOwnership.IsSourceOwnedByStation(
+            pans, daxIqChannel: 1, sourceClientHandle: Wx7vHandle, ownStation: MaestroStation));
+    }
+
+    [Fact]
+    public void IsSourceOwnedByStation_OwnStationHasChannelButSourceIsForeign_ReturnsFalse()
+    {
+        // The leak path the chokepoint fix closes: own station has a pan
+        // on the channel (so the old "any pan ours?" check passed) but the
+        // source firing this update is the foreign station's.
+        var pans = new List<PanadapterInfo>
+        {
+            new(StreamId: 100, CenterFreqMHz: 3.555, DAXIQChannel: 1,
+                ClientStation: MaestroStation, ClientHandle: MaestroHandle),
+            new(StreamId: 200, CenterFreqMHz: 7.029, DAXIQChannel: 1,
+                ClientStation: Wx7vStation,    ClientHandle: Wx7vHandle),
+        };
+
+        Assert.False(DaxChannelOwnership.IsSourceOwnedByStation(
+            pans, daxIqChannel: 1, sourceClientHandle: Wx7vHandle, ownStation: MaestroStation));
+    }
+
+    [Fact]
+    public void IsSourceOwnedByStation_HandleZero_ReturnsFalse()
+    {
+        var pans = new List<PanadapterInfo>
+        {
+            new(StreamId: 100, CenterFreqMHz: 7.041, DAXIQChannel: 1,
+                ClientStation: MaestroStation, ClientHandle: MaestroHandle),
+        };
+
+        Assert.False(DaxChannelOwnership.IsSourceOwnedByStation(
+            pans, daxIqChannel: 1, sourceClientHandle: 0, ownStation: MaestroStation));
+    }
+
+    [Fact]
+    public void IsSourceOwnedByStation_BlankOwnStation_ReturnsFalse()
+    {
+        var pans = new List<PanadapterInfo>
+        {
+            new(StreamId: 100, CenterFreqMHz: 7.041, DAXIQChannel: 1,
+                ClientStation: MaestroStation, ClientHandle: MaestroHandle),
+        };
+
+        Assert.False(DaxChannelOwnership.IsSourceOwnedByStation(
+            pans, daxIqChannel: 1, sourceClientHandle: MaestroHandle, ownStation: ""));
+    }
+
+    [Fact]
+    public void IsSourceOwnedByStation_StationCaseInsensitive_ReturnsTrue()
+    {
+        var pans = new List<PanadapterInfo>
+        {
+            new(StreamId: 100, CenterFreqMHz: 7.041, DAXIQChannel: 1,
+                ClientStation: MaestroStation, ClientHandle: MaestroHandle),
+        };
+
+        Assert.True(DaxChannelOwnership.IsSourceOwnedByStation(
+            pans, daxIqChannel: 1, sourceClientHandle: MaestroHandle, ownStation: "maestro c"));
+    }
+
+    [Fact]
+    public void IsSourceOwnedByStation_ChannelMismatch_ReturnsFalse()
+    {
+        var pans = new List<PanadapterInfo>
+        {
+            new(StreamId: 100, CenterFreqMHz: 7.041, DAXIQChannel: 2,
+                ClientStation: MaestroStation, ClientHandle: MaestroHandle),
+        };
+
+        Assert.False(DaxChannelOwnership.IsSourceOwnedByStation(
+            pans, daxIqChannel: 1, sourceClientHandle: MaestroHandle, ownStation: MaestroStation));
+    }
 }

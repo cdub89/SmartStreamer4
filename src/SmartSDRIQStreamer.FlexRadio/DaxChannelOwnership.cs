@@ -52,4 +52,30 @@ public static class DaxChannelOwnership
             .Where(s => !string.Equals(s, ownStation, StringComparison.OrdinalIgnoreCase))
             .ToList();
     }
+
+    /// <summary>
+    /// True when a pan/stream update identified by
+    /// <paramref name="sourceClientHandle"/> on <paramref name="daxIqChannel"/>
+    /// originates from a panadapter owned by <paramref name="ownStation"/>.
+    /// Used as the LO-sync chokepoint gate so foreign-station updates on a
+    /// shared DAX-IQ channel cannot push their center as our LO.
+    /// </summary>
+    public static bool IsSourceOwnedByStation(
+        IReadOnlyList<PanadapterInfo> panadapters,
+        int daxIqChannel,
+        uint sourceClientHandle,
+        string ownStation)
+    {
+        ArgumentNullException.ThrowIfNull(panadapters);
+        if (daxIqChannel <= 0 || sourceClientHandle == 0 ||
+            string.IsNullOrWhiteSpace(ownStation))
+        {
+            return false;
+        }
+
+        return panadapters.Any(p =>
+            p.DAXIQChannel == daxIqChannel &&
+            p.ClientHandle == sourceClientHandle &&
+            string.Equals(p.ClientStation, ownStation, StringComparison.OrdinalIgnoreCase));
+    }
 }
