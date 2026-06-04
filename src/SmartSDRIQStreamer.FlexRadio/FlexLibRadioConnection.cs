@@ -472,9 +472,31 @@ public sealed class FlexLibRadioConnection : IRadioConnection
     // ── Own client handle ────────────────────────────────────────────────────
 
     public uint OwnClientHandle    => _radio?.ClientHandle ?? 0;
-    // Our own client handle is a non-GUI handle by definition (API.IsGUI = false),
-    // so it will never appear in GuiClients. Suppress the fallback warning.
-    public string OwnClientStation => ResolveStation(OwnClientHandle, logFallback: false);
+
+    // Bug fix 2026-06-04 (issue #45): our own client handle is a non-GUI handle
+    // (API.IsGUI = false) so it never appears in GuiClients; the prior
+    // ResolveStation call therefore always hit the hex fallback and leaked
+    // "0x0"/"0x..." into the connected-station header whenever no named control
+    // station was selected (e.g. connecting to a radio whose GUI client has no
+    // station name). Return empty on no real station so the header and
+    // EnsureSelectedControlStation fall back to "Unknown Station" / a present
+    // station instead of a raw handle. Chosen over a ViewModel "starts with 0x"
+    // display heuristic because that could suppress a legitimately-named
+    // station. Reported by a betatester on v0.1.19b.
+    public string OwnClientStation
+    {
+        get
+        {
+            var handle = OwnClientHandle;
+            if (handle == 0) return string.Empty;
+            // Read the already-snapshotted, trimmed _guiClients list rather than
+            // the live _radio.GuiClients collection: FlexLib mutates the latter on
+            // its event threads, so a lock-free enumeration here could race. The
+            // snapshot reference is reassigned atomically by RefreshGuiClients.
+            return _guiClients.FirstOrDefault(c => c.ClientHandle == handle)?.Station
+                ?? string.Empty;
+        }
+    }
 
     // ── Request DAX-IQ stream ────────────────────────────────────────────────
 

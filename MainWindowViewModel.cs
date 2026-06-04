@@ -83,6 +83,13 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     public string OwnClientStation { get; private set; } = string.Empty;
     public string SelectedControlStation { get; private set; } = string.Empty;
 
+    // Issue #45: tracks whether SelectedControlStation has been observed present
+    // in a GUI-client snapshot this session. Disconnect detection only fires
+    // after the station has been seen, so a partial/initial snapshot during
+    // connect cannot raise a false "station disconnected". Reset whenever the
+    // selected station changes (see SetSelectedControlStation).
+    private bool _controlStationSeen;
+
     // ── CW Skimmer ────────────────────────────────────────────────────────────
 
     [ObservableProperty]
@@ -586,6 +593,42 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     {
         if (!IsConnected) return;
         LogGuiClientsSnapshot(clients);
+
+        // Bug fix 2026-06-04 (issue #45): when the GUI client we were controlling
+        // (Maestro/SmartSDR station) disconnects while the radio TCP session stays
+        // up, FlexLib correctly keeps Radio.Connected = true, so the old code left
+        // the header pinned to the now-absent station ("connected to the radio with
+        // no client"). RadioRemoved cannot fix this (the radio is still present), so
+        // detect the loss of our control station here. Reported by a betatester on
+        // v0.1.19b.
+        //
+        // The "(unknown)" placeholder and an empty selection are never real GUI
+        // stations, so they are not tracked. Disconnect is only declared after the
+        // station has been seen present this session (_controlStationSeen): a
+        // partial or initial snapshot during connect must not raise a false loss.
+        if (string.IsNullOrWhiteSpace(SelectedControlStation) ||
+            string.Equals(SelectedControlStation, RadioConnectTarget.UnknownStation, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        if (clients.Any(c => string.Equals(c.Station, SelectedControlStation, StringComparison.OrdinalIgnoreCase)))
+        {
+            _controlStationSeen = true;
+            return;
+        }
+
+        if (!_controlStationSeen)
+            return;
+
+        AddStreamerStatus($"Control station '{SelectedControlStation}' disconnected.");
+        // Re-resolve only from stations still present in THIS snapshot, not from
+        // _connection.Slices: a GUI-client removal can arrive before the matching
+        // pan/slice removals, so the slice list may still hold the just-departed
+        // station and EnsureSelectedControlStation would re-pin it. Empty -> the
+        // header falls back to "Unknown Station".
+        var replacement = clients
+            .Select(c => c.Station)
+            .FirstOrDefault(s => !string.IsNullOrWhiteSpace(s)) ?? string.Empty;
+        SetSelectedControlStation(replacement);
     }
 
     private void LogGuiClientsSnapshot(IReadOnlyList<GuiClientInfo> clients)
@@ -2358,6 +2401,9 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
             return;
 
         SelectedControlStation = station;
+        // Issue #45: the new station has not yet been confirmed present in a
+        // GUI-client snapshot, so re-arm the seen gate before disconnect detection.
+        _controlStationSeen = false;
         OnPropertyChanged(nameof(SelectedControlStation));
         OnPropertyChanged(nameof(VisibleClientGroups));
         OnPropertyChanged(nameof(ConnectTargetHeaderText));
