@@ -101,7 +101,16 @@ public static class DigitalConfigProvisioner
 
         try
         {
-            var provisioned = ApplyOverrides(DigitalTemplates.ForEngine(engine.Engine), values);
+            // Preserve an existing instance config and re-apply only our keys.
+            // WSJT-X / JTDX persist window geometry, the last protocol (FT8 /
+            // FT4 / WSPR), and band settings into this file on exit, so seeding
+            // from the bundled template every launch would wipe them. Seed from
+            // the clean template only on the first run (no file yet).
+            var baseIni = File.Exists(instancePath)
+                ? File.ReadAllText(instancePath)
+                : DigitalTemplates.ForEngine(engine.Engine);
+
+            var provisioned = ApplyOverrides(baseIni, values);
             Directory.CreateDirectory(InstanceConfigDir(engine, rigName));
             File.WriteAllText(instancePath, provisioned);
             return new DigitalProvisionResult(DigitalProvisionOutcome.Success, instancePath);

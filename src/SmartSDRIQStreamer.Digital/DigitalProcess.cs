@@ -41,6 +41,9 @@ public sealed class ProcessDigitalProcessRunner : IDigitalProcessRunner
 
     private sealed class ProcessWrapper : IDigitalProcess
     {
+        // How long to let the engine shut down gracefully before forcing it.
+        private const int GracefulExitMilliseconds = 5_000;
+
         private readonly Process _process;
 
         public ProcessWrapper(Process process)
@@ -61,16 +64,44 @@ public sealed class ProcessDigitalProcessRunner : IDigitalProcessRunner
             }
         }
 
+        // Bug fix 2026-06-08: stopping WSJT-X/JTDX from the streamer lost the
+        // engine's settings (window geometry, last protocol FT8/FT4/WSPR, band),
+        // while closing from the engine's own window saved them. Root cause: a
+        // hard Process.Kill terminates the process before it runs its normal
+        // shutdown, which is when WSJT-X writes its .ini. Fix: ask the main
+        // window to close (so it saves), and force-kill only if it doesn't exit
+        // in time. The wait runs off-thread so the UI (caller) isn't blocked;
+        // chosen over Kill so operator settings persist, matching expectations.
         public void Kill()
         {
             try
             {
-                if (!_process.HasExited)
+                if (_process.HasExited)
+                    return;
+
+                if (!_process.CloseMainWindow())
+                {
+                    // No responsive main window to close gracefully — force it.
                     _process.Kill(entireProcessTree: true);
+                    return;
+                }
+
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        if (!_process.WaitForExit(GracefulExitMilliseconds) && !_process.HasExited)
+                            _process.Kill(entireProcessTree: true);
+                    }
+                    catch
+                    {
+                        // Process already gone / access denied — treat as stopped.
+                    }
+                });
             }
             catch
             {
-                // Process already gone / access denied — treat as stopped.
+                try { if (!_process.HasExited) _process.Kill(entireProcessTree: true); } catch { }
             }
         }
     }

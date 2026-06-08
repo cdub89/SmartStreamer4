@@ -119,6 +119,20 @@ public partial class SetupWizardWindow : Window
         foreach (var rawLine in lines)
         {
             var line = rawLine.TrimEnd();
+
+            // Bug fix 2026-06-08: the guide's whole preamble (the "# " title and
+            // the intro paragraph before the first "## " step) was dropped, so
+            // it never appeared in the Setup Guide. Root cause: pages only opened
+            // on "## ", leaving the preamble with no title, which the adds below
+            // skip. Fix: open the intro page on the top-level "# " heading so the
+            // preamble is captured as the first page. ("## " fails this prefix.)
+            if (line.StartsWith("# ", StringComparison.Ordinal))
+            {
+                currentTitle = line[2..].Trim();
+                bodyBuilder.Clear();
+                continue;
+            }
+
             if (line.StartsWith("## ", StringComparison.Ordinal))
             {
                 if (!string.IsNullOrWhiteSpace(currentTitle))

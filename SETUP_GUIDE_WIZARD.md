@@ -7,6 +7,9 @@ once both CW Skimmer paths are set). The wizard launches CW Skimmer, walks
 the Settings tabs, and captures the per-PC MME and WDM device numbers needed
 for multi-channel operation.
 
+**Digital Modes (WSJT-X / JTDX):** this guide currently covers CW Skimmer
+(CW Mode). Setup guidance for Digital Mode is coming soon.
+
 ---
 
 ## Step 0 - Prerequisites Checklist

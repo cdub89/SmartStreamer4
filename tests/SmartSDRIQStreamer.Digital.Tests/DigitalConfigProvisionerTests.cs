@@ -88,6 +88,47 @@ public sealed class DigitalConfigProvisionerTests
                 Directory.Delete(dir, recursive: true);
         }
     }
+
+    [Fact]
+    public void Provision_PreservesExistingInstanceConfig_ReapplyingOnlyBindingKeys()
+    {
+        // WSJT-X / JTDX rewrite the instance config on exit (window geometry,
+        // last protocol, band). A second Provision must preserve those and only
+        // re-apply our keys -> seed from template on first run, preserve after.
+        var engine = DigitalEngines.WsjtX(@"C:\WSJT\wsjtx\bin\wsjtx.exe");
+        var rigName = $"UnitTest-{Guid.NewGuid():N}";
+        var values = new DigitalProvisionValues("WX7V", "EM12ou", "FlexRadio 6xxx", 1, 60_000, 2_237);
+
+        try
+        {
+            // First run: seed from bundled template.
+            DigitalConfigProvisioner.Provision(engine, rigName, values);
+            var path = DigitalConfigProvisioner.InstanceConfigPath(engine, rigName);
+
+            // Simulate the engine saving operator changes on exit.
+            var saved = File.ReadAllText(path)
+                .Replace("Mode=FT8", "Mode=FT4")
+                + Environment.NewLine + "[MainWindow]" + Environment.NewLine
+                + @"geometry=@ByteArray(\x1\x2\x3)";
+            File.WriteAllText(path, saved);
+
+            // Second run with a changed binding (different slice values).
+            var rebind = new DigitalProvisionValues("WX7V", "EM12ou", "FlexRadio 6xxx", 2, 60_001, 2_238);
+            DigitalConfigProvisioner.Provision(engine, rigName, rebind);
+
+            var result = File.ReadAllText(path);
+            Assert.Contains("Mode=FT4", result);                          // operator protocol preserved
+            Assert.Contains(@"geometry=@ByteArray(\x1\x2\x3)", result);   // window geometry preserved
+            Assert.Contains("SoundInName=DAX RX 2 (FlexRadio DAX)", result); // binding re-applied
+            Assert.Contains("CATNetworkPort=127.0.0.1:60001", result);
+        }
+        finally
+        {
+            var dir = DigitalConfigProvisioner.InstanceConfigDir(engine, rigName);
+            if (Directory.Exists(dir))
+                Directory.Delete(dir, recursive: true);
+        }
+    }
 }
 
 public sealed class DigitalTemplatesTests

@@ -150,7 +150,7 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     public DigitalEngine ActiveDigitalEngine =>
         DigitalEngineIndex == 1 ? DigitalEngine.Jtdx : DigitalEngine.WsjtX;
 
-    public string ActiveEngineLabel => ActiveDigitalEngine == DigitalEngine.Jtdx ? "JTDX" : "WSJT-X";
+    public string ActiveEngineLabel => ActiveDigitalEngine == DigitalEngine.Jtdx ? "JTDX-Improved" : "WSJT-X";
     public string ActiveEngineExeFileName => ActiveDigitalEngine == DigitalEngine.Jtdx ? "jtdx.exe" : "wsjtx.exe";
 
     /// <summary>
@@ -177,6 +177,12 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     /// per-slice launch.
     /// </summary>
     public ObservableCollection<DigitalSliceConfigViewModel> DigitalSliceConfigs { get; } = new();
+
+    /// <summary>
+    /// Digital Operating screen rows: one per live slice, each paired with its
+    /// per-slice binding and Start/Stop for the active engine (issue #28).
+    /// </summary>
+    public ObservableCollection<DigitalOperatingRowViewModel> DigitalSlices { get; } = new();
 
     // ── Post-connect details ──────────────────────────────────────────────────
 
@@ -484,6 +490,10 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
             });
         };
 
+        // Digital engine instances: refresh per-slice running state when any
+        // instance starts or stops (issue #28).
+        _digitalLauncher.RunningStateChanged += _ => UIPost(RefreshDigitalRunningStates);
+
         _launcher.TelnetStatusChanged += message =>
             UIPost(() => AddTelnetStatus(message));
         _launcher.SpotReceived += (daxIqChannel, spot) =>
@@ -671,6 +681,115 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     private void NavigateToModeHome(AppMode mode) =>
         SelectedTabIndex = mode == AppMode.Cw ? CwHomeTabIndex : DigitalHomeTabIndex;
 
+    // ── Digital Operating (issue #28) ─────────────────────────────────────────
+
+    /// <summary>
+    /// Adds or updates the Digital Operating row for <paramref name="slice"/>.
+    /// Keyed by slice letter (unique per radio). Refreshes live mode/freq and
+    /// re-reads the per-slice binding so Config edits are reflected.
+    /// </summary>
+    private void SyncDigitalSliceRow(SliceInfo slice)
+    {
+        var (daxRx, catPort, udpPort) = GetBindingForLetter(slice.Letter);
+
+        var row = DigitalSlices.FirstOrDefault(r =>
+            string.Equals(r.SliceLetter, slice.Letter, StringComparison.OrdinalIgnoreCase));
+
+        if (row is null)
+        {
+            row = new DigitalOperatingRowViewModel(slice.Letter, slice.ClientStation);
+            InsertDigitalSliceRowSorted(row);
+        }
+
+        row.Mode = slice.Mode;
+        row.FreqMHz = slice.FreqMHz;
+        row.DaxRxChannel = daxRx;
+        row.CatPort = catPort;
+        row.UdpPort = udpPort;
+        row.IsRunning = _digitalLauncher.IsInstanceRunning(row.RigName);
+    }
+
+    private void InsertDigitalSliceRowSorted(DigitalOperatingRowViewModel row)
+    {
+        // Keep rows ordered by slice letter for a stable display.
+        var index = 0;
+        while (index < DigitalSlices.Count &&
+               string.CompareOrdinal(DigitalSlices[index].SliceLetter, row.SliceLetter) < 0)
+            index++;
+        DigitalSlices.Insert(index, row);
+    }
+
+    private void RemoveDigitalSliceRow(SliceInfo slice)
+    {
+        var row = DigitalSlices.FirstOrDefault(r =>
+            string.Equals(r.SliceLetter, slice.Letter, StringComparison.OrdinalIgnoreCase));
+        if (row is not null)
+            DigitalSlices.Remove(row);
+    }
+
+    /// <summary>
+    /// The DAX RX / CAT / UDP for a slice letter: the operator's Config binding
+    /// when present, else recommended defaults derived from the letter ordinal
+    /// (e.g. slices beyond A-D on a FLEX-6700).
+    /// </summary>
+    private (int DaxRx, int CatPort, int UdpPort) GetBindingForLetter(string letter)
+    {
+        var binding = DigitalSliceConfigs.FirstOrDefault(c =>
+            string.Equals(c.SliceLetter, letter, StringComparison.OrdinalIgnoreCase));
+        if (binding is not null)
+            return (binding.DaxRxChannel, binding.CatPort, binding.UdpPort);
+
+        var ordinal = letter.Length == 1 ? Math.Max(0, char.ToUpperInvariant(letter[0]) - 'A') : 0;
+        return (ordinal + 1, 60_000 + ordinal, 2_237 + ordinal);
+    }
+
+    private void RefreshDigitalRunningStates()
+    {
+        foreach (var row in DigitalSlices)
+            row.IsRunning = _digitalLauncher.IsInstanceRunning(row.RigName);
+    }
+
+    [RelayCommand]
+    private async Task StartDigitalForSlice(DigitalOperatingRowViewModel? row)
+    {
+        if (row is null)
+            return;
+
+        var engine = GetEngineDefinition(ActiveDigitalEngine);
+        var values = new DigitalProvisionValues(
+            DigitalMyCall, DigitalMyGrid, DigitalRig, row.DaxRxChannel, row.CatPort, row.UdpPort);
+
+        var provision = DigitalConfigProvisioner.Provision(engine, row.RigName, values);
+        if (provision.Outcome != DigitalProvisionOutcome.Success)
+        {
+            row.StatusText = "Could not write the engine config file.";
+            return;
+        }
+
+        var result = await _digitalLauncher.LaunchAsync(engine, row.RigName);
+        row.StatusText = result switch
+        {
+            DigitalLaunchResult.Success => string.Empty,
+            DigitalLaunchResult.AlreadyRunning => "Already running.",
+            DigitalLaunchResult.ExeNotFound => $"{ActiveEngineLabel} not found. Set the Path on the Config tab.",
+            DigitalLaunchResult.InvalidRigName => "Invalid rig name.",
+            _ => "Failed to start the engine.",
+        };
+
+        RefreshDigitalRunningStates();
+    }
+
+    [RelayCommand]
+    private void StopDigitalForSlice(DigitalOperatingRowViewModel? row)
+    {
+        if (row is null)
+            return;
+
+        _digitalLauncher.Stop(row.RigName);
+        row.StatusText = string.Empty;
+        RefreshDigitalRunningStates();
+    }
+
     private void OnConnectionStateChanged(bool connected)
     {
         UIPost(() =>
@@ -700,12 +819,16 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
             }
             else
             {
-                // Ensure all CW Skimmer instances are closed when the radio disconnects.
+                // Stop every external app on disconnect: CW Skimmer and the
+                // digital engines (WSJT-X / JTDX). Stop() is a no-op when the
+                // family isn't running, so calling both is safe (issue #28).
                 _launcher.Stop();
+                _digitalLauncher.Stop();
                 OwnClientStation = string.Empty;
                 OnPropertyChanged(nameof(OwnClientStation));
                 SetSelectedControlStation(string.Empty);
                 ClientGroups.Clear();
+                DigitalSlices.Clear();
                 DaxIQStreams.Clear();
                 _radioAvgDaxKbps = 0;
                 AvgDAXKbps = 0;
@@ -727,6 +850,16 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
                 }
                 _ritStatusEmitter.Clear();
                 _lastLoggedGuiClientsKey = string.Empty;
+
+                // Losing the radio drops out of the active mode back to mode
+                // selection (only Launch + Help show), since neither mode can
+                // operate without a radio. LastMode is preserved (issue #28).
+                if (ActiveMode is not null)
+                {
+                    ActiveMode = null;
+                    SelectedTabIndex = 0;   // Launch tab
+                }
+
                 AddStreamerStatus("Disconnected.");
             }
         });
@@ -1078,6 +1211,10 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
 
     private void AddSlice(SliceInfo slice)
     {
+        // Digital rows are slice-audio-centric and pan-independent, so sync
+        // before the CW pan-grouping (which early-returns if no pan yet).
+        SyncDigitalSliceRow(slice);
+
         var group = GetOrCreateClientGroup(slice.ClientStation);
         var panEntry = group.Panadapters.FirstOrDefault(p => p.Pan.StreamId == slice.PanadapterStreamId);
         if (panEntry is null) return;
@@ -1098,6 +1235,8 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
 
     private void RemoveSlice(SliceInfo slice)
     {
+        RemoveDigitalSliceRow(slice);
+
         var group = ClientGroups.FirstOrDefault(g => g.Station == slice.ClientStation);
         if (group is null) return;
         var removed = false;
@@ -1119,6 +1258,8 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
 
     private void UpdateSlice(SliceInfo slice)
     {
+        SyncDigitalSliceRow(slice);
+
         var group = ClientGroups.FirstOrDefault(g => g.Station == slice.ClientStation);
         if (group is null) return;
         foreach (var panEntry in group.Panadapters)
