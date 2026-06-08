@@ -1545,6 +1545,19 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     private void AddSkimmerStatus(string message) => AddFooterStatus($"[SKIMMER] {message}");
     private void AddTelnetStatus(string message) => AddFooterStatus($"[TELNET] {message}");
 
+    // Issue #28 (WSJT-X / JTDX setup-and-launch): dumps every Windows audio
+    // endpoint (full DirectSound names + WinMM cross-reference) to
+    // streamer-status.log so we can characterize how SmartSDR DAXv2 exposes
+    // the DAX Audio RX/TX devices WSJT-X must select. Read-only: it does not
+    // touch the radio, so it is safe to run during a live session.
+    [RelayCommand]
+    private void DumpAudioDevices()
+    {
+        var report = AudioEndpointDiagnostics.BuildReport(_deviceFinder);
+        AppendStreamerLog(Environment.NewLine + report, "[AUDIO]");
+        AddStreamerStatus("Audio endpoint diagnostic written to streamer-status.log (open the Logs folder to view or share it).");
+    }
+
     private static void AppendStreamerLog(string message, string tag)
     {
         try

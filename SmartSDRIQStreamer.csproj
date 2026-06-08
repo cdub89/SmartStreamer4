@@ -27,6 +27,12 @@
     <Compile Remove="FlexLib_API_v4.2.18.41174\**" />
     <EmbeddedResource Remove="FlexLib_API_v4.2.18.41174\**" />
     <None Remove="FlexLib_API_v4.2.18.41174\**" />
+    <!-- 4.2.20 FlexLib source is kept on disk for reference only (like 4.1.5);
+         not project-referenced. Exclude its loose .cs from the app compile glob
+         so it doesn't pull duplicate AssemblyInfo / unsafe / WinForms sources. -->
+    <Compile Remove="FlexLib_API_v4.2.20.41343\**" />
+    <EmbeddedResource Remove="FlexLib_API_v4.2.20.41343\**" />
+    <None Remove="FlexLib_API_v4.2.20.41343\**" />
     <Compile Remove="reference\**" />
     <Compile Remove=".cursor\**" />
     <Compile Remove="src\**" />
