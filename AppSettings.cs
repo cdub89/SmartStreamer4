@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace SDRIQStreamer.App;
 
@@ -16,6 +17,33 @@ public sealed class AppSettings
 
     public string CwSkimmerExePath   { get; set; } = string.Empty;
     public string CwSkimmerIniPath   { get; set; } = string.Empty;
+
+    // ── Digital engine paths (issue #28) ──────────────────────────────────────
+    // WSJT-X / JTDX executables. JTDX embeds a version in its path
+    // (e.g. ...\159\...), so the default is a starting point the operator can
+    // change on the Digital Config tab via Browse.
+
+    public string WsjtXExePath { get; set; } = @"C:\WSJT\wsjtx\bin\wsjtx.exe";
+    public string JtdxExePath  { get; set; } = @"C:\JTDX64\159\bin\jtdx.exe";
+
+    // The one active digital engine ("WsjtX" or "Jtdx"). The operator runs one
+    // or the other, not both; switching engines is a config change. All slices
+    // launch the active engine.
+    public string DigitalActiveEngine { get; set; } = "WsjtX";
+
+    // Operator identity + recommended defaults seeded into each per-slice
+    // digital config. MyCall / MyGrid are prepopulated from an existing
+    // FlexRadio WSJT-X/JTDX profile when present, else entered by the operator.
+    public string DigitalMyCall { get; set; } = string.Empty;
+    public string DigitalMyGrid { get; set; } = string.Empty;
+    public string DigitalRig     { get; set; } = "FlexRadio 6xxx";
+
+    // Per-slice DAX RX audio channel + CAT/UDP ports. Pre-set to recommended
+    // defaults (Slice A = DAX RX 1 / CAT 60000 / UDP 2237, B = 2/60001/2238,
+    // ...) but editable per slice on the Digital Config tab. Empty on first run
+    // -> seeded with defaults by the ViewModel. TX audio is the shared DAX TX
+    // (not per slice).
+    public List<DigitalSliceBinding> DigitalSliceBindings { get; set; } = [];
 
     // ── Timing ────────────────────────────────────────────────────────────────
 

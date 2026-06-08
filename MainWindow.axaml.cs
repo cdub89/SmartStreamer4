@@ -213,6 +213,42 @@ public partial class MainWindow : Window
             vm.CwSkimmerIniPath = files[0].Path.LocalPath;
     }
 
+    private async void OnBrowseDigitalExe(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel vm) return;
+        var exeName = vm.ActiveEngineExeFileName;
+        var path = await BrowseForExeAsync($"Select {exeName}", exeName, vm.ActiveEngineExePath);
+        if (path is not null)
+            vm.ActiveEngineExePath = path;
+    }
+
+    private async Task<string?> BrowseForExeAsync(string title, string preferredExe, string currentPath)
+    {
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return null;
+
+        // Open the picker in the folder of the currently-configured exe (fixes
+        // the picker defaulting to Documents when a path is already set).
+        IStorageFolder? startFolder = null;
+        var startDir = string.IsNullOrWhiteSpace(currentPath) ? null : Path.GetDirectoryName(currentPath);
+        if (!string.IsNullOrWhiteSpace(startDir) && Directory.Exists(startDir))
+            startFolder = await topLevel.StorageProvider.TryGetFolderFromPathAsync(startDir);
+
+        var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title                  = title,
+            AllowMultiple          = false,
+            SuggestedStartLocation = startFolder,
+            FileTypeFilter         =
+            [
+                new FilePickerFileType("Executable") { Patterns = [preferredExe, "*.exe"] },
+                new FilePickerFileType("All files")  { Patterns = ["*"] }
+            ]
+        });
+
+        return files.Count > 0 ? files[0].Path.LocalPath : null;
+    }
+
     private void OnOpenSpotTextColorMenu(object? sender, RoutedEventArgs e)
     {
         OpenSpotColorMenu(sender as Control, isBackground: false);

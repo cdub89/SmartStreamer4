@@ -1,4 +1,5 @@
 using SDRIQStreamer.CWSkimmer;
+using SDRIQStreamer.Digital;
 using SDRIQStreamer.FlexRadio;
 
 namespace SDRIQStreamer.App;
@@ -15,6 +16,7 @@ public sealed class AppServices
     public IRadioConnection Connection { get; }
     public IAudioDeviceFinder DeviceFinder { get; }
     public ICwSkimmerLauncher Launcher { get; }
+    public IDigitalAppLauncher DigitalLauncher { get; }
     public IReleaseUpdateService ReleaseUpdateService { get; }
 
     public AppServices()
@@ -29,8 +31,9 @@ public sealed class AppServices
         var modelFactory = new CwSkimmerIniModelFactory(DeviceFinder);
         var iniWriter = new CwSkimmerIniWriter();
         Launcher = new CwSkimmerLauncher(modelFactory, iniWriter, DeviceFinder, () => new CwSkimmerTelnetClient());
+        DigitalLauncher = new DigitalAppLauncher();
     }
 
     public MainWindowViewModel CreateMainWindowViewModel()
-        => new(Discovery, Connection, Launcher, SettingsSession, ReleaseUpdateService, DeviceFinder);
+        => new(Discovery, Connection, Launcher, DigitalLauncher, SettingsSession, ReleaseUpdateService, DeviceFinder);
 }

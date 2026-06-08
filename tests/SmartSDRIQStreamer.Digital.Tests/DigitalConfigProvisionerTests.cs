@@ -4,41 +4,47 @@ namespace SmartSDRIQStreamer.Digital.Tests;
 
 public sealed class DigitalConfigProvisionerTests
 {
-    // Representative WSJT-X default config: [Configuration] with the keys we
-    // override, a Qt @Variant line (must be preserved verbatim), Rig, and a
-    // second section. Raw string => backslashes in @Variant are literal.
+    // Representative template: [Configuration] with blank identity, the keys we
+    // override, and a Qt @Variant line (must be preserved verbatim). Raw string
+    // => backslashes in @Variant are literal.
     private const string Template = """
+        [Common]
+        Mode=FT8
+
         [Configuration]
+        MyCall=
+        MyGrid=
         Rig=FlexRadio 6xxx
         CATNetworkPort=127.0.0.1:60000
         PTTMethod=@Variant(\0\0\0\x7f\0\0\0\x1eTransceiverFactory::PTTMethod\0\0\0\0\xfPTT_method_CAT\0)
         SoundInName=DAX RX 1 (FlexRadio DAX)
         SoundOutName=DAX TX (FlexRadio DAX)
         UDPServerPort=2237
-        Mode=FT8
-
-        [Common]
-        MyCall=WX7V
         """;
 
     [Fact]
-    public void ApplyOverrides_SetsPerSliceKeys_AndPreservesEverythingElse()
+    public void ApplyOverrides_WritesIdentityAndPerSliceKeys_AndPreservesEverythingElse()
     {
-        var result = DigitalConfigProvisioner.ApplyOverrides(Template, daxRxChannel: 2, catTcpPort: 60001, udpPort: 2238);
+        var values = new DigitalProvisionValues(
+            MyCall: "WX7V", MyGrid: "EM12ou", Rig: "FlexRadio 6xxx",
+            DaxRxChannel: 2, CatTcpPort: 60001, UdpPort: 2238);
 
+        var result = DigitalConfigProvisioner.ApplyOverrides(Template, values);
+
+        // Identity + per-slice binding written:
+        Assert.Contains("MyCall=WX7V", result);
+        Assert.Contains("MyGrid=EM12ou", result);
         Assert.Contains("SoundInName=DAX RX 2 (FlexRadio DAX)", result);
         Assert.Contains("CATNetworkPort=127.0.0.1:60001", result);
         Assert.Contains("UDPServerPort=2238", result);
         Assert.Contains("SoundOutName=DAX TX (FlexRadio DAX)", result);
 
-        // Preserved verbatim:
+        // @Variant blob preserved verbatim:
         Assert.Contains(@"PTTMethod=@Variant(\0\0\0\x7f\0\0\0\x1eTransceiverFactory::PTTMethod\0\0\0\0\xfPTT_method_CAT\0)", result);
-        Assert.Contains("Rig=FlexRadio 6xxx", result);
-        Assert.Contains("Mode=FT8", result);
         Assert.Contains("[Common]", result);
-        Assert.Contains("MyCall=WX7V", result);
+        Assert.Contains("Mode=FT8", result);
 
-        // Old values gone (replaced in place, not duplicated):
+        // Old per-slice values replaced in place, not duplicated:
         Assert.DoesNotContain("SoundInName=DAX RX 1 (FlexRadio DAX)", result);
         Assert.DoesNotContain("CATNetworkPort=127.0.0.1:60000", result);
         Assert.DoesNotContain("UDPServerPort=2237", result);
@@ -52,6 +58,56 @@ public sealed class DigitalConfigProvisionerTests
 
         var jtdx = DigitalConfigProvisioner.InstanceConfigPath(DigitalEngines.Jtdx(@"C:\JTDX64\159\bin\jtdx.exe"), "Slice-A");
         Assert.EndsWith(@"JTDX - Slice-A\JTDX - Slice-A.ini", jtdx);
+    }
+
+    [Fact]
+    public void Provision_WritesInstanceConfig_FromBundledTemplate_WithOverrides()
+    {
+        // Unique rig name so we never collide with a real instance dir; clean up after.
+        var engine = DigitalEngines.WsjtX(@"C:\WSJT\wsjtx\bin\wsjtx.exe");
+        var rigName = $"UnitTest-{Guid.NewGuid():N}";
+        var values = new DigitalProvisionValues("WX7V", "EM12ou", "FlexRadio 6xxx", 3, 60002, 2239);
+
+        try
+        {
+            var result = DigitalConfigProvisioner.Provision(engine, rigName, values);
+
+            Assert.Equal(DigitalProvisionOutcome.Success, result.Outcome);
+            Assert.True(File.Exists(result.InstanceConfigPath));
+
+            var written = File.ReadAllText(result.InstanceConfigPath);
+            Assert.Contains("MyCall=WX7V", written);
+            Assert.Contains("SoundInName=DAX RX 3 (FlexRadio DAX)", written);
+            Assert.Contains("CATNetworkPort=127.0.0.1:60002", written);
+            Assert.Contains("PTT_method_CAT", written);     // blob from bundled template
+        }
+        finally
+        {
+            var dir = DigitalConfigProvisioner.InstanceConfigDir(engine, rigName);
+            if (Directory.Exists(dir))
+                Directory.Delete(dir, recursive: true);
+        }
+    }
+}
+
+public sealed class DigitalTemplatesTests
+{
+    [Theory]
+    [InlineData(DigitalEngine.WsjtX)]
+    [InlineData(DigitalEngine.Jtdx)]
+    public void ForEngine_LoadsBundledTemplate_WithBlobsAndBlankIdentity(DigitalEngine engine)
+    {
+        var template = DigitalTemplates.ForEngine(engine);
+
+        Assert.Contains("[Configuration]", template);
+        Assert.Contains("Rig=FlexRadio 6xxx", template);
+        Assert.Contains("PTT_method_CAT", template);          // @Variant blob present
+        Assert.Contains("SoundOutName=DAX TX (FlexRadio DAX)", template);
+        Assert.Contains("MyCall=", template);
+
+        // No personal data shipped in the resource.
+        Assert.DoesNotContain("WX7V", template);
+        Assert.DoesNotContain("EM12", template);
     }
 }
 

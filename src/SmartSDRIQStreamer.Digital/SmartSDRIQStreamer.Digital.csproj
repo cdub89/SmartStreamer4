@@ -12,4 +12,12 @@
     <InternalsVisibleTo Include="SmartSDRIQStreamer.Digital.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Clean first-time-operator config templates (recommended FlexRadio/DAXv2
+         values + byte-exact Qt @Variant blobs; no personal data). Loaded by
+         DigitalTemplates via the assembly manifest. -->
+    <EmbeddedResource Include="Templates\WSJT-X.template.ini" LogicalName="WSJT-X.template.ini" />
+    <EmbeddedResource Include="Templates\JTDX.template.ini" LogicalName="JTDX.template.ini" />
+  </ItemGroup>
+
 </Project>

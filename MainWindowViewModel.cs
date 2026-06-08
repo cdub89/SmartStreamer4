@@ -12,6 +12,7 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SDRIQStreamer.CWSkimmer;
+using SDRIQStreamer.Digital;
 using SDRIQStreamer.FlexRadio;
 
 namespace SDRIQStreamer.App;
@@ -23,6 +24,7 @@ public partial class MainWindowViewModel : ObservableObject, IDaxStationConfirme
     private readonly IRadioDiscovery   _discovery;
     private readonly IRadioConnection  _connection;
     private readonly ICwSkimmerLauncher _launcher;
+    private readonly IDigitalAppLauncher _digitalLauncher;
     private readonly AppSettingsSession _settingsSession;
     private readonly AppSettings _settings;
     private readonly FooterStatusBuffer _footerStatusBuffer;
@@ -98,6 +100,83 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     /// View shows a confirm dialog with the given message; returns true to proceed.
     /// </summary>
     public event Func<string, Task<bool>>? StopRunningAppsConfirmRequested;
+
+    // ── Digital Mode config (issue #28) ───────────────────────────────────────
+    // Operator identity + engine paths + recommended defaults written into each
+    // per-slice config at launch. Identity is prepopulated from an existing
+    // FlexRadio WSJT-X / JTDX profile when present (see ImportDigitalProfile).
+
+    [ObservableProperty]
+    private string _digitalMyCall = string.Empty;
+
+    [ObservableProperty]
+    private string _digitalMyGrid = string.Empty;
+
+    [ObservableProperty]
+    private string _digitalRig = "FlexRadio 6xxx";
+
+    // 0 = WSJT-X, 1 = JTDX. The single active engine; switching is a config
+    // change. Drives ActiveDigitalEngine and the active exe-path proxy below.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ActiveDigitalEngine))]
+    [NotifyPropertyChangedFor(nameof(ActiveEngineLabel))]
+    [NotifyPropertyChangedFor(nameof(ActiveEngineExePath))]
+    [NotifyPropertyChangedFor(nameof(ActiveEngineExeFileName))]
+    [NotifyPropertyChangedFor(nameof(IsWsjtXSelected))]
+    [NotifyPropertyChangedFor(nameof(IsJtdxSelected))]
+    private int _digitalEngineIndex;
+
+    // Radio-button bindings for the engine selector (mutually exclusive).
+    public bool IsWsjtXSelected
+    {
+        get => DigitalEngineIndex == 0;
+        set { if (value) DigitalEngineIndex = 0; }
+    }
+
+    public bool IsJtdxSelected
+    {
+        get => DigitalEngineIndex == 1;
+        set { if (value) DigitalEngineIndex = 1; }
+    }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ActiveEngineExePath))]
+    private string _wsjtXExePath = string.Empty;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ActiveEngineExePath))]
+    private string _jtdxExePath = string.Empty;
+
+    public DigitalEngine ActiveDigitalEngine =>
+        DigitalEngineIndex == 1 ? DigitalEngine.Jtdx : DigitalEngine.WsjtX;
+
+    public string ActiveEngineLabel => ActiveDigitalEngine == DigitalEngine.Jtdx ? "JTDX" : "WSJT-X";
+    public string ActiveEngineExeFileName => ActiveDigitalEngine == DigitalEngine.Jtdx ? "jtdx.exe" : "wsjtx.exe";
+
+    /// <summary>
+    /// Exe path of the active engine. Reads / writes the matching backing
+    /// property so the Config tab shows a single path for the chosen engine
+    /// while both paths stay remembered.
+    /// </summary>
+    public string ActiveEngineExePath
+    {
+        get => ActiveDigitalEngine == DigitalEngine.Jtdx ? JtdxExePath : WsjtXExePath;
+        set
+        {
+            if (ActiveDigitalEngine == DigitalEngine.Jtdx)
+                JtdxExePath = value;
+            else
+                WsjtXExePath = value;
+        }
+    }
+
+    /// <summary>
+    /// Per-slice DAX RX channel + CAT / UDP ports, pre-set to recommended
+    /// defaults but editable per slice. Edits persist to settings. TX audio is
+    /// the shared DAX TX (not per slice). Consumed by the Operating screen's
+    /// per-slice launch.
+    /// </summary>
+    public ObservableCollection<DigitalSliceConfigViewModel> DigitalSliceConfigs { get; } = new();
 
     // ── Post-connect details ──────────────────────────────────────────────────
 
@@ -309,13 +388,15 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     // ── Constructor ───────────────────────────────────────────────────────────
 
     public MainWindowViewModel(IRadioDiscovery discovery, IRadioConnection connection,
-                               ICwSkimmerLauncher launcher, AppSettingsSession settingsSession,
+                               ICwSkimmerLauncher launcher, IDigitalAppLauncher digitalLauncher,
+                               AppSettingsSession settingsSession,
                                IReleaseUpdateService releaseUpdateService,
                                IAudioDeviceFinder deviceFinder)
     {
         _discovery     = discovery;
         _connection    = connection;
         _launcher      = launcher;
+        _digitalLauncher = digitalLauncher;
         _settingsSession = settingsSession;
         _settings = _settingsSession.Settings;
         // No mode is active until the operator chooses one on the Launch tab, so
@@ -434,11 +515,25 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
             SpotBackgroundColor = _settings.SpotBackgroundColor;
             UpdateSpotColorSelection(SpotColor);
             UpdateSpotBackgroundColorSelection(SpotBackgroundColor);
+
+            DigitalMyCall = _settings.DigitalMyCall;
+            DigitalMyGrid = _settings.DigitalMyGrid;
+            DigitalRig = _settings.DigitalRig;
+            WsjtXExePath = _settings.WsjtXExePath;
+            JtdxExePath = _settings.JtdxExePath;
+            DigitalEngineIndex = string.Equals(_settings.DigitalActiveEngine, "Jtdx", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
         }
         finally
         {
             _isApplyingStartupSettings = false;
         }
+
+        LoadDigitalSliceConfigs();
+
+        // Prepopulate call/grid from an existing FlexRadio profile for operators
+        // who already run WSJT-X / JTDX (issue #28). Only fills blanks, so it
+        // never clobbers values the operator has already entered.
+        TryPrepopulateDigitalIdentity();
 
         UpdateLogsFolderSummary();
         AddStreamerStatus($"Release: {AppReleaseTag} | Commit: {AppCommitHash}");
@@ -553,15 +648,24 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
 
     private static string ModeName(AppMode mode) => mode == AppMode.Cw ? "CW" : "Digital";
 
-    private bool HasRunningAppForCurrentMode() =>
-        ActiveMode == AppMode.Cw && _launcher.IsRunning;
-        // Digital Mode has no in-process launcher yet (checkpoint D).
+    private bool HasRunningAppForCurrentMode() => ActiveMode switch
+    {
+        AppMode.Cw      => _launcher.IsRunning,
+        AppMode.Digital => _digitalLauncher.IsRunning,
+        _               => false,
+    };
 
     private void StopCurrentModeApps()
     {
-        if (ActiveMode == AppMode.Cw)
-            StopAllCwSkimmerInstances();
-        // Digital Mode: nothing to stop yet.
+        switch (ActiveMode)
+        {
+            case AppMode.Cw:
+                StopAllCwSkimmerInstances();
+                break;
+            case AppMode.Digital:
+                _digitalLauncher.Stop();
+                break;
+        }
     }
 
     private void NavigateToModeHome(AppMode mode) =>
@@ -1551,6 +1655,78 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     partial void OnCwSkimmerExePathChanged(string value)
     {
         _settings.CwSkimmerExePath = value;
+    }
+
+    // ── Digital config persistence (issue #28) ────────────────────────────────
+
+    partial void OnDigitalMyCallChanged(string value) => _settings.DigitalMyCall = value.Trim();
+    partial void OnDigitalMyGridChanged(string value) => _settings.DigitalMyGrid = value.Trim();
+    partial void OnDigitalRigChanged(string value) => _settings.DigitalRig = value.Trim();
+    partial void OnWsjtXExePathChanged(string value) => _settings.WsjtXExePath = value;
+    partial void OnJtdxExePathChanged(string value) => _settings.JtdxExePath = value;
+    partial void OnDigitalEngineIndexChanged(int value) =>
+        _settings.DigitalActiveEngine = value == 1 ? "Jtdx" : "WsjtX";
+    /// <summary>
+    /// Default slices to expose editable bindings for. FLEX-6600 has 4 slices
+    /// (A-D); the Operating screen drives the actual slices.
+    /// </summary>
+    private const int DigitalSliceConfigCount = 4;
+
+    private void LoadDigitalSliceConfigs()
+    {
+        DigitalSliceConfigs.Clear();
+
+        for (var ordinal = 0; ordinal < DigitalSliceConfigCount; ordinal++)
+        {
+            var letter = ((char)('A' + ordinal)).ToString();
+            // Use the persisted binding when present, else a recommended default
+            // (Slice A = DAX RX 1 / CAT 60000 / UDP 2237, B = 2/60001/2238, ...).
+            var saved = _settings.DigitalSliceBindings.Find(b =>
+                string.Equals(b.SliceLetter, letter, StringComparison.OrdinalIgnoreCase));
+
+            var row = saved is not null
+                ? new DigitalSliceConfigViewModel(letter, saved.DaxRxChannel, saved.CatPort, saved.UdpPort)
+                : new DigitalSliceConfigViewModel(letter, ordinal + 1, 60_000 + ordinal, 2_237 + ordinal);
+
+            row.PropertyChanged += (_, _) => PersistDigitalSliceConfigs();
+            DigitalSliceConfigs.Add(row);
+        }
+
+        // Persist the seeded defaults on first run so the saved list mirrors the UI.
+        PersistDigitalSliceConfigs();
+    }
+
+    private void PersistDigitalSliceConfigs() =>
+        _settings.DigitalSliceBindings = DigitalSliceConfigs.Select(r => r.ToBinding()).ToList();
+
+    /// <summary>
+    /// Builds the engine definition for <paramref name="engine"/> using the
+    /// operator-configured exe path. The config root (for the harvester and
+    /// provisioner) is fixed per engine; only the exe path is configurable.
+    /// </summary>
+    private DigitalEngineDefinition GetEngineDefinition(DigitalEngine engine) => engine switch
+    {
+        DigitalEngine.WsjtX => DigitalEngines.WsjtX(WsjtXExePath),
+        DigitalEngine.Jtdx  => DigitalEngines.Jtdx(JtdxExePath),
+        _ => throw new ArgumentOutOfRangeException(nameof(engine), engine, "Unknown digital engine."),
+    };
+
+    private void TryPrepopulateDigitalIdentity()
+    {
+        // Already have identity (entered or previously imported) — leave it.
+        if (!string.IsNullOrWhiteSpace(DigitalMyCall))
+            return;
+
+        // Prefer the active engine's profile, then the other as a fallback.
+        var other = ActiveDigitalEngine == DigitalEngine.Jtdx ? DigitalEngine.WsjtX : DigitalEngine.Jtdx;
+        var profile = WsjtxProfileHarvester.HarvestFromDefault(GetEngineDefinition(ActiveDigitalEngine))
+                   ?? WsjtxProfileHarvester.HarvestFromDefault(GetEngineDefinition(other));
+        if (profile is null)
+            return;
+
+        if (!string.IsNullOrWhiteSpace(profile.MyCall)) DigitalMyCall = profile.MyCall;
+        if (!string.IsNullOrWhiteSpace(profile.MyGrid)) DigitalMyGrid = profile.MyGrid;
+        if (!string.IsNullOrWhiteSpace(profile.Rig)) DigitalRig = profile.Rig;
     }
 
     partial void OnCwSkimmerIniPathChanged(string value)
