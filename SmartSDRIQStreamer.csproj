@@ -42,6 +42,7 @@
   <ItemGroup>
     <ProjectReference Include="src\SmartSDRIQStreamer.FlexRadio\SmartSDRIQStreamer.FlexRadio.csproj" />
     <ProjectReference Include="src\SmartSDRIQStreamer.CWSkimmer\SmartSDRIQStreamer.CWSkimmer.csproj" />
+    <ProjectReference Include="src\SmartSDRIQStreamer.Digital\SmartSDRIQStreamer.Digital.csproj" />
   </ItemGroup>
 
   <ItemGroup>

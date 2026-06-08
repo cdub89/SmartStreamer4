@@ -43,7 +43,7 @@ public partial class MainWindow : Window
             _subscribedVm.PropertyChanged -= OnViewModelPropertyChanged;
             _subscribedVm.AudioIndexChangesDetected -= OnAudioIndexChangesDetected;
             _subscribedVm.DaxStationConfirmRequested -= OnDaxStationConfirmRequested;
-            _subscribedVm.ModeSwitchConfirmRequested -= OnModeSwitchConfirmRequested;
+            _subscribedVm.StopRunningAppsConfirmRequested -= OnStopRunningAppsConfirmRequested;
             _subscribedVm = null;
         }
 
@@ -60,7 +60,7 @@ public partial class MainWindow : Window
             _subscribedVm.PropertyChanged -= OnViewModelPropertyChanged;
             _subscribedVm.AudioIndexChangesDetected -= OnAudioIndexChangesDetected;
             _subscribedVm.DaxStationConfirmRequested -= OnDaxStationConfirmRequested;
-            _subscribedVm.ModeSwitchConfirmRequested -= OnModeSwitchConfirmRequested;
+            _subscribedVm.StopRunningAppsConfirmRequested -= OnStopRunningAppsConfirmRequested;
         }
 
         _subscribedVm = DataContext as MainWindowViewModel;
@@ -69,15 +69,15 @@ public partial class MainWindow : Window
             _subscribedVm.PropertyChanged += OnViewModelPropertyChanged;
             _subscribedVm.AudioIndexChangesDetected += OnAudioIndexChangesDetected;
             _subscribedVm.DaxStationConfirmRequested += OnDaxStationConfirmRequested;
-            _subscribedVm.ModeSwitchConfirmRequested += OnModeSwitchConfirmRequested;
+            _subscribedVm.StopRunningAppsConfirmRequested += OnStopRunningAppsConfirmRequested;
         }
     }
 
     private Task<DaxStationConfirmResult> OnDaxStationConfirmRequested(DaxStationConfirmRequest request)
         => Dispatcher.UIThread.InvokeAsync(() => ShowDaxStationConfirmDialogAsync(request));
 
-    private Task<bool> OnModeSwitchConfirmRequested(AppMode target)
-        => Dispatcher.UIThread.InvokeAsync(() => ShowModeSwitchConfirmDialogAsync(target));
+    private Task<bool> OnStopRunningAppsConfirmRequested(string message)
+        => Dispatcher.UIThread.InvokeAsync(() => ShowStopRunningConfirmDialogAsync(message));
 
     private async void OnAudioIndexChangesDetected(IReadOnlyList<string> summary)
     {
@@ -559,22 +559,21 @@ public partial class MainWindow : Window
         await ShowResetWizardAsync(vm);
     }
 
-    private async Task<bool> ShowModeSwitchConfirmDialogAsync(AppMode target)
+    private async Task<bool> ShowStopRunningConfirmDialogAsync(string messageText)
     {
-        var targetName = target == AppMode.Cw ? "CW" : "Digital";
         var message = new TextBlock
         {
-            Text = $"Switching to {targetName} Mode will stop the application(s) running in the current mode.\n\nContinue?",
+            Text = messageText,
             TextWrapping = TextWrapping.Wrap,
             MaxWidth = 400
         };
 
-        var switchButton = new Button { Content = "Stop & Switch", MinWidth = 110 };
+        var switchButton = new Button { Content = "Stop & Continue", MinWidth = 120 };
         var cancelButton = new Button { Content = "Cancel", MinWidth = 80, IsDefault = true, IsCancel = true };
 
         var dialog = new Window
         {
-            Title = "Switch Mode",
+            Title = "Confirm",
             Width = 440,
             SizeToContent = SizeToContent.Height,
             CanResize = false,

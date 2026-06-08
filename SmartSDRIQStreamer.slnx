@@ -2,6 +2,8 @@
   <Project Path="SmartSDRIQStreamer.csproj" />
   <Project Path="src/SmartSDRIQStreamer.FlexRadio/SmartSDRIQStreamer.FlexRadio.csproj" />
   <Project Path="src/SmartSDRIQStreamer.CWSkimmer/SmartSDRIQStreamer.CWSkimmer.csproj" />
+  <Project Path="src/SmartSDRIQStreamer.Digital/SmartSDRIQStreamer.Digital.csproj" />
   <Project Path="tests/SmartSDRIQStreamer.CWSkimmer.Tests/SmartSDRIQStreamer.CWSkimmer.Tests.csproj" />
+  <Project Path="tests/SmartSDRIQStreamer.Digital.Tests/SmartSDRIQStreamer.Digital.Tests.csproj" />
   <Project Path="tests/SmartSDRIQStreamer.App.Tests/SmartSDRIQStreamer.App.Tests.csproj" />
 </Solution>

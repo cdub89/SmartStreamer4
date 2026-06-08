@@ -72,20 +72,32 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsCwMode))]
     [NotifyPropertyChangedFor(nameof(IsDigitalMode))]
+    [NotifyPropertyChangedFor(nameof(CwModeButtonLabel))]
+    [NotifyPropertyChangedFor(nameof(DigitalModeButtonLabel))]
+    [NotifyPropertyChangedFor(nameof(CwModeButtonCommand))]
+    [NotifyPropertyChangedFor(nameof(DigitalModeButtonCommand))]
     private AppMode? _activeMode;
 
     public bool IsCwMode => ActiveMode == AppMode.Cw;
     public bool IsDigitalMode => ActiveMode == AppMode.Digital;
+
+    // The two Launch mode buttons toggle in place: the *active* mode's button
+    // becomes "Close ... Mode" (exits to mode selection); the other stays a
+    // launch/switch button. One row, no separate close row.
+    public string CwModeButtonLabel => IsCwMode ? "Stop" : "Start";
+    public string DigitalModeButtonLabel => IsDigitalMode ? "Stop" : "Start";
+    public IAsyncRelayCommand CwModeButtonCommand => IsCwMode ? CloseModeCommand : LaunchCwModeCommand;
+    public IAsyncRelayCommand DigitalModeButtonCommand => IsDigitalMode ? CloseModeCommand : LaunchDigitalModeCommand;
 
     /// <summary>Drives TabControl.SelectedIndex. 0 = Launch tab (startup).</summary>
     [ObservableProperty]
     private int _selectedTabIndex;
 
     /// <summary>
-    /// Raised when a mode switch would stop a running app in the current mode.
-    /// The View shows a confirm dialog; returns true to proceed (and stop).
+    /// Raised when an action (switch / close mode) would stop running apps. The
+    /// View shows a confirm dialog with the given message; returns true to proceed.
     /// </summary>
-    public event Func<AppMode, Task<bool>>? ModeSwitchConfirmRequested;
+    public event Func<string, Task<bool>>? StopRunningAppsConfirmRequested;
 
     // ── Post-connect details ──────────────────────────────────────────────────
 
@@ -489,26 +501,57 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     [RelayCommand]
     private Task LaunchDigitalMode() => SwitchModeAsync(AppMode.Digital);
 
+    /// <summary>
+    /// Close the active mode back to mode selection (only Launch + Help show).
+    /// The radio stays connected. `LastMode` is left unchanged so a future
+    /// "Auto Start Last Mode" can restore it.
+    /// </summary>
+    [RelayCommand]
+    private async Task CloseMode()
+    {
+        if (ActiveMode is not { } current)
+            return;
+
+        if (HasRunningAppForCurrentMode() && !await ConfirmStopRunningAsync(
+                $"Closing {ModeName(current)} Mode will stop its running application(s).\n\nContinue?"))
+        {
+            return;
+        }
+
+        StopCurrentModeApps();
+        ActiveMode = null;       // back to "no mode"; LastMode intentionally preserved
+        SelectedTabIndex = 0;    // Launch tab
+    }
+
     private async Task SwitchModeAsync(AppMode target)
     {
+        if (ActiveMode == target)
+        {
+            NavigateToModeHome(target);
+            return;
+        }
+
         // Hard modes: leaving a mode with a running app stops it. Confirm first.
-        if (ActiveMode != target && HasRunningAppForCurrentMode())
+        if (ActiveMode is { } current && HasRunningAppForCurrentMode() && !await ConfirmStopRunningAsync(
+                $"Switching to {ModeName(target)} Mode will stop {ModeName(current)} Mode's running application(s).\n\nContinue?"))
         {
-            var proceed = ModeSwitchConfirmRequested is null
-                || await ModeSwitchConfirmRequested(target);
-            if (!proceed) return;
-            StopCurrentModeApps();
+            return;
         }
 
-        if (ActiveMode != target)
-        {
-            ActiveMode = target;                 // flips tab visibility first
-            _settings.LastMode = target.ToString();
-            _settingsSession.Save();
-        }
-
-        NavigateToModeHome(target);              // then select the now-visible tab
+        StopCurrentModeApps();
+        ActiveMode = target;                 // flips tab visibility first
+        _settings.LastMode = target.ToString();
+        _settingsSession.Save();
+        NavigateToModeHome(target);          // then select the now-visible tab
     }
+
+    private async Task<bool> ConfirmStopRunningAsync(string message)
+    {
+        var handler = StopRunningAppsConfirmRequested;
+        return handler is null || await handler(message);
+    }
+
+    private static string ModeName(AppMode mode) => mode == AppMode.Cw ? "CW" : "Digital";
 
     private bool HasRunningAppForCurrentMode() =>
         ActiveMode == AppMode.Cw && _launcher.IsRunning;

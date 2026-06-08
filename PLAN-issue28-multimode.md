@@ -424,43 +424,61 @@ SETUP
 Ordered build sequence. **Multi-instance testing is intentionally last** (it
 depends on everything below).
 
-### A. Shell + mode framework
+### A. Shell + mode framework — DONE (live-verified 2026-06-08)
 
-- [ ] Add a `Mode` concept (CW / Digital) + persisted last-mode (first run prompts).
-- [ ] New **Launch tab** as entry point; move radio discovery + connect here.
-- [ ] **CW Mode** mounts today's tabs **unchanged** (no `CwSkimmerLauncher` edits).
-- [ ] Mode switch cleanly tears down the active family (confirm if running).
-- [ ] Slim connected-radio indicator on non-Launch tabs.
+- [x] Add a `Mode` concept (CW / Digital) + nullable `ActiveMode` (null until a
+      mode is chosen; only Launch + Help show initially). `LastMode` persisted.
+- [x] New **Launch tab** as entry point; radio discovery + connect moved here,
+      plus a read-only stations/slices list and the event bar. (Network Status
+      stays on the CW tab; not shown for digital for now.)
+- [x] **CW Mode** mounts today's tabs **unchanged** (no `CwSkimmerLauncher` edits);
+      Operating tab relabeled **CW**.
+- [x] Mode switch confirms-and-stops the active family (confirm dialog).
+- [x] **Close mode**: the active mode's Launch button toggles in place to
+      "Close `<mode>` Mode" (the other stays a direct switch); returns to mode
+      selection; radio stays connected; `LastMode` preserved for Auto Start.
+- [x] Slim connected-radio indicator on non-Launch tabs (connection header).
 
 ### B. FlexRadio module (radio side, FlexLib)
 
-- [ ] Add `DAXChannel` get/set to `SliceInfo` + `FlexLibRadioConnection`
-      (`slice set <id> dax=<N>`).
-- [ ] Confirm `DemodMode` is surfaced for the mode notice (already in `SliceInfo`).
+- [~] `DAXChannel` **read** done (`SliceInfo.DaxAudioChannel` from
+      `Slice.DAXChannel`, shown as `DAX RX N`); **set** (`slice set <id> dax=<N>`)
+      deferred to its first caller (Digital config provisioning, E/F).
+- [x] `DemodMode` surfaced for the mode notice (already in `SliceInfo`).
 
-### C. CAT discovery (read-only)
+### C. CAT discovery (read-only) — DONE (unit-tested)
 
-- [ ] Parse `%APPDATA%\FlexRadio Systems\CAT.settings`; unescape `<PortList>` ->
-      inner `ArrayOfPortSettings`.
-- [ ] Map `Protocol=CAT && PortCommType=TCP` -> `TCPPortNumber` <-> `SliceIndex`;
-      handle none / multiple per slice.
+- [x] Parse `%APPDATA%\FlexRadio Systems\CAT.settings`; unescape `<PortList>` ->
+      inner `ArrayOfPortSettings` (`CatSettingsReader`).
+- [x] Map `Protocol=CAT && PortCommType=TCP` -> `TCPPortNumber` <-> `SliceIndex`;
+      `FindPortForSlice` handles none / case-insensitive match.
 
-### D. Digital subsystem
+### D. Digital subsystem — core DONE (unit-tested)
 
-- [ ] `IDigitalApp { name, exePath, configRoot }` (WSJT-X, JTDX).
-- [ ] `DigitalAppLauncher` (per-instance launch/stop/IsRunning; no
-      telnet/sync/spot); reuse shared audio/status/log/settings/slice services.
+- [x] `DigitalEngineDefinition { Engine, DisplayName, ExePath, ConfigRoot }` +
+      `DigitalEngines.WsjtX/Jtdx` factory.
+- [x] `DigitalAppLauncher` (per-instance `--rig-name` launch/stop/IsRunning,
+      `RunningStateChanged`; no telnet/sync/spot; injectable `IDigitalProcessRunner`
+      for tests).
 - [ ] Engine exe path config + Browse (defaults: `C:\WSJT\wsjtx\bin\wsjtx.exe`,
-      `C:\JTDX64\<ver>\bin\jtdx.exe` — JTDX path is version-specific).
+      `C:\JTDX64\<ver>\bin\jtdx.exe` — JTDX path is version-specific) — with the UI (F).
+- [ ] Reuse shared services (audio discovery) — when the audio finder is
+      extracted to a shared module (deferred until consumed, E/F).
 
-### E. Config provisioning
+### E. Config provisioning — core DONE (unit-tested)
 
-- [ ] Known-good `.ini` template (`Rig=FlexRadio 6xxx`, PTT/Data/Split `@Variant`
-      blobs, `Mode=FT8`, shared `SoundOutName=DAX TX (FlexRadio DAX)`).
-- [ ] Per-slice seed: `--rig-name`, `SoundInName=DAX RX <N>`,
-      `CATNetworkPort=127.0.0.1:<discovered>`, unique `UDPServerPort`.
-- [ ] Write to `%LOCALAPPDATA%\WSJT-X - <name>` / `JTDX - <name>`.
-- [ ] Detect/repair stale `(Not found)` / v1 (`FlexRadio Systems`) audio names.
+- [x] **Template = clone the engine's working *default* config** (`DigitalConfigProvisioner`),
+      so `@Variant` PTT/Data/Split, `Rig`, `Mode`, callsign, etc. carry over
+      verbatim and version-safe. Returns `TemplateNotFound` if no default exists.
+- [x] Per-slice seed via `ApplyOverrides`: `SoundInName=DAX RX <N>`,
+      `CATNetworkPort=127.0.0.1:<port>`, unique `UDPServerPort`, shared
+      `SoundOutName=DAX TX`. (`--rig-name` is a launch arg, applied in F/G.)
+- [x] Write to `%LOCALAPPDATA%\<ConfigRoot> - <rig>\<ConfigRoot> - <rig>.ini`;
+      preservation-first `IniEditor` (only touches `[Configuration]` keys).
+- [~] Stale `(Not found)` / v1 audio names are **avoided by construction** for
+      seeded instances (clone of the working default). A repair helper for
+      pre-existing hand-made configs is optional/deferred.
+- [ ] CAT port value comes from `CatSettingsReader` discovery — wired in F.
 
 ### F. Digital Mode UI
 
@@ -495,6 +513,11 @@ depends on everything below).
 
 ## Open items (confirm during implementation)
 
+- **Auto Start Last Mode (planned UX).** Opt-in setting + a checkbox on the
+  Launch tab; when enabled, set `ActiveMode = LastMode` on startup (or right
+  after connect) instead of leaving it null. Hooks already in place: nullable
+  `ActiveMode` + persisted `LastMode` (preserved across Close Mode). TBD: auto-
+  activate at startup vs. after a radio connects.
 - ~~WSJT-X audio-device name~~ **RESOLVED** by FlexRadio's DAXv2 article: WSJT-X
   Input = `DAX RX {N}`, Output = `DAX TX`. ~~CAT transport~~ **RESOLVED**: TCP
   Network Server `LocalHost:<60000+>`, not serial.
