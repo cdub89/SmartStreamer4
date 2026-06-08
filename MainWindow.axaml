@@ -19,7 +19,7 @@
         </Style>
     </Window.Styles>
 
-    <TabControl Margin="0">
+    <TabControl Margin="0" SelectedIndex="{Binding SelectedTabIndex, Mode=TwoWay}">
         <TabControl.Styles>
             <Style Selector="TabItem">
                 <Setter Property="Padding" Value="10,4"/>
@@ -36,12 +36,12 @@
         </TabControl.Styles>
         <TabItem>
             <TabItem.Header>
-                <TextBlock Text="Operating" FontSize="11" FontWeight="Bold"/>
+                <TextBlock Text="Launch" FontSize="11" FontWeight="Bold"/>
             </TabItem.Header>
             <ScrollViewer Margin="0,8,0,8"
                           VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled">
-            <StackPanel Margin="8,0,8,0" Spacing="4">
+                <StackPanel Margin="8,0,8,0" Spacing="4">
                     <TextBlock Text="{Binding StatusText}"
                                FontSize="12" Foreground="Gray"
                                IsVisible="{Binding StatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
@@ -77,6 +77,97 @@
                         </ListBox.ItemTemplate>
                     </ListBox>
 
+                    <StackPanel Spacing="2" Margin="0,8,0,0" IsVisible="{Binding IsConnected}">
+                        <TextBlock Text="Discovered stations and slices" FontSize="11" FontWeight="Bold" Foreground="Gray"/>
+                        <ItemsControl ItemsSource="{Binding ClientGroups}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="local:ClientGroup">
+                                    <StackPanel Spacing="2" Margin="0,2,0,0">
+                                        <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="Green">
+                                            <TextBlock.Text>
+                                                <MultiBinding StringFormat="Station:  {0}">
+                                                    <Binding Path="Station"/>
+                                                </MultiBinding>
+                                            </TextBlock.Text>
+                                        </TextBlock>
+                                        <ItemsControl ItemsSource="{Binding Panadapters}" Margin="8,0,0,0">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="local:PanSliceGroup">
+                                                    <StackPanel Spacing="1" Margin="0,1,0,1">
+                                                        <TextBlock Text="{Binding StreamSummary}"
+                                                                   FontSize="11" Foreground="DarkCyan"/>
+                                                        <ItemsControl ItemsSource="{Binding Slices}" Margin="8,0,0,0">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate x:DataType="local:SliceViewModel">
+                                                                    <TextBlock Text="{Binding DisplayLabel}" FontSize="11"/>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <StackPanel Spacing="6" Margin="0,10,0,0" IsVisible="{Binding IsConnected}">
+                        <TextBlock Text="Choose mode" FontSize="11" FontWeight="Bold" Foreground="Gray"/>
+                        <Grid ColumnDefinitions="*,8,*">
+                            <Button Grid.Column="0"
+                                    Classes="action-button"
+                                    Height="38"
+                                    HorizontalAlignment="Stretch"
+                                    Content="CW Mode (CW Skimmer)"
+                                    Command="{Binding LaunchCwModeCommand}"/>
+                            <Button Grid.Column="2"
+                                    Classes="action-button"
+                                    Height="38"
+                                    HorizontalAlignment="Stretch"
+                                    Content="Digital Mode (WSJT-X / JTDX)"
+                                    Command="{Binding LaunchDigitalModeCommand}"/>
+                        </Grid>
+                    </StackPanel>
+
+                    <StackPanel Spacing="2" Margin="0,10,0,0" IsVisible="{Binding IsConnected}">
+                        <TextBlock Text="Network Status" FontSize="11" FontWeight="Bold" Foreground="Gray"/>
+                        <Border BorderBrush="#E3E6EA" BorderThickness="1" CornerRadius="4" Padding="8" Margin="0,1,0,2">
+                            <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="8" RowSpacing="4">
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Connection Status" FontSize="11" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding NetworkStatusLabel}" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
+
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Latency (RTT)" FontSize="11" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding NetworkLatencyRttText}" FontSize="11" VerticalAlignment="Center"/>
+
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Max Latency (RTT)" FontSize="11" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding NetworkMaxLatencyRttText}" FontSize="11" VerticalAlignment="Center"/>
+
+                                <Button Grid.Row="0"
+                                        Classes="action-button"
+                                        Grid.RowSpan="3"
+                                        Grid.Column="2"
+                                        Content="Reset Status"
+                                        MinWidth="84"
+                                        Command="{Binding ResetNetworkStatusCommand}"
+                                        IsEnabled="{Binding IsConnected}"
+                                        VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+        </TabItem>
+
+        <TabItem IsVisible="{Binding IsCwMode}">
+            <TabItem.Header>
+                <TextBlock Text="CW" FontSize="11" FontWeight="Bold"/>
+            </TabItem.Header>
+            <ScrollViewer Margin="0,8,0,8"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Margin="8,0,8,0" Spacing="4">
                     <ItemsControl ItemsSource="{Binding VisibleClientGroups}"
                                   IsVisible="{Binding IsConnected}"
                                   Margin="0,6,0,0">
@@ -145,38 +236,6 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
 
-                    <TextBlock Text="Network Status"
-                               FontSize="11"
-                               FontWeight="Bold"
-                               Foreground="Gray"
-                               Margin="0,6,0,0"/>
-                    <Border BorderBrush="#E3E6EA"
-                            BorderThickness="1"
-                            CornerRadius="4"
-                            Padding="8"
-                            Margin="0,1,0,2">
-                        <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="8" RowSpacing="4">
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Connection Status" FontSize="11" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding NetworkStatusLabel}" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
-
-                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Latency (RTT)" FontSize="11" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding NetworkLatencyRttText}" FontSize="11" VerticalAlignment="Center"/>
-
-                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Max Latency (RTT)" FontSize="11" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding NetworkMaxLatencyRttText}" FontSize="11" VerticalAlignment="Center"/>
-
-                            <Button Grid.Row="0"
-                                    Classes="action-button"
-                                    Grid.RowSpan="3"
-                                    Grid.Column="2"
-                                    Content="Reset Status"
-                                    MinWidth="84"
-                                    Command="{Binding ResetNetworkStatusCommand}"
-                                    IsEnabled="{Binding IsConnected}"
-                                    VerticalAlignment="Center"/>
-                        </Grid>
-                    </Border>
-
                     <Border BorderBrush="#E3E6EA"
                             BorderThickness="1"
                             CornerRadius="4"
@@ -201,7 +260,7 @@
             </ScrollViewer>
         </TabItem>
 
-        <TabItem>
+        <TabItem IsVisible="{Binding IsCwMode}">
             <TabItem.Header>
                 <TextBlock Text="Config" FontSize="11" FontWeight="Bold"/>
             </TabItem.Header>
@@ -384,7 +443,7 @@
             </ScrollViewer>
         </TabItem>
 
-        <TabItem>
+        <TabItem IsVisible="{Binding IsCwMode}">
             <TabItem.Header>
                 <TextBlock Text="Logs" FontSize="11" FontWeight="Bold"/>
             </TabItem.Header>
@@ -435,6 +494,21 @@
                              ScrollViewer.VerticalScrollBarVisibility="Auto"/>
                 </Border>
             </Grid>
+        </TabItem>
+
+        <TabItem IsVisible="{Binding IsDigitalMode}">
+            <TabItem.Header>
+                <TextBlock Text="Digital" FontSize="11" FontWeight="Bold"/>
+            </TabItem.Header>
+            <ScrollViewer Margin="8"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Digital Mode (WSJT-X / JTDX)" FontSize="13" FontWeight="SemiBold"/>
+                    <TextBlock Text="Coming soon: per-slice Start/Stop for WSJT-X and JTDX. (Issue #28, checkpoint F.)"
+                               FontSize="11" Foreground="Gray" TextWrapping="Wrap"/>
+                </StackPanel>
+            </ScrollViewer>
         </TabItem>
 
         <TabItem>

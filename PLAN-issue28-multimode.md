@@ -419,6 +419,80 @@ SETUP
    exe/config dir); confirm parity.
 6. **Help refactor** for the mode model.
 
+## Implementation checklist
+
+Ordered build sequence. **Multi-instance testing is intentionally last** (it
+depends on everything below).
+
+### A. Shell + mode framework
+
+- [ ] Add a `Mode` concept (CW / Digital) + persisted last-mode (first run prompts).
+- [ ] New **Launch tab** as entry point; move radio discovery + connect here.
+- [ ] **CW Mode** mounts today's tabs **unchanged** (no `CwSkimmerLauncher` edits).
+- [ ] Mode switch cleanly tears down the active family (confirm if running).
+- [ ] Slim connected-radio indicator on non-Launch tabs.
+
+### B. FlexRadio module (radio side, FlexLib)
+
+- [ ] Add `DAXChannel` get/set to `SliceInfo` + `FlexLibRadioConnection`
+      (`slice set <id> dax=<N>`).
+- [ ] Confirm `DemodMode` is surfaced for the mode notice (already in `SliceInfo`).
+
+### C. CAT discovery (read-only)
+
+- [ ] Parse `%APPDATA%\FlexRadio Systems\CAT.settings`; unescape `<PortList>` ->
+      inner `ArrayOfPortSettings`.
+- [ ] Map `Protocol=CAT && PortCommType=TCP` -> `TCPPortNumber` <-> `SliceIndex`;
+      handle none / multiple per slice.
+
+### D. Digital subsystem
+
+- [ ] `IDigitalApp { name, exePath, configRoot }` (WSJT-X, JTDX).
+- [ ] `DigitalAppLauncher` (per-instance launch/stop/IsRunning; no
+      telnet/sync/spot); reuse shared audio/status/log/settings/slice services.
+- [ ] Engine exe path config + Browse (defaults: `C:\WSJT\wsjtx\bin\wsjtx.exe`,
+      `C:\JTDX64\<ver>\bin\jtdx.exe` — JTDX path is version-specific).
+
+### E. Config provisioning
+
+- [ ] Known-good `.ini` template (`Rig=FlexRadio 6xxx`, PTT/Data/Split `@Variant`
+      blobs, `Mode=FT8`, shared `SoundOutName=DAX TX (FlexRadio DAX)`).
+- [ ] Per-slice seed: `--rig-name`, `SoundInName=DAX RX <N>`,
+      `CATNetworkPort=127.0.0.1:<discovered>`, unique `UDPServerPort`.
+- [ ] Write to `%LOCALAPPDATA%\WSJT-X - <name>` / `JTDX - <name>`.
+- [ ] Detect/repair stale `(Not found)` / v1 (`FlexRadio Systems`) audio names.
+
+### F. Digital Mode UI
+
+- [ ] Operating: **one Start/Stop row per existing slice** (dynamic), engine
+      selector, CAT/DAX-RX/UDP shown.
+- [ ] **Soft** slice-mode-mismatch notice (non-blocking).
+- [ ] Config screen (engine path, DAX channel, CAT port, rig-name/UDP).
+- [ ] Logs scoped to mode/engine.
+- [ ] Setup hub (WSJT-X / JTDX cards); check/launch DAX before audio config.
+
+### G. Engines
+
+- [ ] WSJT-X engine end-to-end.
+- [ ] JTDX engine (config root `%LOCALAPPDATA%\JTDX`, default exe) — parity.
+
+### H. Quality gates
+
+- [ ] `dotnet build` warning-free; `dotnet test` green; **existing CW Skimmer
+      tests untouched**.
+- [ ] markdownlint; Codex adversarial review of the diff.
+
+### I. Live validation (blocking)
+
+- [ ] CW Mode = CW Skimmer regression unchanged.
+- [ ] Single WSJT-X instance: assign `Slice.DAXChannel`, discover CAT port, seed
+      `.ini`, launch, RX decodes, `Test PTT` keys the radio.
+- [ ] JTDX single instance parity.
+- [ ] Mode switch CW <-> Digital: clean teardown + resource release.
+- [ ] **Multi-instance testing (LAST):** run up to 4 concurrent instances on a
+      FLEX-6600 — per-slice `--rig-name`, CAT `60000-60003`, `DAX RX 1-4`, unique
+      UDP ports, shared `DAX TX`; verify all decode and no port/UDP collisions.
+
 ## Open items (confirm during implementation)
 
 - ~~WSJT-X audio-device name~~ **RESOLVED** by FlexRadio's DAXv2 article: WSJT-X

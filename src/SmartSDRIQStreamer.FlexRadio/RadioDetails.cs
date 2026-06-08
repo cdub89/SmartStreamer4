@@ -29,12 +29,23 @@ public sealed record SliceInfo(
     double RitOffsetHz,
     int    TuneStepHz,
     uint   PanadapterStreamId,
-    string ClientStation)
+    string ClientStation,
+    int    DaxAudioChannel = 0)
 {
-    public string DisplayLabel =>
-        RitEnabled && Math.Abs(RitOffsetHz) >= 0.5
-            ? $"Slice {Letter}  {Mode}  {FreqMHz:F6} MHz  RIT {RitOffsetHz:+0;-0} Hz"
-            : $"Slice {Letter}  {Mode}  {FreqMHz:F6} MHz";
+    public string DisplayLabel
+    {
+        get
+        {
+            var label = $"Slice {Letter}  {Mode}  {FreqMHz:F6} MHz";
+            // Issue #28: show the slice's DAX audio channel (DAX RX N) when
+            // assigned — the WSJT-X/JTDX RX input. 0 = none.
+            if (DaxAudioChannel > 0)
+                label += $"  DAX RX {DaxAudioChannel}";
+            if (RitEnabled && Math.Abs(RitOffsetHz) >= 0.5)
+                label += $"  RIT {RitOffsetHz:+0;-0} Hz";
+            return label;
+        }
+    }
 }
 
 public sealed record DaxIQStreamInfo(

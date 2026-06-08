@@ -61,6 +61,32 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     [ObservableProperty]
     private string _networkMaxLatencyRttText = "--";
 
+    // ── Operating mode (issue #28) ────────────────────────────────────────────
+    // Mode gates which working tabs are visible. CW Mode = existing CW Skimmer
+    // tabs (unchanged); Digital Mode = WSJT-X / JTDX screens. The Launch tab is
+    // always visible and is selected on startup.
+
+    // Null until the operator chooses a mode on the Launch tab. While null, only
+    // the Launch and Help tabs are shown (the CW/Config/Logs and Digital tabs are
+    // mode-specific and stay hidden until a mode is picked).
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsCwMode))]
+    [NotifyPropertyChangedFor(nameof(IsDigitalMode))]
+    private AppMode? _activeMode;
+
+    public bool IsCwMode => ActiveMode == AppMode.Cw;
+    public bool IsDigitalMode => ActiveMode == AppMode.Digital;
+
+    /// <summary>Drives TabControl.SelectedIndex. 0 = Launch tab (startup).</summary>
+    [ObservableProperty]
+    private int _selectedTabIndex;
+
+    /// <summary>
+    /// Raised when a mode switch would stop a running app in the current mode.
+    /// The View shows a confirm dialog; returns true to proceed (and stop).
+    /// </summary>
+    public event Func<AppMode, Task<bool>>? ModeSwitchConfirmRequested;
+
     // ── Post-connect details ──────────────────────────────────────────────────
 
     /// <summary>Hierarchical view: client → panadapter(s) → slice(s).</summary>
@@ -280,6 +306,11 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         _launcher      = launcher;
         _settingsSession = settingsSession;
         _settings = _settingsSession.Settings;
+        // No mode is active until the operator chooses one on the Launch tab, so
+        // only Launch + Help show initially. LastMode is still persisted on
+        // selection (reserved for a future "default mode" preference) but is not
+        // auto-activated here.
+        _activeMode = null;
         _releaseUpdateService = releaseUpdateService;
         _deviceFinder = deviceFinder;
         _footerStatusBuffer = new FooterStatusBuffer(FooterStatusLines);
@@ -445,6 +476,53 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     private void Disconnect() => _connection.Disconnect();
 
     private bool CanDisconnect() => IsConnected;
+
+    // ── Mode switching (issue #28) ────────────────────────────────────────────
+    // Tab order in MainWindow.axaml is fixed; visibility (not position) is gated
+    // by mode, so these indices are stable.
+    private const int CwHomeTabIndex      = 1; // Operating (CW Mode)
+    private const int DigitalHomeTabIndex = 4; // Digital placeholder
+
+    [RelayCommand]
+    private Task LaunchCwMode() => SwitchModeAsync(AppMode.Cw);
+
+    [RelayCommand]
+    private Task LaunchDigitalMode() => SwitchModeAsync(AppMode.Digital);
+
+    private async Task SwitchModeAsync(AppMode target)
+    {
+        // Hard modes: leaving a mode with a running app stops it. Confirm first.
+        if (ActiveMode != target && HasRunningAppForCurrentMode())
+        {
+            var proceed = ModeSwitchConfirmRequested is null
+                || await ModeSwitchConfirmRequested(target);
+            if (!proceed) return;
+            StopCurrentModeApps();
+        }
+
+        if (ActiveMode != target)
+        {
+            ActiveMode = target;                 // flips tab visibility first
+            _settings.LastMode = target.ToString();
+            _settingsSession.Save();
+        }
+
+        NavigateToModeHome(target);              // then select the now-visible tab
+    }
+
+    private bool HasRunningAppForCurrentMode() =>
+        ActiveMode == AppMode.Cw && _launcher.IsRunning;
+        // Digital Mode has no in-process launcher yet (checkpoint D).
+
+    private void StopCurrentModeApps()
+    {
+        if (ActiveMode == AppMode.Cw)
+            StopAllCwSkimmerInstances();
+        // Digital Mode: nothing to stop yet.
+    }
+
+    private void NavigateToModeHome(AppMode mode) =>
+        SelectedTabIndex = mode == AppMode.Cw ? CwHomeTabIndex : DigitalHomeTabIndex;
 
     private void OnConnectionStateChanged(bool connected)
     {

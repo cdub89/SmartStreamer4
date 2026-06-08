@@ -7,6 +7,11 @@ namespace SDRIQStreamer.App;
 /// </summary>
 public sealed class AppSettings
 {
+    // ── Operating mode (issue #28) ────────────────────────────────────────────
+    // Last selected top-level mode ("Cw" or "Digital"); restored on next launch.
+
+    public string LastMode { get; set; } = "Cw";
+
     // ── CW Skimmer paths ──────────────────────────────────────────────────────
 
     public string CwSkimmerExePath   { get; set; } = string.Empty;

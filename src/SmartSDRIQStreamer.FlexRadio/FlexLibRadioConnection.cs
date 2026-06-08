@@ -552,14 +552,15 @@ public sealed class FlexLibRadioConnection : IRadioConnection
             ResolveRitOffsetHz(slc),
             ResolveTuneStepHz(slc),
             slc.PanadapterStreamID,
-            ResolveStation(slc.ClientHandle));
+            ResolveStation(slc.ClientHandle),
+            slc.DAXChannel);
 
     private static bool ShouldPublishSliceUpdate(string? propertyName)
     {
         if (string.IsNullOrWhiteSpace(propertyName))
             return true;
 
-        if (propertyName is "Freq" or "DemodMode")
+        if (propertyName is "Freq" or "DemodMode" or "DAXChannel")
             return true;
 
         // FlexLib variants expose RIT state/offset and tune-step with different names.

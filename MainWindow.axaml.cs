@@ -43,6 +43,7 @@ public partial class MainWindow : Window
             _subscribedVm.PropertyChanged -= OnViewModelPropertyChanged;
             _subscribedVm.AudioIndexChangesDetected -= OnAudioIndexChangesDetected;
             _subscribedVm.DaxStationConfirmRequested -= OnDaxStationConfirmRequested;
+            _subscribedVm.ModeSwitchConfirmRequested -= OnModeSwitchConfirmRequested;
             _subscribedVm = null;
         }
 
@@ -59,6 +60,7 @@ public partial class MainWindow : Window
             _subscribedVm.PropertyChanged -= OnViewModelPropertyChanged;
             _subscribedVm.AudioIndexChangesDetected -= OnAudioIndexChangesDetected;
             _subscribedVm.DaxStationConfirmRequested -= OnDaxStationConfirmRequested;
+            _subscribedVm.ModeSwitchConfirmRequested -= OnModeSwitchConfirmRequested;
         }
 
         _subscribedVm = DataContext as MainWindowViewModel;
@@ -67,11 +69,15 @@ public partial class MainWindow : Window
             _subscribedVm.PropertyChanged += OnViewModelPropertyChanged;
             _subscribedVm.AudioIndexChangesDetected += OnAudioIndexChangesDetected;
             _subscribedVm.DaxStationConfirmRequested += OnDaxStationConfirmRequested;
+            _subscribedVm.ModeSwitchConfirmRequested += OnModeSwitchConfirmRequested;
         }
     }
 
     private Task<DaxStationConfirmResult> OnDaxStationConfirmRequested(DaxStationConfirmRequest request)
         => Dispatcher.UIThread.InvokeAsync(() => ShowDaxStationConfirmDialogAsync(request));
+
+    private Task<bool> OnModeSwitchConfirmRequested(AppMode target)
+        => Dispatcher.UIThread.InvokeAsync(() => ShowModeSwitchConfirmDialogAsync(target));
 
     private async void OnAudioIndexChangesDetected(IReadOnlyList<string> summary)
     {
@@ -551,6 +557,52 @@ public partial class MainWindow : Window
         vm.StopAllCwSkimmerInstances();
 
         await ShowResetWizardAsync(vm);
+    }
+
+    private async Task<bool> ShowModeSwitchConfirmDialogAsync(AppMode target)
+    {
+        var targetName = target == AppMode.Cw ? "CW" : "Digital";
+        var message = new TextBlock
+        {
+            Text = $"Switching to {targetName} Mode will stop the application(s) running in the current mode.\n\nContinue?",
+            TextWrapping = TextWrapping.Wrap,
+            MaxWidth = 400
+        };
+
+        var switchButton = new Button { Content = "Stop & Switch", MinWidth = 110 };
+        var cancelButton = new Button { Content = "Cancel", MinWidth = 80, IsDefault = true, IsCancel = true };
+
+        var dialog = new Window
+        {
+            Title = "Switch Mode",
+            Width = 440,
+            SizeToContent = SizeToContent.Height,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Content = new StackPanel
+            {
+                Margin = new Thickness(16),
+                Spacing = 14,
+                Children =
+                {
+                    message,
+                    new StackPanel
+                    {
+                        Orientation = Avalonia.Layout.Orientation.Horizontal,
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                        Spacing = 8,
+                        Children = { switchButton, cancelButton }
+                    }
+                }
+            }
+        };
+
+        var proceed = false;
+        switchButton.Click += (_, _) => { proceed = true; dialog.Close(); };
+        cancelButton.Click += (_, _) => dialog.Close();
+
+        await dialog.ShowDialog(this);
+        return proceed;
     }
 
     private async Task<DaxStationConfirmResult> ShowDaxStationConfirmDialogAsync(DaxStationConfirmRequest request)
