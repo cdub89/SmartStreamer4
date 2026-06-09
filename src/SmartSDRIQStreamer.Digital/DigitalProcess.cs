@@ -7,7 +7,7 @@ namespace SDRIQStreamer.Digital;
 /// <see cref="DigitalAppLauncher"/> can be unit-tested without spawning real
 /// processes.
 /// </summary>
-public interface IDigitalProcess
+public interface IDigitalProcess : IDisposable
 {
     bool HasExited { get; }
     void Kill();
@@ -103,6 +103,11 @@ public sealed class ProcessDigitalProcessRunner : IDigitalProcessRunner
             {
                 try { if (!_process.HasExited) _process.Kill(entireProcessTree: true); } catch { }
             }
+        }
+
+        public void Dispose()
+        {
+            try { _process.Dispose(); } catch { /* already gone */ }
         }
     }
 }

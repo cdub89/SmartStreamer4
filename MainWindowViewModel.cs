@@ -126,6 +126,14 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     [NotifyPropertyChangedFor(nameof(IsJtdxSelected))]
     private int _digitalEngineIndex;
 
+    /// <summary>
+    /// The active engine can only be changed when no digital instance is running
+    /// (one engine at a time; switching is a config change). Bound to the engine
+    /// radio buttons' IsEnabled so the operator cannot mix WSJT-X and JTDX
+    /// against the same slice / CAT port (review #2).
+    /// </summary>
+    public bool CanChangeDigitalEngine => !_digitalLauncher.IsRunning;
+
     // Radio-button bindings for the engine selector (mutually exclusive).
     public bool IsWsjtXSelected
     {
@@ -490,9 +498,15 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
             });
         };
 
-        // Digital engine instances: refresh per-slice running state when any
-        // instance starts or stops (issue #28).
-        _digitalLauncher.RunningStateChanged += _ => UIPost(RefreshDigitalRunningStates);
+        // Digital engine instances: on every launch/exit, refresh per-slice
+        // running state and the engine selector's enabled state. InstancesChanged
+        // (per-instance) fires even when one of several instances exits, unlike
+        // the aggregate RunningStateChanged (issue #28).
+        _digitalLauncher.InstancesChanged += () => UIPost(() =>
+        {
+            RefreshDigitalRunningStates();
+            OnPropertyChanged(nameof(CanChangeDigitalEngine));
+        });
 
         _launcher.TelnetStatusChanged += message =>
             UIPost(() => AddTelnetStatus(message));

@@ -480,36 +480,74 @@ depends on everything below).
       pre-existing hand-made configs is optional/deferred.
 - [ ] CAT port value comes from `CatSettingsReader` discovery — wired in F.
 
-### F. Digital Mode UI
+### F. Digital Mode UI — core DONE (live-verified 2026-06-08; design evolved, see notes)
 
-- [ ] Operating: **one Start/Stop row per existing slice** (dynamic), engine
-      selector, CAT/DAX-RX/UDP shown.
-- [ ] **Soft** slice-mode-mismatch notice (non-blocking).
-- [ ] Config screen (engine path, DAX channel, CAT port, rig-name/UDP).
-- [ ] Logs scoped to mode/engine.
-- [ ] Setup hub (WSJT-X / JTDX cards); check/launch DAX before audio config.
+- [x] Operating: **one Start/Stop row per existing slice** (dynamic). Row
+      simplified to **Slice | Band (Freq) | Start/Stop** (band derived from the
+      WSJT-X `Bands.cpp` ADIF table). Start button right-aligned.
+- [x] **Soft** slice-mode-mismatch notice (non-blocking; `IsModeMismatch`,
+      shown only when the slice is not USB/DIGU).
+- [x] Config screen: **single active engine** (WSJT-X / JTDX radio buttons) +
+      exe path/Browse; **per-slice editable DAX RX / CAT / UDP**; operator
+      `Call`/`Grid` (prepopulated by harvesting an existing FlexRadio profile),
+      `Rig` (fixed `FlexRadio 6xxx`, not shown).
+- [ ] Logs scoped to mode/engine — **deferred** (future milestone).
+- [~] Setup hub (WSJT-X / JTDX cards) — **deferred**; a "Digital Mode coming
+      soon" placeholder was added to **Setup Guide page 1** instead. (Also fixed
+      a latent bug: the guide's preamble page was never rendered.)
+
+**Design deviations from the original sketch (decided during build):**
+
+- **Engine is one active choice on the Config tab**, not a per-slice/per-launch
+  selector. The operator runs WSJT-X *or* JTDX; switching is a config change and
+  is **blocked while any instance runs** (engine radio buttons disabled).
+- **DAX RX / CAT / UDP moved off the Operating row onto the Config tab** (one
+  editable row per slice, pre-set to defaults: Slice A = DAX RX 1 / CAT 60000 /
+  UDP 2237, B = 2/60001/2238, ...). The Operating row stays minimal.
+- **Provisioning preserves an existing instance `.ini`** and re-applies only our
+  keys (DAX RX / CAT / UDP / Call / Grid / Rig); it seeds from the bundled clean
+  template only on first run. This keeps the geometry, last protocol
+  (FT8/FT4/WSPR), and band that WSJT-X/JTDX save on exit. (A "last protocol"
+  column was prototyped then **removed** — its readback updated inconsistently
+  and added little value; light-touch reuse is the goal.)
+- **Stop is graceful** (`Process.CloseMainWindow`, force-kill only after 5s) so
+  the engine saves its settings; the tracked instance is held until it actually
+  exits.
 
 ### G. Engines
 
-- [ ] WSJT-X engine end-to-end.
-- [ ] JTDX engine (config root `%LOCALAPPDATA%\JTDX`, default exe) — parity.
+- [x] WSJT-X engine end-to-end — launch `--rig-name`, provision, graceful stop,
+      settings persistence **live-verified 2026-06-08**.
+- [~] JTDX engine (config root `%LOCALAPPDATA%\JTDX`, default exe) — implemented
+      via the same path (`JTDX-Improved` label); **single-instance live parity
+      pending**.
 
 ### H. Quality gates
 
-- [ ] `dotnet build` warning-free; `dotnet test` green; **existing CW Skimmer
-      tests untouched**.
-- [ ] markdownlint; Codex adversarial review of the diff.
+- [x] `dotnet build` warning-free (FlexLib transitive warnings exempt);
+      `dotnet test` green (App 37 / CWSkimmer 42 / Digital 30); **existing CW
+      Skimmer tests untouched**.
+- [x] markdownlint clean; **Codex adversarial review run 2026-06-08** over
+      `c6c3adc..HEAD`. Findings fixed: launcher restart-race + multi-instance
+      stale-row + process-handle leak (lifecycle restructure: hold instance
+      until exit, prune/dispose/notify per exit), engine-switch guard, and a
+      nullable-suppression (`!`) removal. `IniEditor` "byte-exact" doc softened.
 
 ### I. Live validation (blocking)
 
-- [ ] CW Mode = CW Skimmer regression unchanged.
-- [ ] Single WSJT-X instance: assign `Slice.DAXChannel`, discover CAT port, seed
-      `.ini`, launch, RX decodes, `Test PTT` keys the radio.
-- [ ] JTDX single instance parity.
-- [ ] Mode switch CW <-> Digital: clean teardown + resource release.
+- [x] CW Mode = CW Skimmer regression unchanged (CW path untouched except the
+      shared disconnect handler + mode shell).
+- [~] Single WSJT-X instance: seed `.ini`, launch, settings persist on stop —
+      **verified**. (`Slice.DAXChannel` assignment via FlexLib still deferred,
+      checkpoint B; operator sets the slice DAX channel in SmartSDR today.)
+- [ ] JTDX single instance parity — pending.
+- [x] Mode switch CW <-> Digital: clean teardown + resource release. Disconnect
+      now stops **all** apps (CW + digital) and returns both modes to mode
+      selection.
 - [ ] **Multi-instance testing (LAST):** run up to 4 concurrent instances on a
       FLEX-6600 — per-slice `--rig-name`, CAT `60000-60003`, `DAX RX 1-4`, unique
       UDP ports, shared `DAX TX`; verify all decode and no port/UDP collisions.
+      (In progress as of 2026-06-08.)
 
 ## Open items (confirm during implementation)
 

@@ -584,9 +584,11 @@
                         <TextBlock Grid.Column="0" Text="Engine" FontSize="11" FontWeight="SemiBold"
                                    Foreground="Gray" VerticalAlignment="Center"/>
                         <RadioButton Grid.Column="1" Classes="compact" GroupName="DigitalEngine" Content="WSJT-X"
-                                     VerticalAlignment="Center" IsChecked="{Binding IsWsjtXSelected}"/>
+                                     VerticalAlignment="Center" IsChecked="{Binding IsWsjtXSelected}"
+                                     IsEnabled="{Binding CanChangeDigitalEngine}"/>
                         <RadioButton Grid.Column="2" Classes="compact" GroupName="DigitalEngine" Content="JTDX-Improved"
-                                     VerticalAlignment="Center" IsChecked="{Binding IsJtdxSelected}"/>
+                                     VerticalAlignment="Center" IsChecked="{Binding IsJtdxSelected}"
+                                     IsEnabled="{Binding CanChangeDigitalEngine}"/>
                     </Grid>
                     <Grid ColumnDefinitions="44,*,70" ColumnSpacing="6">
                         <TextBlock Grid.Column="0" Text="Path" FontSize="10" VerticalAlignment="Center"/>

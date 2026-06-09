@@ -56,13 +56,12 @@ public static class WsjtxProfileHarvester
         var keys = ParseKeys(configIniText);
 
         // 1) Active config: un-prefixed [Configuration] keys.
-        var activeRig = Get(keys, "Configuration", "Rig");
-        if (IsFlex(activeRig))
+        if (Get(keys, "Configuration", "Rig") is { } activeRig && IsFlex(activeRig))
         {
             return new HarvestedProfile(
                 Get(keys, "Configuration", "MyCall") ?? string.Empty,
                 Get(keys, "Configuration", "MyGrid") ?? string.Empty,
-                activeRig!);
+                activeRig);
         }
 
         // 2) Saved MultiSettings configs: <hash>\Configuration\Rig under

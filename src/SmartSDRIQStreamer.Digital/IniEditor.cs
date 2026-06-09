@@ -2,9 +2,10 @@ namespace SDRIQStreamer.Digital;
 
 /// <summary>
 /// Minimal, preservation-first editor for Qt-style INI config (WSJT-X / JTDX).
-/// Sets specific keys within a named section and leaves every other line
-/// byte-for-byte unchanged. This matters because these files contain Qt
-/// <c>@Variant(...)</c> binary values and percent-encoded section names that a
+/// Sets specific keys within a named section and leaves every other line's text
+/// unchanged (newline style is normalized to the file's dominant style; content
+/// is otherwise untouched). This matters because these files contain Qt
+/// <c>@Variant(...)</c> escaped values and percent-encoded section names that a
 /// full parse-and-reserialize could corrupt — so we only touch the target keys.
 /// </summary>
 internal static class IniEditor

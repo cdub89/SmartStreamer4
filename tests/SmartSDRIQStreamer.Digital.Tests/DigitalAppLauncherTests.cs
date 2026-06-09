@@ -100,6 +100,62 @@ public sealed class DigitalAppLauncherTests
     }
 
     [Fact]
+    public async Task ClosingOneOfTwoInstances_NotifiesPerInstance_AndPrunesAndDisposesIt()
+    {
+        var exe = TempExe();
+        try
+        {
+            var runner = new FakeRunner();
+            var launcher = new DigitalAppLauncher(runner);
+            await launcher.LaunchAsync(DigitalEngines.WsjtX(exe), "SliceA");
+            await launcher.LaunchAsync(DigitalEngines.WsjtX(exe), "SliceB");
+
+            var instancesChanged = 0;
+            bool? aggregateState = null;
+            launcher.InstancesChanged += () => instancesChanged++;
+            launcher.RunningStateChanged += s => aggregateState = s;
+
+            // Close only SliceA (e.g. from its own window).
+            runner.Processes[0].SimulateExit();
+
+            // Per-instance event fired even though the aggregate stayed running...
+            Assert.True(instancesChanged >= 1);
+            Assert.Null(aggregateState);                       // aggregate unchanged -> not raised
+            Assert.False(launcher.IsInstanceRunning("SliceA")); // pruned
+            Assert.True(launcher.IsInstanceRunning("SliceB"));  // other survives
+            Assert.True(launcher.IsRunning);
+            Assert.True(runner.Processes[0].Disposed);          // exited instance disposed
+            Assert.False(runner.Processes[1].Disposed);
+        }
+        finally { File.Delete(exe); }
+    }
+
+    [Fact]
+    public async Task RelaunchRig_WhosePriorInstanceExitedUnpruned_DisposesOldAndStartsNew()
+    {
+        var exe = TempExe();
+        try
+        {
+            var runner = new FakeRunner();
+            var launcher = new DigitalAppLauncher(runner);
+            await launcher.LaunchAsync(DigitalEngines.WsjtX(exe), "SliceA");
+
+            // Prior instance exits but its event is never delivered, so it lingers
+            // in the map (the overwrite-without-cleanup edge from re-review #1).
+            runner.Processes[0].SimulateSilentExit();
+            Assert.False(launcher.IsInstanceRunning("SliceA"));
+
+            var result = await launcher.LaunchAsync(DigitalEngines.WsjtX(exe), "SliceA");
+
+            Assert.Equal(DigitalLaunchResult.Success, result);
+            Assert.True(runner.Processes[0].Disposed);          // old wrapper disposed, not orphaned
+            Assert.True(launcher.IsInstanceRunning("SliceA"));  // new instance tracked
+            Assert.Equal(2, runner.Processes.Count);
+        }
+        finally { File.Delete(exe); }
+    }
+
+    [Fact]
     public async Task InvalidRigName_ReturnsInvalidRigName()
     {
         var exe = TempExe();
@@ -144,5 +200,11 @@ public sealed class DigitalAppLauncherTests
             HasExited = true;
             Exited?.Invoke(this, EventArgs.Empty);
         }
+
+        /// <summary>Marks the process exited WITHOUT raising Exited (fast-exit / missed event).</summary>
+        public void SimulateSilentExit() => HasExited = true;
+
+        public bool Disposed { get; private set; }
+        public void Dispose() => Disposed = true;
     }
 }
