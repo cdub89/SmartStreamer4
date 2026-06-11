@@ -33,6 +33,20 @@
                 <Setter Property="FontSize" Value="10"/>
                 <Setter Property="Padding" Value="8,0"/>
             </Style>
+            <!-- "Streaming" buttons (an app/mode is actively running) are green so
+                 the running state reads at a glance. Covers normal/hover/pressed. -->
+            <Style Selector="Button.streaming">
+                <Setter Property="Background" Value="#2E7D32"/>
+                <Setter Property="Foreground" Value="White"/>
+            </Style>
+            <Style Selector="Button.streaming:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+                <Setter Property="Background" Value="#388E3C"/>
+                <Setter Property="TextBlock.Foreground" Value="White"/>
+            </Style>
+            <Style Selector="Button.streaming:pressed /template/ ContentPresenter#PART_ContentPresenter">
+                <Setter Property="Background" Value="#1B5E20"/>
+                <Setter Property="TextBlock.Foreground" Value="White"/>
+            </Style>
         </TabControl.Styles>
         <TabItem>
             <TabItem.Header>
@@ -42,6 +56,14 @@
                           VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled">
                 <StackPanel Margin="8,0,8,0" Spacing="4">
+                    <StackPanel.Styles>
+                        <!-- Compact rows for the station + mode lists so they don't
+                             dominate the window. -->
+                        <Style Selector="ListBoxItem">
+                            <Setter Property="MinHeight" Value="0"/>
+                            <Setter Property="Padding" Value="6,4"/>
+                        </Style>
+                    </StackPanel.Styles>
                     <TextBlock Text="{Binding StatusText}"
                                FontSize="12" Foreground="Gray"
                                IsVisible="{Binding StatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
@@ -122,24 +144,26 @@
                         </ItemsControl>
                     </StackPanel>
 
-                    <StackPanel Spacing="4" Margin="0,10,0,0" IsVisible="{Binding IsConnected}">
-                        <TextBlock Text="Mode" FontSize="11" FontWeight="Bold" Foreground="Gray"/>
-                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="0,2,0,0">
-                            <TextBlock Grid.Column="0" Text="CW Mode" FontSize="11" VerticalAlignment="Center"/>
+                    <StackPanel Spacing="4" Margin="0,18,0,0" IsVisible="{Binding IsConnected}">
+                        <!-- Mode selection mirrors the radio-station list above: a
+                             single-select ListBox + one Start/Stop button (header row,
+                             like Connect/Disconnect). The list disables while a mode is
+                             active, so you Stop before switching. -->
+                        <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,2">
+                            <TextBlock Grid.Column="0" Text="{Binding ModeHeaderText}" FontSize="11" FontWeight="Bold"
+                                       Foreground="Gray" VerticalAlignment="Center"
+                                       TextTrimming="CharacterEllipsis"/>
                             <Button Grid.Column="1"
                                     Classes="action-button"
-                                    MinWidth="84"
-                                    Content="{Binding CwModeButtonLabel}"
-                                    Command="{Binding CwModeButtonCommand}"/>
+                                    MinWidth="56"
+                                    Content="{Binding ModeActionButtonLabel}"
+                                    Command="{Binding ModeActionCommand}"/>
                         </Grid>
-                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                            <TextBlock Grid.Column="0" Text="Digital Mode" FontSize="11" VerticalAlignment="Center"/>
-                            <Button Grid.Column="1"
-                                    Classes="action-button"
-                                    MinWidth="84"
-                                    Content="{Binding DigitalModeButtonLabel}"
-                                    Command="{Binding DigitalModeButtonCommand}"/>
-                        </Grid>
+                        <ListBox ItemsSource="{Binding LaunchModes}"
+                                 SelectedItem="{Binding SelectedLaunchModeName}"
+                                 IsVisible="{Binding !IsModeActive}"
+                                 SelectionMode="Single"
+                                 FontSize="12"/>
                     </StackPanel>
 
                     <Border BorderBrush="#E3E6EA"
@@ -181,21 +205,8 @@
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="local:ClientGroup">
                                 <StackPanel Spacing="4" Margin="0,4,0,0">
-                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
-                                        <TextBlock Grid.Column="0"
-                                                   FontSize="11" FontWeight="SemiBold" Foreground="Green">
-                                            <TextBlock.Text>
-                                                <MultiBinding StringFormat="Station:  {0}">
-                                                    <Binding Path="Station"/>
-                                                </MultiBinding>
-                                            </TextBlock.Text>
-                                        </TextBlock>
-                                        <TextBlock Grid.Column="1"
-                                                   FontSize="11"
-                                                   Foreground="Green"
-                                                   VerticalAlignment="Center"
-                                                   Text="{Binding #Root.((local:MainWindowViewModel)DataContext).DaxStreamingSummary}"/>
-                                    </Grid>
+                                    <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="Green"
+                                               Text="{Binding Station, StringFormat='Station:  {0}'}"/>
 
                                     <ItemsControl ItemsSource="{Binding Panadapters}" Margin="8,0,0,0">
                                         <ItemsControl.ItemTemplate>
@@ -223,7 +234,7 @@
                                                                                 CommandParameter="{Binding}"
                                                                                 IsVisible="{Binding !IsSkimmerRunning}"/>
                                                                         <Button Grid.Column="1"
-                                                                                Classes="action-button"
+                                                                                Classes="action-button streaming"
                                                                                 Content="Streaming"
                                                                                 MinWidth="84"
                                                                                 Command="{Binding #Root.((local:MainWindowViewModel)DataContext).StopCwSkimmerForSliceCommand}"
@@ -272,6 +283,23 @@
                                     Command="{Binding ResetNetworkStatusCommand}"
                                     IsEnabled="{Binding IsConnected}"
                                     VerticalAlignment="Center"/>
+                        </Grid>
+                    </Border>
+
+                    <Border BorderBrush="#E3E6EA"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            Padding="6"
+                            Margin="0,8,0,0">
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                            <TextBlock Grid.Column="0" Text="Event" FontSize="10" Foreground="Gray" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding LatestFooterEvent}"
+                                       FontSize="10"
+                                       Foreground="DarkOrange"
+                                       TextWrapping="NoWrap"
+                                       TextTrimming="CharacterEllipsis"
+                                       VerticalAlignment="Center"/>
                         </Grid>
                     </Border>
 
@@ -462,59 +490,6 @@
             </ScrollViewer>
         </TabItem>
 
-        <TabItem IsVisible="{Binding IsCwMode}">
-            <TabItem.Header>
-                <TextBlock Text="Logs" FontSize="11" FontWeight="Bold"/>
-            </TabItem.Header>
-            <Grid Margin="8" RowDefinitions="Auto,Auto,*" RowSpacing="6">
-                <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
-                    <TextBlock Grid.Column="0" Text="Streamer status" FontSize="11" FontWeight="SemiBold" Foreground="Gray" VerticalAlignment="Center"/>
-                    <Button Grid.Column="1"
-                            Classes="action-button"
-                            Content="Dump Audio Devices"
-                            Command="{Binding DumpAudioDevicesCommand}"
-                            ToolTip.Tip="Writes all Windows audio capture/output endpoints (incl. DAX Audio RX/TX) to streamer-status.log. Used to characterize DAXv2 device names for WSJT-X/JTDX setup (issue #28)."/>
-                </Grid>
-                <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" Margin="0,0,0,2">
-                    <TextBlock Grid.Column="0"
-                               Text="Logs folder"
-                               Width="60"
-                               FontSize="10"
-                               Foreground="Gray"
-                               VerticalAlignment="Center"/>
-                    <TextBox Grid.Column="1"
-                             Text="{Binding LogsFolderPathText}"
-                             IsReadOnly="True"
-                             FontFamily="Consolas"
-                             FontSize="10"
-                             Foreground="DarkSlateGray"
-                             BorderThickness="1"
-                             BorderBrush="#E3E6EA"
-                             Background="Transparent"
-                             TextWrapping="NoWrap"
-                             ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                             VerticalContentAlignment="Center"/>
-                    <Button Grid.Column="2"
-                            Classes="action-button"
-                            Content="Open Folder"
-                            Command="{Binding OpenLogsFolderCommand}"
-                            IsEnabled="{Binding HasLogsFolder}"/>
-                </Grid>
-                <Border Grid.Row="2" BorderBrush="#E3E6EA" BorderThickness="1" CornerRadius="4" Padding="4">
-                    <TextBox Text="{Binding FooterStatusText}"
-                             IsReadOnly="True"
-                             AcceptsReturn="True"
-                             FontSize="10"
-                             Foreground="DarkOrange"
-                             BorderThickness="0"
-                             Background="Transparent"
-                             TextWrapping="Wrap"
-                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                             ScrollViewer.VerticalScrollBarVisibility="Auto"/>
-                </Border>
-            </Grid>
-        </TabItem>
-
         <TabItem IsVisible="{Binding IsDigitalMode}">
             <TabItem.Header>
                 <TextBlock Text="Digital" FontSize="11" FontWeight="Bold"/>
@@ -551,7 +526,7 @@
                                                     Command="{Binding #Root.((local:MainWindowViewModel)DataContext).StartDigitalForSliceCommand}"
                                                     CommandParameter="{Binding}"
                                                     IsVisible="{Binding !IsRunning}"/>
-                                            <Button Grid.Column="3" Classes="action-button" Content="Stop" MinWidth="70"
+                                            <Button Grid.Column="3" Classes="action-button streaming" Content="Streaming" MinWidth="70"
                                                     Command="{Binding #Root.((local:MainWindowViewModel)DataContext).StopDigitalForSliceCommand}"
                                                     CommandParameter="{Binding}"
                                                     IsVisible="{Binding IsRunning}"/>
@@ -567,6 +542,23 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+
+                    <Border BorderBrush="#E3E6EA"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            Padding="6"
+                            Margin="0,8,0,0">
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                            <TextBlock Grid.Column="0" Text="Event" FontSize="10" Foreground="Gray" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding LatestFooterEvent}"
+                                       FontSize="10"
+                                       Foreground="DarkOrange"
+                                       TextWrapping="NoWrap"
+                                       TextTrimming="CharacterEllipsis"
+                                       VerticalAlignment="Center"/>
+                        </Grid>
+                    </Border>
                 </StackPanel>
             </ScrollViewer>
         </TabItem>
@@ -662,6 +654,62 @@
                                Foreground="Gray" Margin="0,2,0,0"/>
                 </StackPanel>
             </ScrollViewer>
+        </TabItem>
+
+        <!-- Logs is a default tab (always shown, like Launch and Help). Placed
+             after the mode tabs so that, with a mode active, the order reads
+             Launch, <mode>, Config, Logs, Help. -->
+        <TabItem>
+            <TabItem.Header>
+                <TextBlock Text="Logs" FontSize="11" FontWeight="Bold"/>
+            </TabItem.Header>
+            <Grid Margin="8" RowDefinitions="Auto,Auto,*" RowSpacing="6">
+                <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Text="Streamer status" FontSize="11" FontWeight="SemiBold" Foreground="Gray" VerticalAlignment="Center"/>
+                    <Button Grid.Column="1"
+                            Classes="action-button"
+                            Content="Dump Audio Devices"
+                            Command="{Binding DumpAudioDevicesCommand}"
+                            ToolTip.Tip="Writes all Windows audio capture/output endpoints (incl. DAX Audio RX/TX) to streamer-status.log. Used to characterize DAXv2 device names for WSJT-X/JTDX setup (issue #28)."/>
+                </Grid>
+                <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" Margin="0,0,0,2">
+                    <TextBlock Grid.Column="0"
+                               Text="Logs folder"
+                               Width="60"
+                               FontSize="10"
+                               Foreground="Gray"
+                               VerticalAlignment="Center"/>
+                    <TextBox Grid.Column="1"
+                             Text="{Binding LogsFolderPathText}"
+                             IsReadOnly="True"
+                             FontFamily="Consolas"
+                             FontSize="10"
+                             Foreground="DarkSlateGray"
+                             BorderThickness="1"
+                             BorderBrush="#E3E6EA"
+                             Background="Transparent"
+                             TextWrapping="NoWrap"
+                             ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                             VerticalContentAlignment="Center"/>
+                    <Button Grid.Column="2"
+                            Classes="action-button"
+                            Content="Open Folder"
+                            Command="{Binding OpenLogsFolderCommand}"
+                            IsEnabled="{Binding HasLogsFolder}"/>
+                </Grid>
+                <Border Grid.Row="2" BorderBrush="#E3E6EA" BorderThickness="1" CornerRadius="4" Padding="4">
+                    <TextBox Text="{Binding FooterStatusText}"
+                             IsReadOnly="True"
+                             AcceptsReturn="True"
+                             FontSize="10"
+                             Foreground="DarkOrange"
+                             BorderThickness="0"
+                             Background="Transparent"
+                             TextWrapping="Wrap"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"/>
+                </Border>
+            </Grid>
         </TabItem>
 
         <TabItem>

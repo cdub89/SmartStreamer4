@@ -74,22 +74,76 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsCwMode))]
     [NotifyPropertyChangedFor(nameof(IsDigitalMode))]
-    [NotifyPropertyChangedFor(nameof(CwModeButtonLabel))]
-    [NotifyPropertyChangedFor(nameof(DigitalModeButtonLabel))]
-    [NotifyPropertyChangedFor(nameof(CwModeButtonCommand))]
-    [NotifyPropertyChangedFor(nameof(DigitalModeButtonCommand))]
+    [NotifyPropertyChangedFor(nameof(IsModeActive))]
+    [NotifyPropertyChangedFor(nameof(ModeActionButtonLabel))]
+    [NotifyPropertyChangedFor(nameof(ModeHeaderText))]
+    [NotifyPropertyChangedFor(nameof(SelectedLaunchModeName))]
     private AppMode? _activeMode;
 
     public bool IsCwMode => ActiveMode == AppMode.Cw;
     public bool IsDigitalMode => ActiveMode == AppMode.Digital;
 
-    // The two Launch mode buttons toggle in place: the *active* mode's button
-    // becomes "Close ... Mode" (exits to mode selection); the other stays a
-    // launch/switch button. One row, no separate close row.
-    public string CwModeButtonLabel => IsCwMode ? "Stop" : "Start";
-    public string DigitalModeButtonLabel => IsDigitalMode ? "Stop" : "Start";
-    public IAsyncRelayCommand CwModeButtonCommand => IsCwMode ? CloseModeCommand : LaunchCwModeCommand;
-    public IAsyncRelayCommand DigitalModeButtonCommand => IsDigitalMode ? CloseModeCommand : LaunchDigitalModeCommand;
+    /// <summary>True once a mode (CW or Digital) is active. Drives the Launch-tab
+    /// mode control: swaps the mode list for the running status and flips the
+    /// Start/Stop button (issue #28).</summary>
+    public bool IsModeActive => ActiveMode is not null;
+
+    // Launch-tab mode selector, consistent with the radio-station ListBox used to
+    // connect: pick CW or Digital from a single-select list, then one Start/Stop
+    // button enters/exits that mode. The list is disabled while a mode is active,
+    // so (like choosing a station only while disconnected) you Stop to switch.
+    private const string CwModeName = "CW";
+    private const string DigitalModeName = "Digital";
+
+    public IReadOnlyList<string> LaunchModes { get; } = [CwModeName, DigitalModeName];
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SelectedLaunchModeName))]
+    private AppMode _selectedLaunchMode = AppMode.Cw;
+
+    /// <summary>
+    /// The mode-list selection. While a mode is running it reflects the active
+    /// mode (so the disabled list still shows what you are in); otherwise it is
+    /// the pending choice the Start button will launch.
+    /// </summary>
+    public string SelectedLaunchModeName
+    {
+        get => (ActiveMode ?? SelectedLaunchMode) == AppMode.Digital ? DigitalModeName : CwModeName;
+        set => SelectedLaunchMode = value == DigitalModeName ? AppMode.Digital : AppMode.Cw;
+    }
+
+    public string ModeActionButtonLabel => IsModeActive ? "Stop" : "Start";
+
+    /// <summary>
+    /// Header above the mode list: just "Mode" when idle (list shown), or the
+    /// running-mode status when active (list hidden, only Stop remains).
+    /// </summary>
+    public string ModeHeaderText => ActiveMode switch
+    {
+        AppMode.Cw      => "Mode: CW Mode Running",
+        AppMode.Digital => "Mode: Digital Mode Running",
+        _ => "Mode",
+    };
+
+    /// <summary>
+    /// The single Launch-tab mode button: when no mode is active it starts the
+    /// selected mode; when a mode is active it stops/exits it. One button, like
+    /// Connect/Disconnect.
+    /// </summary>
+    [RelayCommand]
+    private async Task ModeAction()
+    {
+        if (IsModeActive)
+        {
+            await CloseModeCommand.ExecuteAsync(null);
+            return;
+        }
+
+        if (SelectedLaunchMode == AppMode.Cw)
+            await LaunchCwModeCommand.ExecuteAsync(null);
+        else
+            await LaunchDigitalModeCommand.ExecuteAsync(null);
+    }
 
     /// <summary>Drives TabControl.SelectedIndex. 0 = Launch tab (startup).</summary>
     [ObservableProperty]
@@ -645,10 +699,12 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     private bool CanDisconnect() => IsConnected;
 
     // ── Mode switching (issue #28) ────────────────────────────────────────────
-    // Tab order in MainWindow.axaml is fixed; visibility (not position) is gated
-    // by mode, so these indices are stable.
-    private const int CwHomeTabIndex      = 1; // Operating (CW Mode)
-    private const int DigitalHomeTabIndex = 4; // Digital placeholder
+    // Tab order in MainWindow.axaml (visibility, not position, is gated by mode):
+    //   0 Launch | 1 CW | 2 CW Config | 3 Digital | 4 Digital Config | 5 Logs | 6 Help
+    // Launch / Logs / Help are always shown; activating a mode reveals that mode's
+    // operating + config tabs. Entering a mode navigates to its operating tab.
+    private const int CwHomeTabIndex      = 1; // CW operating tab
+    private const int DigitalHomeTabIndex = 3; // Digital operating tab
 
     [RelayCommand]
     private Task LaunchCwMode() => SwitchModeAsync(AppMode.Cw);
@@ -1376,29 +1432,26 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
             return;
         }
 
-        // Bug fix 2026-05-18 (issue #39): filter by (channel, owning station's
-        // handle) so a foreign station's stream cannot leak its summary into
-        // this pan's row when both stations share the same DAX-IQ channel.
+        // Prefer the stream owned by this pan's station (issue #39, multi-station
+        // same-channel), but fall back to any stream on the channel for the
+        // state readback: the DAX-IQ stream is usually owned by a non-GUI client
+        // (the DAX app or our own connection), so the strict handle match misses
+        // and the row otherwise showed a stale "Off" regardless of streaming
+        // (reported 2026-06-11). Display only; the sync path attributes by the
+        // controlled-station pan/slice, not this lookup, and is unaffected.
         var stream = DaxIQStreams.FirstOrDefault(s =>
-            s.DAXIQChannel == ch && s.ClientHandle == panGroup.Pan.ClientHandle);
-        if (stream is null)
-        {
-            var centerHz = (long)(panGroup.Pan.CenterFreqMHz * 1_000_000);
-            panGroup.StreamSummary = $"DAX-IQ ch {ch}: Center Frequency {centerHz} Hz, {GetSampleRateForChannel(ch, panGroup.Pan.ClientHandle)} kHz, Off";
-            return;
-        }
+                s.DAXIQChannel == ch && s.ClientHandle == panGroup.Pan.ClientHandle)
+            ?? DaxIQStreams.FirstOrDefault(s => s.DAXIQChannel == ch);
 
-        if (stream.CenterFreqMHz > 0)
-        {
-            var centerHz = (long)(stream.CenterFreqMHz * 1_000_000);
-            panGroup.StreamSummary =
-                $"DAX-IQ ch {ch}: Center Frequency {centerHz} Hz, {stream.SampleRate / 1000} kHz, {(stream.IsActive ? "Active" : "Inactive")}";
-        }
-        else
-        {
-            panGroup.StreamSummary =
-                $"DAX-IQ ch {ch}: No Panadapter, {stream.SampleRate / 1000} kHz, {(stream.IsActive ? "Active" : "Inactive")}";
-        }
+        var rateKHz = (stream?.SampleRate ?? 48_000) / 1000;
+
+        // Match SmartSDR's DAX terminology: "Streaming" when the stream is the
+        // active consumer, else "Ready" (no stream, or present but not active).
+        var state = stream is { IsActive: true } ? "Streaming" : "Ready";
+
+        // "DAX-IQ <ch>" identifies the channel; then center frequency (from the
+        // pan) and sample rate with no labels, then the DAX state.
+        panGroup.StreamSummary = $"DAX-IQ {ch}  {panGroup.Pan.CenterFreqMHz:F6} MHz  {rateKHz} kHz  {state}";
     }
 
     private void RefreshDaxStreamPanBindings()
@@ -1439,9 +1492,6 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         var idx = DaxIQStreams.IndexOf(existing);
         DaxIQStreams[idx] = stream;
     }
-
-    private int GetSampleRateForChannel(int daxChannel, uint clientHandle)
-        => DaxIQStreams.FirstOrDefault(s => s.DAXIQChannel == daxChannel && s.ClientHandle == clientHandle)?.SampleRate / 1000 ?? 48;
 
     private void UpdateDisplayedDaxKbps()
     {
