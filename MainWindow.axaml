@@ -82,28 +82,37 @@
                         <ItemsControl ItemsSource="{Binding ClientGroups}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="local:ClientGroup">
-                                    <StackPanel Spacing="2" Margin="0,2,0,0">
-                                        <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="Green">
-                                            <TextBlock.Text>
-                                                <MultiBinding StringFormat="Station:  {0}">
-                                                    <Binding Path="Station"/>
-                                                </MultiBinding>
-                                            </TextBlock.Text>
-                                        </TextBlock>
-                                        <ItemsControl ItemsSource="{Binding Panadapters}" Margin="8,0,0,0">
+                                    <StackPanel Spacing="1" Margin="0,3,0,0">
+                                        <TextBlock Text="{Binding Station, StringFormat='Station: {0}'}"
+                                                   FontSize="11" FontWeight="SemiBold" Foreground="Green"/>
+                                        <ItemsControl ItemsSource="{Binding Panadapters}">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate x:DataType="local:PanSliceGroup">
-                                                    <StackPanel Spacing="1" Margin="0,1,0,1">
-                                                        <TextBlock Text="{Binding StreamSummary}"
-                                                                   FontSize="11" Foreground="DarkCyan"/>
-                                                        <ItemsControl ItemsSource="{Binding Slices}" Margin="8,0,0,0">
-                                                            <ItemsControl.ItemTemplate>
-                                                                <DataTemplate x:DataType="local:SliceViewModel">
-                                                                    <TextBlock Text="{Binding DisplayLabel}" FontSize="11"/>
-                                                                </DataTemplate>
-                                                            </ItemsControl.ItemTemplate>
-                                                        </ItemsControl>
-                                                    </StackPanel>
+                                                    <ItemsControl ItemsSource="{Binding Slices}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate x:DataType="local:SliceViewModel">
+                                                                <Border BorderBrush="#DDD" BorderThickness="0,0,0,1"
+                                                                        Padding="0,2" Margin="4,0,0,0">
+                                                                    <Grid ColumnDefinitions="52,116,Auto,*" ColumnSpacing="5">
+                                                                        <TextBlock Grid.Column="0" Text="{Binding SliceLabel}"
+                                                                                   FontSize="11" FontWeight="SemiBold"
+                                                                                   VerticalAlignment="Center"/>
+                                                                        <TextBlock Grid.Column="1" Text="{Binding BandFreqDisplay}"
+                                                                                   FontSize="11" VerticalAlignment="Center"
+                                                                                   TextTrimming="CharacterEllipsis"/>
+                                                                        <TextBlock Grid.Column="2" Text="{Binding DaxIqDisplay}"
+                                                                                   FontSize="11" Foreground="DarkCyan"
+                                                                                   VerticalAlignment="Center"
+                                                                                   TextTrimming="CharacterEllipsis"/>
+                                                                        <TextBlock Grid.Column="3" Text="{Binding DaxRxDisplay}"
+                                                                                   FontSize="11" Foreground="Gray"
+                                                                                   VerticalAlignment="Center"
+                                                                                   TextTrimming="CharacterEllipsis"/>
+                                                                    </Grid>
+                                                                </Border>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
                                         </ItemsControl>
@@ -161,6 +170,11 @@
                           VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled">
             <StackPanel Margin="8,0,8,0" Spacing="4">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Grid.Column="0" Text="CW Mode" FontSize="13" FontWeight="SemiBold"/>
+                        <TextBlock Grid.Column="1" FontSize="11" VerticalAlignment="Center"
+                                   Text="Engine: CW Skimmer"/>
+                    </Grid>
                     <ItemsControl ItemsSource="{Binding VisibleClientGroups}"
                                   IsVisible="{Binding IsConnected}"
                                   Margin="0,6,0,0">
@@ -503,7 +517,7 @@
 
         <TabItem IsVisible="{Binding IsDigitalMode}">
             <TabItem.Header>
-                <TextBlock Text="Operating" FontSize="11" FontWeight="Bold"/>
+                <TextBlock Text="Digital" FontSize="11" FontWeight="Bold"/>
             </TabItem.Header>
             <ScrollViewer Margin="8"
                           VerticalScrollBarVisibility="Auto"
@@ -517,6 +531,10 @@
 
                     <TextBlock Text="Connect to a radio to list its slices." FontSize="11" Foreground="Gray"
                                IsVisible="{Binding !IsConnected}"/>
+
+                    <TextBlock Text="{Binding SelectedControlStation, StringFormat='Station: {0}'}"
+                               FontSize="11" FontWeight="SemiBold" Foreground="Green"
+                               IsVisible="{Binding IsConnected}"/>
 
                     <ItemsControl ItemsSource="{Binding DigitalSlices}">
                         <ItemsControl.ItemTemplate>
@@ -580,7 +598,7 @@
                         </Style>
                     </StackPanel.Styles>
 
-                    <Grid ColumnDefinitions="44,Auto,Auto,*" ColumnSpacing="12">
+                    <Grid ColumnDefinitions="44,Auto,Auto,Auto,*" ColumnSpacing="12">
                         <TextBlock Grid.Column="0" Text="Engine" FontSize="11" FontWeight="SemiBold"
                                    Foreground="Gray" VerticalAlignment="Center"/>
                         <RadioButton Grid.Column="1" Classes="compact" GroupName="DigitalEngine" Content="WSJT-X"
@@ -588,6 +606,9 @@
                                      IsEnabled="{Binding CanChangeDigitalEngine}"/>
                         <RadioButton Grid.Column="2" Classes="compact" GroupName="DigitalEngine" Content="JTDX-Improved"
                                      VerticalAlignment="Center" IsChecked="{Binding IsJtdxSelected}"
+                                     IsEnabled="{Binding CanChangeDigitalEngine}"/>
+                        <RadioButton Grid.Column="3" Classes="compact" GroupName="DigitalEngine" Content="WSJT-Z"
+                                     VerticalAlignment="Center" IsChecked="{Binding IsWsjtZSelected}"
                                      IsEnabled="{Binding CanChangeDigitalEngine}"/>
                     </Grid>
                     <Grid ColumnDefinitions="44,*,70" ColumnSpacing="6">

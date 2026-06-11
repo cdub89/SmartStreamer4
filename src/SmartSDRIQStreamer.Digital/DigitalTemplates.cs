@@ -18,6 +18,7 @@ public static class DigitalTemplates
     {
         DigitalEngine.WsjtX => Load("WSJT-X.template.ini"),
         DigitalEngine.Jtdx  => Load("JTDX.template.ini"),
+        DigitalEngine.WsjtZ => Load("WSJT-X.template.ini"),   // WSJT-X fork; shares the WSJT-X config + template
         _ => throw new ArgumentOutOfRangeException(nameof(engine), engine, "Unknown digital engine."),
     };
 

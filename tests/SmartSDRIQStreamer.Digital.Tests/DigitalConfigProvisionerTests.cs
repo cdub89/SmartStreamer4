@@ -58,6 +58,11 @@ public sealed class DigitalConfigProvisionerTests
 
         var jtdx = DigitalConfigProvisioner.InstanceConfigPath(DigitalEngines.Jtdx(@"C:\JTDX64\159\bin\jtdx.exe"), "Slice-A");
         Assert.EndsWith(@"JTDX - Slice-A\JTDX - Slice-A.ini", jtdx);
+
+        // WSJT-Z shares the WSJT-X config root (verified 2026-06-11), so its
+        // per-instance dir lives under "WSJT-X - <rig>", not "WSJT-Z - <rig>".
+        var wsjtZ = DigitalConfigProvisioner.InstanceConfigPath(DigitalEngines.WsjtZ(@"C:\WSJT\wsjtz\bin\wsjtx.exe"), "Slice-A");
+        Assert.EndsWith(@"WSJT-X - Slice-A\WSJT-X - Slice-A.ini", wsjtZ);
     }
 
     [Fact]

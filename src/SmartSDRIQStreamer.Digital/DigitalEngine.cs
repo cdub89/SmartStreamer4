@@ -5,6 +5,7 @@ public enum DigitalEngine
 {
     WsjtX,
     Jtdx,
+    WsjtZ,
 }
 
 /// <summary>
@@ -28,5 +29,12 @@ public static class DigitalEngines
         new(DigitalEngine.WsjtX, "WSJT-X", exePath, "WSJT-X");
 
     public static DigitalEngineDefinition Jtdx(string exePath) =>
-        new(DigitalEngine.Jtdx, "JTDX", exePath, "JTDX");
+        new(DigitalEngine.Jtdx, "JTDX-Improved", exePath, "JTDX");
+
+    // WSJT-Z is a WSJT-X fork: its exe is itself named wsjtx.exe and it reads the
+    // shared WSJT-X config root (%LOCALAPPDATA%\WSJT-X), not a WSJT-Z folder
+    // (verified 2026-06-11). So it provisions from the WSJT-X template and shares
+    // that root; the only difference from stock WSJT-X is the exe path.
+    public static DigitalEngineDefinition WsjtZ(string exePath) =>
+        new(DigitalEngine.WsjtZ, "WSJT-Z", exePath, "WSJT-X");
 }

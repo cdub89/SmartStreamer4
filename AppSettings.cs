@@ -26,9 +26,13 @@ public sealed class AppSettings
     public string WsjtXExePath { get; set; } = @"C:\WSJT\wsjtx\bin\wsjtx.exe";
     public string JtdxExePath  { get; set; } = @"C:\JTDX64\159\bin\jtdx.exe";
 
-    // The one active digital engine ("WsjtX" or "Jtdx"). The operator runs one
-    // or the other, not both; switching engines is a config change. All slices
-    // launch the active engine.
+    // WSJT-Z is a WSJT-X fork whose own executable is named wsjtx.exe and which
+    // shares the WSJT-X config root (verified 2026-06-11).
+    public string WsjtZExePath { get; set; } = @"C:\WSJT\wsjtz\bin\wsjtx.exe";
+
+    // The one active digital engine ("WsjtX", "Jtdx", or "WsjtZ"). The operator
+    // runs one at a time, not several; switching engines is a config change. All
+    // slices launch the active engine.
     public string DigitalActiveEngine { get; set; } = "WsjtX";
 
     // Operator identity + recommended defaults seeded into each per-slice

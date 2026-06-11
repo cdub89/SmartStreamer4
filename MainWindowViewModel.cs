@@ -115,8 +115,9 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     [ObservableProperty]
     private string _digitalRig = "FlexRadio 6xxx";
 
-    // 0 = WSJT-X, 1 = JTDX. The single active engine; switching is a config
-    // change. Drives ActiveDigitalEngine and the active exe-path proxy below.
+    // 0 = WSJT-X, 1 = JTDX-Improved, 2 = WSJT-Z. The single active engine;
+    // switching is a config change. Drives ActiveDigitalEngine and the active
+    // exe-path proxy below.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ActiveDigitalEngine))]
     [NotifyPropertyChangedFor(nameof(ActiveEngineLabel))]
@@ -124,6 +125,7 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     [NotifyPropertyChangedFor(nameof(ActiveEngineExeFileName))]
     [NotifyPropertyChangedFor(nameof(IsWsjtXSelected))]
     [NotifyPropertyChangedFor(nameof(IsJtdxSelected))]
+    [NotifyPropertyChangedFor(nameof(IsWsjtZSelected))]
     private int _digitalEngineIndex;
 
     /// <summary>
@@ -147,6 +149,12 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         set { if (value) DigitalEngineIndex = 1; }
     }
 
+    public bool IsWsjtZSelected
+    {
+        get => DigitalEngineIndex == 2;
+        set { if (value) DigitalEngineIndex = 2; }
+    }
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ActiveEngineExePath))]
     private string _wsjtXExePath = string.Empty;
@@ -155,26 +163,48 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     [NotifyPropertyChangedFor(nameof(ActiveEngineExePath))]
     private string _jtdxExePath = string.Empty;
 
-    public DigitalEngine ActiveDigitalEngine =>
-        DigitalEngineIndex == 1 ? DigitalEngine.Jtdx : DigitalEngine.WsjtX;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ActiveEngineExePath))]
+    private string _wsjtZExePath = string.Empty;
 
-    public string ActiveEngineLabel => ActiveDigitalEngine == DigitalEngine.Jtdx ? "JTDX-Improved" : "WSJT-X";
+    public DigitalEngine ActiveDigitalEngine => DigitalEngineIndex switch
+    {
+        1 => DigitalEngine.Jtdx,
+        2 => DigitalEngine.WsjtZ,
+        _ => DigitalEngine.WsjtX,
+    };
+
+    public string ActiveEngineLabel => ActiveDigitalEngine switch
+    {
+        DigitalEngine.Jtdx  => "JTDX-Improved",
+        DigitalEngine.WsjtZ => "WSJT-Z",
+        _ => "WSJT-X",
+    };
+
+    // WSJT-Z's own executable is named wsjtx.exe, so only JTDX differs here.
     public string ActiveEngineExeFileName => ActiveDigitalEngine == DigitalEngine.Jtdx ? "jtdx.exe" : "wsjtx.exe";
 
     /// <summary>
     /// Exe path of the active engine. Reads / writes the matching backing
     /// property so the Config tab shows a single path for the chosen engine
-    /// while both paths stay remembered.
+    /// while every engine's path stays remembered.
     /// </summary>
     public string ActiveEngineExePath
     {
-        get => ActiveDigitalEngine == DigitalEngine.Jtdx ? JtdxExePath : WsjtXExePath;
+        get => ActiveDigitalEngine switch
+        {
+            DigitalEngine.Jtdx  => JtdxExePath,
+            DigitalEngine.WsjtZ => WsjtZExePath,
+            _ => WsjtXExePath,
+        };
         set
         {
-            if (ActiveDigitalEngine == DigitalEngine.Jtdx)
-                JtdxExePath = value;
-            else
-                WsjtXExePath = value;
+            switch (ActiveDigitalEngine)
+            {
+                case DigitalEngine.Jtdx:  JtdxExePath = value;  break;
+                case DigitalEngine.WsjtZ: WsjtZExePath = value; break;
+                default: WsjtXExePath = value; break;
+            }
         }
     }
 
@@ -545,7 +575,13 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
             DigitalRig = _settings.DigitalRig;
             WsjtXExePath = _settings.WsjtXExePath;
             JtdxExePath = _settings.JtdxExePath;
-            DigitalEngineIndex = string.Equals(_settings.DigitalActiveEngine, "Jtdx", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+            WsjtZExePath = _settings.WsjtZExePath;
+            DigitalEngineIndex = _settings.DigitalActiveEngine switch
+            {
+                var s when string.Equals(s, "Jtdx", StringComparison.OrdinalIgnoreCase) => 1,
+                var s when string.Equals(s, "WsjtZ", StringComparison.OrdinalIgnoreCase) => 2,
+                _ => 0,
+            };
         }
         finally
         {
@@ -699,11 +735,23 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
 
     /// <summary>
     /// Adds or updates the Digital Operating row for <paramref name="slice"/>.
-    /// Keyed by slice letter (unique per radio). Refreshes live mode/freq and
+    /// Scoped to the controlled station (like the CW VisibleClientGroups): a row
+    /// is keyed by slice letter, which is unique only WITHIN a station, so a
+    /// foreign station's slice must not feed in. Refreshes live mode/freq and
     /// re-reads the per-slice binding so Config edits are reflected.
     /// </summary>
     private void SyncDigitalSliceRow(SliceInfo slice)
     {
+        // Bug (reported 2026-06-11): with two stations (SUPERWIN + MaestroC) each
+        // has its own Slice A. Rows were keyed by letter only with no station
+        // filter, so the non-controlled station's Slice A (MaestroC, CW) appeared
+        // on the Digital Operating page when controlling SUPERWIN (DIGU). Fix:
+        // only sync slices owned by SelectedControlStation. Chosen over keying by
+        // station+letter because Digital Mode operates one station at a time, so
+        // the rows should mirror exactly the controlled station's slices.
+        if (!IsOwnStationSlice(slice))
+            return;
+
         var (daxRx, catPort, udpPort) = GetBindingForLetter(slice.Letter);
 
         var row = DigitalSlices.FirstOrDefault(r =>
@@ -735,10 +783,27 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
 
     private void RemoveDigitalSliceRow(SliceInfo slice)
     {
+        // Match station + letter so removing another station's Slice A cannot drop
+        // the controlled station's row (see SyncDigitalSliceRow, 2026-06-11).
         var row = DigitalSlices.FirstOrDefault(r =>
-            string.Equals(r.SliceLetter, slice.Letter, StringComparison.OrdinalIgnoreCase));
+            string.Equals(r.SliceLetter, slice.Letter, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(r.Station, slice.ClientStation, StringComparison.OrdinalIgnoreCase));
         if (row is not null)
             DigitalSlices.Remove(row);
+    }
+
+    /// <summary>
+    /// Rebuilds the Digital Operating rows for the current
+    /// <see cref="SelectedControlStation"/> (issue #28). Called when the
+    /// controlled station changes (initial connect, or an issue #45 re-pin) so
+    /// the rows always reflect the controlled station's slices and never a
+    /// previously-shown station's.
+    /// </summary>
+    private void RebuildDigitalSlices()
+    {
+        DigitalSlices.Clear();
+        foreach (var slice in _connection.Slices)
+            SyncDigitalSliceRow(slice);   // guard keeps only the controlled station
     }
 
     /// <summary>
@@ -1819,8 +1884,9 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     partial void OnDigitalRigChanged(string value) => _settings.DigitalRig = value.Trim();
     partial void OnWsjtXExePathChanged(string value) => _settings.WsjtXExePath = value;
     partial void OnJtdxExePathChanged(string value) => _settings.JtdxExePath = value;
+    partial void OnWsjtZExePathChanged(string value) => _settings.WsjtZExePath = value;
     partial void OnDigitalEngineIndexChanged(int value) =>
-        _settings.DigitalActiveEngine = value == 1 ? "Jtdx" : "WsjtX";
+        _settings.DigitalActiveEngine = value switch { 1 => "Jtdx", 2 => "WsjtZ", _ => "WsjtX" };
     /// <summary>
     /// Default slices to expose editable bindings for. FLEX-6600 has 4 slices
     /// (A-D); the Operating screen drives the actual slices.
@@ -1863,6 +1929,7 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     {
         DigitalEngine.WsjtX => DigitalEngines.WsjtX(WsjtXExePath),
         DigitalEngine.Jtdx  => DigitalEngines.Jtdx(JtdxExePath),
+        DigitalEngine.WsjtZ => DigitalEngines.WsjtZ(WsjtZExePath),
         _ => throw new ArgumentOutOfRangeException(nameof(engine), engine, "Unknown digital engine."),
     };
 
@@ -2872,6 +2939,11 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         OnPropertyChanged(nameof(SelectedControlStation));
         OnPropertyChanged(nameof(VisibleClientGroups));
         OnPropertyChanged(nameof(ConnectTargetHeaderText));
+
+        // Re-scope the Digital Operating rows to the new control station so a
+        // station change (or re-pin) never leaves another station's slices shown
+        // (issue #28 multi-station bug, 2026-06-11).
+        RebuildDigitalSlices();
     }
 
     private void RebuildConnectTargets()
