@@ -156,7 +156,9 @@ public partial class SetupWizardWindow : Window
         return [new WizardPage("Setup Guide", markdown)];
     }
 
-    private static void BuildFormattedContent(string content, Panel target)
+    // Instance method (not static like the other renderers): internal page
+    // links need _pages and _currentIndex to navigate.
+    private void BuildFormattedContent(string content, Panel target)
     {
         var lines = content.Replace("\r\n", "\n").Split('\n');
         var inCodeBlock = false;
@@ -200,6 +202,9 @@ public partial class SetupWizardWindow : Window
             }
 
             if (TryAddImage(target, line))
+                continue;
+
+            if (TryAddInternalLink(target, line))
                 continue;
 
             if (TryAddExternalLink(target, line))
@@ -252,6 +257,77 @@ public partial class SetupWizardWindow : Window
 
         if (inCodeBlock && codeBuilder.Length > 0)
             AddCodeBlock(target, codeBuilder.ToString().TrimEnd());
+    }
+
+    /// <summary>
+    /// Renders a markdown anchor link (<c>[label](#heading-slug)</c>) as a
+    /// button that jumps to the page whose title matches the anchor. Anchors
+    /// use GitHub heading slugs so the same links navigate correctly when the
+    /// guide is read on GitHub. Unresolvable anchors fall through to plain
+    /// text rather than rendering a dead button.
+    /// </summary>
+    private bool TryAddInternalLink(Panel target, string line)
+    {
+        var match = Regex.Match(line, @"^\s*(?:-\s+)?\[(?<label>[^\]]+)\]\(#(?<anchor>[^)]+)\)$");
+        if (!match.Success)
+            return false;
+
+        var label = match.Groups["label"].Value.Trim();
+        var anchor = match.Groups["anchor"].Value.Trim();
+        var pageIndex = FindPageIndexByAnchor(anchor);
+        if (pageIndex < 0 || string.IsNullOrWhiteSpace(label))
+            return false;
+
+        var button = new Button
+        {
+            Content = label,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
+            Background = Brushes.Transparent,
+            BorderBrush = Brushes.Transparent,
+            Foreground = Brushes.DodgerBlue,
+            Padding = new Thickness(0),
+            Margin = new Thickness(0, 0, 0, 2),
+            FontSize = 12
+        };
+
+        button.Click += (_, _) =>
+        {
+            _currentIndex = pageIndex;
+            RenderCurrentPage();
+        };
+
+        target.Children.Add(button);
+        return true;
+    }
+
+    private int FindPageIndexByAnchor(string anchor)
+    {
+        for (var i = 0; i < _pages.Count; i++)
+        {
+            if (SlugifyTitle(_pages[i].Title) == anchor)
+                return i;
+        }
+
+        return -1;
+    }
+
+    /// <summary>
+    /// GitHub-style heading slug: lowercase, spaces become hyphens, existing
+    /// hyphens kept, all other punctuation dropped. Must stay in sync with how
+    /// GitHub anchors render so guide links work in both places.
+    /// </summary>
+    private static string SlugifyTitle(string title)
+    {
+        var builder = new StringBuilder(title.Length);
+        foreach (var ch in title.ToLowerInvariant())
+        {
+            if (char.IsAsciiLetterOrDigit(ch) || ch == '-')
+                builder.Append(ch);
+            else if (ch == ' ')
+                builder.Append('-');
+        }
+
+        return builder.ToString();
     }
 
     private static bool TryAddExternalLink(Panel target, string line)

@@ -17,6 +17,12 @@ configuration each mode needs, and a troubleshooting decision tree. For the
 hands-on first-time CW setup flow, click **Set Up Wizard** on the CW Config
 tab (it auto-opens on first install once both CW Skimmer paths are set).
 
+Jump to:
+
+- [Initial Setup](#prerequisites-checklist)
+- [CW Mode Setup](#cw-mode---the-set-up-wizard)
+- [Digital Mode Setup](#digital-mode---overview)
+
 ---
 
 ## Prerequisites Checklist
@@ -363,6 +369,11 @@ different numbers, edit the Config tab to match.
    instances share the single `DAX TX (FlexRadio DAX)` device for
    transmit audio.
 
+Both slices in DIGU with their DAX channels assigned (Slice A on
+channel 1, Slice B on channel 2):
+
+![Slice flags with DAX dropdowns open: Slice A DAX channel 1, Slice B DAX channel 2](Assets/SetupWizard/Slice-DAX-Channels.png)
+
 ---
 
 ## Digital Mode - Config Tab
@@ -431,6 +442,11 @@ WSJT-X Settings → Audio with the DAX devices selected:
 With both slices started, every row shows Streaming:
 
 ![Digital tab with both slices streaming](Assets/SetupWizard/Digital-Tab-2-Slice.png)
+
+SmartSDR DAX confirms the audio side: TX Stream ready and both RX
+streams green/Streaming:
+
+![SmartSDR DAX with TX Stream on and RX streams for Slice A and Slice B both streaming](Assets/SetupWizard/SmartSDR-DAX-2-Slices-Streaming.png)
 
 ---
 
