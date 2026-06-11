@@ -1126,16 +1126,26 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         if (!_controlStationSeen)
             return;
 
-        AddStreamerStatus($"Control station '{SelectedControlStation}' disconnected.");
-        // Re-resolve only from stations still present in THIS snapshot, not from
-        // _connection.Slices: a GUI-client removal can arrive before the matching
-        // pan/slice removals, so the slice list may still hold the just-departed
-        // station and EnsureSelectedControlStation would re-pin it. Empty -> the
-        // header falls back to "Unknown Station".
-        var replacement = clients
-            .Select(c => c.Station)
-            .FirstOrDefault(s => !string.IsNullOrWhiteSpace(s)) ?? string.Empty;
-        SetSelectedControlStation(replacement);
+        // Bug fix 2026-06-11 (issue #45 re-validation): when the GUI station we were
+        // controlling disconnects while the radio TCP session stays up (another op's
+        // client still holds the radio), drop our radio connection entirely and fall
+        // back to live discovery. Two earlier approaches were rejected on live test:
+        // re-pinning to the first still-present station silently hijacked an
+        // unrelated operator (control SUPERWIN10 -> header jumped to MaestroC), and
+        // holding an "Unknown Station" header kept stale pan/slice attribution that,
+        // on the station's return, stuck on a raw "0x..." handle. The raw handle came
+        // from FlexLib's reconnect ordering: GUIClientAdded fires with an empty
+        // station name, the pan/slice arrive and resolve to the hex fallback, and the
+        // name only populates afterward. A clean reconnect avoids that window because
+        // the connect-time GUI-client snapshot is already named. Disconnect() runs
+        // the full teardown (OnConnectionStateChanged false branch) which clears
+        // SelectedControlStation and re-arms _controlStationSeen; discovery keeps
+        // running and refreshes the Available Radios list live (see
+        // FlexLibRadioDiscovery GuiClients refresh) so the station reappears when it
+        // returns and the operator reconnects. Design chosen by the maintainer during
+        // live re-test.
+        AddStreamerStatus($"Control station '{SelectedControlStation}' disconnected. Returning to radio discovery.");
+        _connection.Disconnect();
     }
 
     private void LogGuiClientsSnapshot(IReadOnlyList<GuiClientInfo> clients)

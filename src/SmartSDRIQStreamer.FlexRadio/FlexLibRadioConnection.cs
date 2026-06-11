@@ -717,7 +717,28 @@ public sealed class FlexLibRadioConnection : IRadioConnection
     /// </summary>
     private string ResolveStation(uint clientHandle, bool logFallback = true)
     {
-        var client = _radio?.GuiClients?.FirstOrDefault(c => c.ClientHandle == clientHandle);
+        // Snapshot the lookup under GuiClientsLockObj: FlexLib mutates the backing
+        // GuiClients list under this lock (Radio.UpdateGuiClientsList), and this
+        // method runs on FlexLib pan/slice event threads, so a lock-free
+        // FirstOrDefault here can race a discovery GUI-client refresh and throw
+        // "collection was modified" or read a torn entry. Same lock pattern as
+        // RefreshGuiClients. Found during issue #45 re-validation review (2026-06-11).
+        var radio = _radio;
+        GUIClient? client;
+        int clientCount;
+        if (radio is null)
+        {
+            client = null;
+            clientCount = 0;
+        }
+        else
+        {
+            lock (radio.GuiClientsLockObj)
+            {
+                client = radio.GuiClients?.FirstOrDefault(c => c.ClientHandle == clientHandle);
+                clientCount = radio.GuiClients?.Count ?? 0;
+            }
+        }
         // Bug fix 2026-05-19 (issue #30, AI9T repro): Trim() the station name so
         // a stray trailing space on the Maestro/SmartSDR side (operator-entered
         // in the station-name field) doesn't desync from the discovery-trimmed
@@ -737,9 +758,8 @@ public sealed class FlexLibRadioConnection : IRadioConnection
 
             if (firstSighting)
             {
-                var count = _radio?.GuiClients?.Count ?? 0;
                 EmitDiag(
-                    $"ResolveStation fallback: handle=0x{clientHandle:X} not in GuiClients (n={count}), using hex name.");
+                    $"ResolveStation fallback: handle=0x{clientHandle:X} not in GuiClients (n={clientCount}), using hex name.");
             }
         }
 
