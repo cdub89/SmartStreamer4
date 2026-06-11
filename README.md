@@ -1,10 +1,13 @@
 # SmartStreamer4
 
-SmartStreamer4 is a Windows desktop app that streams FlexRadio DAX-IQ
-audio into [CW Skimmer](https://www.dxatlas.com/CwSkimmer/) and reconciles
-its decoded spots back to the radio's slice. It runs alongside SmartSDR
-and gives you per-channel CW Skimmer instances synchronised to your
-panadapter and slice frequencies.
+SmartStreamer4 is a Windows desktop app for running external decoders
+against a FlexRadio. In **CW Mode** it streams DAX-IQ audio into
+[CW Skimmer](https://www.dxatlas.com/CwSkimmer/) and reconciles its
+decoded spots back to the radio's slice, with per-channel instances
+synchronised to your panadapter and slice frequencies. In **Digital
+Mode** it configures and launches per-slice WSJT-X, JTDX, or WSJT-Z
+instances (FT8/FT4) wired to DAX audio and SmartSDR CAT. It runs
+alongside SmartSDR.
 
 License: MIT (see [LICENSE](LICENSE)).
 
@@ -22,9 +25,9 @@ License: MIT (see [LICENSE](LICENSE)).
 2. Extract `SmartStreamer4.exe` somewhere convenient.
 3. Run it. Allow firewall access if Windows prompts.
 
-You'll need DAX and CW Skimmer installed and configured on the same PC. The first time you launch SmartStreamer4 with both CW Skimmer paths set, the **Reset / Setup Wizard** opens automatically and walks you through the rest.
+You'll need DAX installed on the same PC, plus CW Skimmer (CW Mode) and/or WSJT-X / JTDX / WSJT-Z (Digital Mode). The first time you launch SmartStreamer4 with both CW Skimmer paths set, the **Set Up Wizard** opens automatically and walks you through the CW configuration.
 
-For the full operator walkthrough see [SETUP_GUIDE_WIZARD.md](SETUP_GUIDE_WIZARD.md), or click **Reset / Setup Wizard** on the Config tab any time.
+For the full operator walkthrough of both modes see [SETUP_GUIDE.md](SETUP_GUIDE.md), or click **Setup Guide** on the Help tab any time.
 
 ## Build from source
 
@@ -91,7 +94,7 @@ Assets/                            Icons + screenshots referenced by the UI / do
 | File | What it covers |
 |------|----------------|
 | [README.md](README.md) | This file. Install, build, test, release. |
-| [SETUP_GUIDE_WIZARD.md](SETUP_GUIDE_WIZARD.md) | Operator guide. Embedded in the in-app Setup Wizard. |
+| [SETUP_GUIDE.md](SETUP_GUIDE.md) | Operator guide for both modes. Embedded in the app; opens via **Setup Guide** on the Help tab. |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Module layout, sync model, threading, conventions. |
 | [PLAN.md](PLAN.md) | Current implementation plan. What's blocking the next beta and what's deferred. |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Branch / PR workflow for contributors. |

@@ -112,7 +112,7 @@ The root project hosts the Avalonia UI:
 - [MainWindow.axaml](MainWindow.axaml) / [MainWindow.axaml.cs](MainWindow.axaml.cs) — three tabs: Operating, Config, Logs.
 - [MainWindowViewModel.cs](MainWindowViewModel.cs) — orchestration. Currently large (~2200 lines); see [PLAN.md](PLAN.md) for slimming targets.
 - [SliceViewModel.cs](SliceViewModel.cs) — per-slice row in the Operating tab.
-- [SetupWizardWindow](SetupWizardWindow.axaml.cs) — first-time configuration walkthrough; renders [SETUP_GUIDE_WIZARD.md](SETUP_GUIDE_WIZARD.md) as an embedded resource.
+- [SetupWizardWindow](SetupWizardWindow.axaml.cs) — in-app Setup Guide viewer (opened from the Help tab); renders [SETUP_GUIDE.md](SETUP_GUIDE.md) as an embedded resource.
 - [ResetSkimmerWizardWindow](ResetSkimmerWizardWindow.axaml.cs) — re-run the wizard after settings drift.
 - [ThrottledStatusEmitter.cs](ThrottledStatusEmitter.cs) / [FooterStatusBuffer.cs](FooterStatusBuffer.cs) — rate-limit status writes to the Logs tab and footer.
 

@@ -88,7 +88,7 @@ regressed in CI-clean code more than once.
 any errors before proceeding.** Blocking. Zero warnings allowed.
 
 ```bash
-npx markdownlint-cli2 "**/*.md" "!**/node_modules/**" "!.claude/**" "!RELEASE_NOTES-*.md" "!artifacts/**"
+npx markdownlint-cli2 "**/*.md" "!**/node_modules/**" "!.claude/**" "!.trunk/**" "!RELEASE_NOTES-*.md" "!artifacts/**"
 ```
 
 **Linting fixes**: Always fix the root cause rather than suppressing or
@@ -362,10 +362,11 @@ Where to look first for common tasks:
   [MainWindow.axaml.cs](MainWindow.axaml.cs) +
   [MainWindowViewModel.cs](MainWindowViewModel.cs) +
   [SliceViewModel.cs](SliceViewModel.cs).
-- **Setup wizard**:
+- **Setup Guide viewer** (Help tab; despite the class name it is not the
+  CW wizard):
   [SetupWizardWindow.axaml](SetupWizardWindow.axaml) /
   [SetupWizardWindow.axaml.cs](SetupWizardWindow.axaml.cs) +
-  [SETUP_GUIDE_WIZARD.md](SETUP_GUIDE_WIZARD.md) (embedded resource).
+  [SETUP_GUIDE.md](SETUP_GUIDE.md) (embedded resource).
 - **Reset Skimmer wizard**:
   [ResetSkimmerWizardWindow.axaml.cs](ResetSkimmerWizardWindow.axaml.cs).
 - **Update checks**:

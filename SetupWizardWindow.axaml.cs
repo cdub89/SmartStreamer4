@@ -15,7 +15,7 @@ namespace SDRIQStreamer.App;
 
 public partial class SetupWizardWindow : Window
 {
-    private const string EmbeddedGuideResourceName = "SDRIQStreamer.App.SETUP_GUIDE_WIZARD.md";
+    private const string EmbeddedGuideResourceName = "SDRIQStreamer.App.SETUP_GUIDE.md";
     private static readonly string ResourceAssemblyName = typeof(SetupWizardWindow).Assembly.GetName().Name ?? "SDRIQStreamer";
     private readonly IReadOnlyList<WizardPage> _pages;
     private int _currentIndex;
