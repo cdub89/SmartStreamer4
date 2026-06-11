@@ -424,6 +424,31 @@ SETUP
 Ordered build sequence. **Multi-instance testing is intentionally last** (it
 depends on everything below).
 
+### 2026-06-11 update (live-verified: SUPERWIN10 + MaestroC, SmartSDR 4.2.20)
+
+- **Third engine WSJT-Z** added to the selector (WSJT-X / JTDX-Improved /
+  WSJT-Z). WSJT-Z's exe is `C:\WSJT\wsjtz\bin\wsjtx.exe` and **shares the WSJT-X
+  config root** (`%LOCALAPPDATA%\WSJT-X`), provisioning from the WSJT-X template.
+- **Dark mode and a per-engine config/save-path override were implemented then
+  removed** as too-tight integration. The qdarkstyle launch arg
+  (`--stylesheet :/qdarkstyle/style.qss`) depends on the engine build embedding
+  qdarkstyle (washed-out on WSJT-X, absent on WSJT-Z), and a config-path override
+  cuts against the setup-and-launch goal. Do not re-add without revisiting that
+  goal.
+- **Launch-tab mode control** reworked to mirror the radio Connect/Disconnect
+  pattern: a single-select list (CW / Digital) plus one Start/Stop button. Once a
+  mode runs it shows "Mode: `<X>` Running" and hides the list.
+- **Logs is now a permanent default tab** (Launch / Logs / Help always shown;
+  activating a mode reveals that mode's operating + config tabs). Fixed a stale
+  tab index that opened Digital Mode on the Config tab instead of Operating.
+- **Multi-station digital bug fixed:** Operating rows are scoped to
+  `SelectedControlStation` (were keyed by slice letter only, so a foreign
+  station's Slice A could appear).
+- **CW DAX-IQ readback** uses SmartSDR DAX wording (`DAX-IQ <ch>  <freq> MHz
+  <rate> kHz  Streaming/Ready`) and reflects real stream state. The prior stale
+  "Off" was a display-only handle-match miss (the DAX-IQ stream is owned by a
+  non-GUI client); sync attribution is separate and was verified correct.
+
 ### A. Shell + mode framework — DONE (live-verified 2026-06-08)
 
 - [x] Add a `Mode` concept (CW / Digital) + nullable `ActiveMode` (null until a

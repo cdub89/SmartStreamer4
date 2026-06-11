@@ -44,6 +44,23 @@ public partial class DigitalOperatingRowViewModel : ObservableObject
     [ObservableProperty]
     private int _daxRxChannel;
 
+    /// <summary>
+    /// The slice's actual DAX audio channel assigned in SmartSDR (0 = none). This
+    /// is what feeds WSJT-X / JTDX's RX audio, so the engine cannot decode without
+    /// it. Distinct from <see cref="DaxRxChannel"/> (the operator's configured
+    /// default used to seed the engine .ini). Issue #28.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DaxRxDisplay))]
+    [NotifyPropertyChangedFor(nameof(HasDaxRx))]
+    private int _sliceDaxRxChannel;
+
+    /// <summary>"DAX RX N" for the slice's assigned channel, or "none".</summary>
+    public string DaxRxDisplay => SliceDaxRxChannel > 0 ? $"DAX RX {SliceDaxRxChannel}" : "none";
+
+    /// <summary>Whether the slice has a DAX RX audio channel assigned (required to start).</summary>
+    public bool HasDaxRx => SliceDaxRxChannel > 0;
+
     [ObservableProperty]
     private int _catPort;
 

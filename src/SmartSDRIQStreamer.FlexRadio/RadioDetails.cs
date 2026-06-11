@@ -36,7 +36,9 @@ public sealed record SliceInfo(
     {
         get
         {
-            var label = $"Slice {Letter}  {Mode}  {FreqMHz:F6} MHz";
+            // 0.###### trims trailing zeros (7.035000 -> 7.035) while keeping up
+            // to Hz precision when present, so the label stays compact.
+            var label = $"Slice {Letter}  {Mode}  {FreqMHz:0.######} MHz";
             // Issue #28: show the slice's DAX audio channel (DAX RX N) when
             // assigned — the WSJT-X/JTDX RX input. 0 = none.
             if (DaxAudioChannel > 0)

@@ -141,6 +141,7 @@ public sealed class DigitalTemplatesTests
     [Theory]
     [InlineData(DigitalEngine.WsjtX)]
     [InlineData(DigitalEngine.Jtdx)]
+    [InlineData(DigitalEngine.WsjtZ)]   // shares the WSJT-X template (issue #28)
     public void ForEngine_LoadsBundledTemplate_WithBlobsAndBlankIdentity(DigitalEngine engine)
     {
         var template = DigitalTemplates.ForEngine(engine);

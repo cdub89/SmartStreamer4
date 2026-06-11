@@ -516,21 +516,27 @@
                             <DataTemplate x:DataType="local:DigitalOperatingRowViewModel">
                                 <Border BorderBrush="#DDD" BorderThickness="0,0,0,1" Padding="0,2">
                                     <StackPanel Spacing="1">
-                                        <Grid ColumnDefinitions="56,128,*,Auto" ColumnSpacing="8">
+                                        <Grid ColumnDefinitions="50,112,64,*,Auto" ColumnSpacing="5">
                                             <TextBlock Grid.Column="0" Text="{Binding SliceLabel}" FontSize="11"
                                                        FontWeight="SemiBold" VerticalAlignment="Center"/>
                                             <TextBlock Grid.Column="1" FontSize="11" VerticalAlignment="Center"
                                                        TextTrimming="CharacterEllipsis"
                                                        Text="{Binding BandFreqDisplay}"/>
-                                            <Button Grid.Column="3" Classes="action-button" Content="Start" MinWidth="70"
+                                            <TextBlock Grid.Column="2" FontSize="11" Foreground="Gray" VerticalAlignment="Center"
+                                                       Text="{Binding DaxRxDisplay}"/>
+                                            <Button Grid.Column="4" Classes="action-button" Content="Start" MinWidth="70"
                                                     Command="{Binding #Root.((local:MainWindowViewModel)DataContext).StartDigitalForSliceCommand}"
                                                     CommandParameter="{Binding}"
+                                                    IsEnabled="{Binding HasDaxRx}"
                                                     IsVisible="{Binding !IsRunning}"/>
-                                            <Button Grid.Column="3" Classes="action-button streaming" Content="Streaming" MinWidth="70"
+                                            <Button Grid.Column="4" Classes="action-button streaming" Content="Streaming" MinWidth="70"
                                                     Command="{Binding #Root.((local:MainWindowViewModel)DataContext).StopDigitalForSliceCommand}"
                                                     CommandParameter="{Binding}"
                                                     IsVisible="{Binding IsRunning}"/>
                                         </Grid>
+                                        <TextBlock FontSize="10" Foreground="#C60" TextWrapping="Wrap"
+                                                   IsVisible="{Binding !HasDaxRx}"
+                                                   Text="No DAX RX audio channel assigned to this slice; assign one in SmartSDR to enable Start."/>
                                         <TextBlock FontSize="10" Foreground="#C60" TextWrapping="Wrap"
                                                    IsVisible="{Binding IsModeMismatch}"
                                                    Text="{Binding Mode, StringFormat='Slice mode {0} is not USB/DIGU; WSJT-X/JTDX need USB/DIGU audio to decode (still launchable).'}"/>
@@ -636,7 +642,7 @@
                     </Grid>
                     <ItemsControl ItemsSource="{Binding DigitalSliceConfigs}">
                         <ItemsControl.ItemTemplate>
-                            <DataTemplate>
+                            <DataTemplate x:DataType="local:DigitalSliceConfigViewModel">
                                 <Grid ColumnDefinitions="64,60,70,70,*" ColumnSpacing="6" Margin="0,1">
                                     <TextBlock Grid.Column="0" Text="{Binding SliceLabel}" FontSize="10" VerticalAlignment="Center"/>
                                     <TextBox Grid.Column="1" Classes="config-entry" Width="56" HorizontalAlignment="Left"

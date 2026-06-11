@@ -287,13 +287,6 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
 
     public ObservableCollection<DaxIQStreamInfo> DaxIQStreams { get; } = new();
 
-    [ObservableProperty]
-    private int _avgDAXKbps;
-    private int _radioAvgDaxKbps;
-
-    [ObservableProperty]
-    private string _daxStreamingSummary = "DAX Streaming : 0.0 Mbps (0 kbps)";
-
     /// <summary>Station name of our own connected client.</summary>
     public string OwnClientStation { get; private set; } = string.Empty;
     public string SelectedControlStation { get; private set; } = string.Empty;
@@ -521,11 +514,6 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         _connection.DaxIQStreamAdded       += d => UIPost(() => OnDaxIQStreamAdded(d));
         _connection.DaxIQStreamRemoved     += d => UIPost(() => OnDaxIQStreamRemoved(d));
         _connection.DaxIQStreamUpdated     += d => UIPost(() => OnDaxIQStreamUpdated(d));
-        _connection.AvgDAXKbpsChanged      += kbps => UIPost(() =>
-        {
-            _radioAvgDaxKbps = kbps;
-            UpdateDisplayedDaxKbps();
-        });
         _connection.NetworkStatusChanged   += status => UIPost(() => ApplyNetworkStatus(status));
         _connection.GuiClientsChanged      += clients => UIPost(() => OnGuiClientsChanged(clients));
         _connection.DiagnosticEvent        += line => UIPost(() => AddDiagnosticStatus(line));
@@ -821,10 +809,11 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
 
         row.Mode = slice.Mode;
         row.FreqMHz = slice.FreqMHz;
+        row.SliceDaxRxChannel = slice.DaxAudioChannel;   // actual DAX RX assignment (issue #28)
         row.DaxRxChannel = daxRx;
         row.CatPort = catPort;
         row.UdpPort = udpPort;
-        row.IsRunning = _digitalLauncher.IsInstanceRunning(row.RigName);
+        row.IsRunning = IsDigitalRowRunning(row);
     }
 
     private void InsertDigitalSliceRowSorted(DigitalOperatingRowViewModel row)
@@ -878,10 +867,28 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         return (ordinal + 1, 60_000 + ordinal, 2_237 + ordinal);
     }
 
+    // Codex review 2026-06-11: rig names are per-slice-letter, so a digital
+    // instance launched for one station's Slice A would otherwise read as
+    // "running" on another controlled station's Slice A after a re-pin. Track
+    // which station launched each running rig so the row's state matches.
+    private readonly Dictionary<string, string> _digitalRigStations =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    private bool IsDigitalRowRunning(DigitalOperatingRowViewModel row) =>
+        _digitalLauncher.IsInstanceRunning(row.RigName) &&
+        _digitalRigStations.TryGetValue(row.RigName, out var station) &&
+        string.Equals(station, row.Station, StringComparison.OrdinalIgnoreCase);
+
     private void RefreshDigitalRunningStates()
     {
+        // Forget rigs that have exited so a future same-letter row on another
+        // station can't inherit a stale "running" state.
+        foreach (var rig in _digitalRigStations.Keys
+                     .Where(r => !_digitalLauncher.IsInstanceRunning(r)).ToList())
+            _digitalRigStations.Remove(rig);
+
         foreach (var row in DigitalSlices)
-            row.IsRunning = _digitalLauncher.IsInstanceRunning(row.RigName);
+            row.IsRunning = IsDigitalRowRunning(row);
     }
 
     [RelayCommand]
@@ -889,6 +896,15 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     {
         if (row is null)
             return;
+
+        // Guard (issue #28): WSJT-X / JTDX get their RX audio from the slice's DAX
+        // audio channel, so refuse to start until the slice has one assigned in
+        // SmartSDR. Mirrors CW Mode requiring a DAX-IQ channel before launch.
+        if (!row.HasDaxRx)
+        {
+            row.StatusText = "Assign a DAX RX audio channel to this slice in SmartSDR before starting.";
+            return;
+        }
 
         var engine = GetEngineDefinition(ActiveDigitalEngine);
         var values = new DigitalProvisionValues(
@@ -902,6 +918,9 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         }
 
         var result = await _digitalLauncher.LaunchAsync(engine, row.RigName);
+        if (result == DigitalLaunchResult.Success)
+            _digitalRigStations[row.RigName] = row.Station;   // remember which station launched this rig
+
         row.StatusText = result switch
         {
             DigitalLaunchResult.Success => string.Empty,
@@ -945,8 +964,6 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
                 foreach (var d in _connection.DaxIQStreams)
                     OnDaxIQStreamAdded(d);
 
-                _radioAvgDaxKbps = _connection.AvgDAXKbps;
-                UpdateDisplayedDaxKbps();
                 ApplyNetworkStatus(_connection.NetworkStatus);
                 AddStreamerStatus($"Connected to {_connection.ConnectedModel}.");
                 AddStreamerStatus($"Control station: {SelectedControlStation}");
@@ -965,9 +982,6 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
                 ClientGroups.Clear();
                 DigitalSlices.Clear();
                 DaxIQStreams.Clear();
-                _radioAvgDaxKbps = 0;
-                AvgDAXKbps = 0;
-                DaxStreamingSummary = "DAX Streaming : 0.0 Mbps (0 kbps)";
                 ResetDisplayedNetworkStatus();
                 _lastCwDevicePreviewByChannel.Clear();
                 _lastRitStateBySlice.Clear();
@@ -1199,7 +1213,6 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         else
             ReplaceDaxStream(normalized);
 
-        UpdateDisplayedDaxKbps();
         RefreshAllPanStreamSummaries();
         RefreshSliceSkimmerStates();
         RefreshCwSkimmerDeviceInfo(normalized.DAXIQChannel);
@@ -1226,7 +1239,6 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         var m = DaxIQStreams.FirstOrDefault(x => x.DAXIQChannel == stream.DAXIQChannel);
         if (m is not null) DaxIQStreams.Remove(m);
 
-        UpdateDisplayedDaxKbps();
         RefreshAllPanStreamSummaries();
         RefreshSliceSkimmerStates();
     }
@@ -1238,7 +1250,6 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
 
         var normalized = NormalizeStreamForPan(stream);
         ReplaceDaxStream(normalized);
-        UpdateDisplayedDaxKbps();
         RefreshAllPanStreamSummaries();
         RefreshSliceSkimmerStates();
         RefreshCwSkimmerDeviceInfo(normalized.DAXIQChannel);
@@ -1451,7 +1462,7 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
 
         // "DAX-IQ <ch>" identifies the channel; then center frequency (from the
         // pan) and sample rate with no labels, then the DAX state.
-        panGroup.StreamSummary = $"DAX-IQ {ch}  {panGroup.Pan.CenterFreqMHz:F6} MHz  {rateKHz} kHz  {state}";
+        panGroup.StreamSummary = $"DAX-IQ {ch}  {panGroup.Pan.CenterFreqMHz:0.######} MHz  {rateKHz} kHz  {state}";
     }
 
     private void RefreshDaxStreamPanBindings()
@@ -1491,26 +1502,6 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
 
         var idx = DaxIQStreams.IndexOf(existing);
         DaxIQStreams[idx] = stream;
-    }
-
-    private void UpdateDisplayedDaxKbps()
-    {
-        if (_radioAvgDaxKbps > 0)
-        {
-            AvgDAXKbps = _radioAvgDaxKbps;
-        }
-        else
-        {
-            // Fallback estimate for IQ-only workflows when radio aggregate remains zero.
-            // SmartSDR's displayed IQ stream rate includes transport overhead, so this
-            // is slightly above the raw 64 bits/sample payload rate.
-            const double iqBitsPerSampleWithOverhead = 64.6666667;
-            AvgDAXKbps = DaxIQStreams
-                .Where(s => s.IsActive)
-                .Sum(s => (int)Math.Round((s.SampleRate * iqBitsPerSampleWithOverhead) / 1000.0));
-        }
-
-        DaxStreamingSummary = $"DAX Streaming : {AvgDAXKbps / 1000.0:F1} Mbps ({AvgDAXKbps} kbps)";
     }
 
     // ── CW Skimmer ────────────────────────────────────────────────────────────
