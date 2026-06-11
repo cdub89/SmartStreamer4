@@ -70,6 +70,8 @@ radio, and it is where you enter and exit a mode.
    (CW Skimmer instances or digital engines), the streamer confirms and
    then shuts them down cleanly before returning to mode selection.
 
+![Launch tab connected, showing stations, slices, and the mode selector](Assets/SetupWizard/Launch-Tab-Connected.png)
+
 Mode advice is soft: if a slice's mode does not fit the chosen mode (for
 example a CW slice in Digital Mode), the slice row shows a notice but you
 can still launch.
@@ -302,6 +304,10 @@ FT8/FT4 engines on a FlexRadio:
   engine saved (window layout, last protocol, band) and re-applies only
   the binding values above.
 
+Two instances running at once, one per slice:
+
+![Two WSJT-X instances decoding concurrently on Slice A and Slice B](Assets/SetupWizard/WSJT-X-2-Slices-Running.png)
+
 One-time setup before your first digital launch (next page): create a
 CAT TCP port per slice in SmartSDR CAT, and assign each slice a DAX
 audio channel.
@@ -332,6 +338,14 @@ a one-time manual setup.
 10. Click **Save**.
 11. Repeat for each additional slice you will use: Slice B = `60001`,
     Slice C = `60002`, Slice D = `60003`.
+
+The Add Port dialog, filled in for a TCP CAT port:
+
+![Add Port dialog: Protocol CAT, Port Type TCP, Auto Switch TX Slice enabled](Assets/SetupWizard/SmartSDRCAT-Add-TCP-Port.png)
+
+SmartSDR CAT after setup, with TCP ports bound to Slice A and Slice B:
+
+![SmartSDR CAT port list showing TCP ports 60000 and 60001 with Auto Switch TX](Assets/SetupWizard/SmartSDRCAT-Port-List.png)
 
 The port numbers must match the per-slice **CAT port** column on the
 streamer's Digital Config tab (defaults: 60000, 60001, ...). If you chose
@@ -375,6 +389,8 @@ Start Digital Mode from the Launch tab, then open the `Config` tab.
 - **Shared TX**: all slices transmit through the single
   `DAX TX (FlexRadio DAX)` device; nothing to configure per slice.
 
+![Digital Config tab with engine, path, operator, and per-slice ports](Assets/SetupWizard/Digital-Config-Tab.png)
+
 ---
 
 ## Digital Mode - Start and Stop (Digital Tab)
@@ -393,6 +409,8 @@ and a `Start` button.
   the engine's window directly is also fine.
 - Disconnecting the radio stops all running instances.
 
+![Digital tab with Slice A streaming and Slice B ready to start](Assets/SetupWizard/Digital-Tab-1-Slice.png)
+
 On your first launch, verify inside the engine that everything is wired:
 
 1. **Settings → Radio**: Rig = `FlexRadio 6xxx`, Network Server =
@@ -401,6 +419,18 @@ On your first launch, verify inside the engine that everything is wired:
 2. **Settings → Audio**: Input = `DAX RX <n> (FlexRadio DAX)`, Output =
    `DAX TX (FlexRadio DAX)`.
 3. Confirm FT8 decodes appear on a busy band.
+
+WSJT-X Settings → Radio with Test CAT green:
+
+![WSJT-X Radio settings: Rig FlexRadio 6xxx, Network Server 127.0.0.1:60000, PTT CAT, Test CAT green](Assets/SetupWizard/WSJT-X-Radio-Setting.png)
+
+WSJT-X Settings → Audio with the DAX devices selected:
+
+![WSJT-X Audio settings: Input DAX RX 1, Output DAX TX](Assets/SetupWizard/WSJT-X-Audio-Setting.png)
+
+With both slices started, every row shows Streaming:
+
+![Digital tab with both slices streaming](Assets/SetupWizard/Digital-Tab-2-Slice.png)
 
 ---
 
