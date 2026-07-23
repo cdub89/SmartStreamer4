@@ -1,5 +1,11 @@
 # CLAUDE.md
 
+Operating manual for AI coding agents in this repository. Claude Code
+loads this file directly; Codex reads the same content through the
+`AGENTS.md` symlink. The rules here are binding and mechanical: where
+this file states a rule, apply it as written instead of relying on
+judgment or model defaults.
+
 ## Project Overview
 
 SmartStreamer4 is a Windows desktop application that streams SmartSDR IQ
@@ -8,6 +14,68 @@ FlexLib, configures Skimmer's audio routing and INI, and reconciles
 Skimmer's spotted CW signals back to the radio's slice frequency. Built
 with Avalonia / .NET 8, distributed as a single signed release zip
 attached to GitHub Releases.
+
+## Task Lifecycle
+
+Follow this sequence for every code change. Do not skip or reorder steps.
+
+1. **Propose.** No code gets written or edited until the proposed change
+   has been explained and the user has given input on it. A proposal
+   covers: what will change and why, the shape of the implementation
+   (files touched, new surfaces added), and the alternatives considered,
+   including the do-nothing or subtraction option. Exempt: fixes the
+   blocking gates demand on a change the user already approved, and
+   edits the user has already fully specified.
+2. **Locate.** Use the Quick Start table (bottom of this file) to find
+   the right files. Never guess a path, symbol name, or API; confirm
+   with search (Grep or an Explore subagent) before editing.
+3. **Read first.** Read the code you are about to change, and its
+   callers when behavior changes.
+4. **Edit** following Design Philosophy, Code Quality, and Conventions
+   below.
+5. **Gate.** Immediately after each edit, run every matching blocking
+   gate the current seat can run (see Dev Environment). A failing gate
+   blocks all further work until it passes. On the Linux seat the
+   dotnet and live-radio gates cannot run; they are deferred to
+   Windows, and every deferred gate must be named in the report.
+6. **Test decision.** For every new element, explicitly choose add /
+   extend / skip-with-stated-reason (see Test Coverage Discipline).
+   Silent skips are not acceptable.
+7. **Verify.** Demonstrate the change does what was asked: run the
+   relevant test or exercise the flow against the real app. Never claim
+   a fix works without evidence. A change edited on the Linux seat is
+   not verified until the Windows-side gates and any required
+   live-radio smoke have passed.
+8. **Report.** State what changed, which gates ran and their results,
+   which gates were deferred to the Windows seat, and anything skipped
+   with the reason. If a test fails, say so and show the output; never
+   paper over it.
+
+### Definition of Done
+
+A change is complete only when every applicable item holds. Check the
+list before reporting completion.
+
+- [ ] Every blocking gate matching the touched file types passes with
+  zero errors/warnings on a seat that can run it; gates the current
+  seat cannot run are explicitly named as deferred to Windows.
+- [ ] Live-radio smoke passed for changes touching FlexLib calls, CW
+  Skimmer sync logic, audio device selection, or the workflow service;
+  FlexLib-touching changes verified against both SmartSDR 4.1.5 and
+  4.2.x servers.
+- [ ] A test add/extend/skip decision is recorded for every new element
+  (skip requires a one-line reason in the report or an inline comment).
+- [ ] Dead code left by a pivot or replaced approach is deleted.
+- [ ] A fix for a user-reported bug carries a 2-4 line comment at the
+  fix site: symptom, root cause, why this fix over alternatives, report
+  date (see Bug Fix Comments).
+- [ ] No git commits were created (see Git).
+- [ ] No em dashes introduced in user-facing prose output (see
+  Conventions for scope).
+- [ ] For non-trivial changes: a Codex deep audit ran and its findings
+  were adjudicated (see Codex collaboration).
+- [ ] The final report names the gates run and their actual results.
+  "Done" without gate evidence is not done.
 
 ## Architecture
 
@@ -30,10 +98,11 @@ attached to GitHub Releases.
   disk for historical reference only.
 - **Release**: `publish-release.ps1` is a two-phase script. Phase 1
   (default) builds, verifies the embedded version, zips
-  `SmartStreamer4-v0.1.Xb-win-x64.zip`, and updates
-  `artifacts/release/SHA256SUMS.txt`. Phase 2 (`-Publish`) commits the
-  SHA256SUMS bump and runs `gh release create --latest`. Notes pulled
-  from `RELEASE_NOTES-v0.1.Xb.md` (gitignored).
+  `SmartStreamer4-v0.1.Xb-win-x64.zip`, and writes a `SHA256SUMS.txt`
+  sidecar next to the zip. Phase 2 (`-Publish`) runs
+  `gh release create --latest`, attaching the zip and the sidecar;
+  nothing is committed, so the release commit equals the tag commit.
+  Notes pulled from `RELEASE_NOTES-v0.1.Xb.md` (gitignored).
 
 ## Dev Environment
 
@@ -54,7 +123,40 @@ identically on both.
   `git status` for "behind"; a stale clone invalidates file:line
   references. Push at session end, even for doc-only changes.
 
-## Modernization Philosophy
+## Design Philosophy
+
+### Simplicity through Subtraction (load-bearing)
+
+> "Perfection is achieved, not when there is nothing more to add, but
+> when there is nothing more to take away." (Antoine de Saint-Exupery)
+
+The default answer to "should we add this?" is **no, until proven
+otherwise**. A feature, option, settings field, wizard step, status
+line, config key, code path, or abstraction earns its place only when
+its value clearly exceeds the permanent cost it imposes: more surface
+to learn, document, test, live-verify against a real radio, and
+maintain forever. Adding is cheap to do and expensive to live with;
+subtraction compounds the other way.
+
+1. **Lead with the subtraction alternative.** Before describing what to
+   add, check whether an existing surface already meets the goal, or
+   whether removing or simplifying something meets it. If a capability
+   already covers the need, say so and recommend against the addition.
+2. **Make the value-vs-cost trade explicit.** State the concrete use
+   case, who hits it, and how often. If the use case is thin, say "the
+   trade-off is minor, I recommend we don't" rather than build it
+   because it was asked about. Pushing back here is doing the job.
+3. **Prefer the smallest thing that works.** One settings field beats
+   two; no new option beats a new option with a sensible default;
+   reusing an existing component beats a parallel one. Deleting dead
+   code after a pivot is mandatory.
+4. **Guard against accretion.** Each addition makes the next look
+   small. Name that pressure when you see it.
+
+This does not override an explicit, justified user request. Finished is
+when there is nothing left to remove, not nothing left to add.
+
+### Modernization
 
 Always prefer the latest stable version of every tool, API, and language
 feature supported by the project's minimum versions (.NET 8, C# 12,
@@ -74,6 +176,30 @@ abstraction for clocks in testable code (not `DateTime.UtcNow` directly),
 `ArgumentException.ThrowIfNullOrEmpty`, target-typed `new()` where the
 type is obvious, pattern matching with property patterns over chained
 `if`/`else`. Nullable reference types are enabled repo-wide.
+
+### Absent values: nullable types over sentinels
+
+When a value can legitimately be **absent** (unknown, not yet measured,
+not provided), use a nullable type (`int?`, `double?`, `string?`) so
+absent is structurally distinct from a real zero or empty string. Do
+not overload `0`, `""`, or `-1` as "absent" when those could be real
+readings (0 dB is a real level; audio device index 0 is a real device;
+an empty callsign could mean "not entered" vs "not yet fetched").
+Unwrap with pattern checks (`is { } value`) at the boundary, never with
+`!` (see Linting fixes).
+
+- **Apply when all three hold**: zero/empty is a plausible real value;
+  downstream consumers must distinguish "unknown" from "zero"; the
+  value crosses a boundary where the distinction matters (settings
+  JSON, INI output, status display).
+- **Exempt**: counters where zero is the natural "none yet"; dictionary
+  `TryGetValue` presence (already the idiomatic absent); framework
+  zero-value conventions (`TimeSpan.Zero` where conventional).
+- **JSON wire form** (`System.Text.Json`): nullable property +
+  `JsonIgnoreCondition.WhenWritingNull`. `null` omits the field; a real
+  zero emits. Never invent string sentinels (`"unknown"`, `"N/A"`).
+- Precedent: `OperatorWdmSignalDevIndex` is `int?` in the CW Skimmer
+  config; a null device index must never silently become device 0.
 
 ## Code Quality
 
@@ -158,39 +284,91 @@ in-app help). Use periods, commas, or parentheses instead. CLAUDE.md
 itself and code comments are exempt — the rule targets text that ships
 to operators.
 
+## Test Coverage Discipline
+
+Any new element must be deliberately routed to one of: (1) a new test,
+(2) an extension of an existing test, or (3) an explicit skip with a
+one-line reason (trivial property, UI-only wiring covered by the
+live-radio smoke, behavior already covered by an existing test the new
+code participates in, or intentionally deferred to a named follow-up).
+Default lean is (1) or (2); silent skips are not acceptable. "Element"
+means: a C# class, method, or property with logic; an INI field or
+section; a telnet parsing branch; a settings field; a frequency or sync
+math change; a CLI flag or config surface.
+
+| New element | Test lands in |
+|-------------|---------------|
+| Class or method in `src/SmartSDRIQStreamer.CWSkimmer/` | `tests/SmartSDRIQStreamer.CWSkimmer.Tests/` |
+| Class or method in `src/SmartSDRIQStreamer.Digital/` | `tests/SmartSDRIQStreamer.Digital.Tests/` |
+| Root-project service or helper (non-UI) | `tests/SmartSDRIQStreamer.App.Tests/` |
+| INI field or section | `CwSkimmerIniWriter` / INI model factory tests |
+| Settings field in `AppSettings` | load/save round-trip test |
+| Frequency or sync math | sync tracker / frequency math tests |
+| FlexLib-facing behavior, audio routing, ViewModel/UI wiring | usually not unit-testable; explicit skip with reason, covered by the live-radio smoke gate |
+
 ## Codex collaboration
 
 Codex is a second LLM (different model family, different training, its
-own file-reading tools) reachable via the `mcp__codex__codex` MCP tool.
-It runs in this same repo, so pass **absolute file paths and line
-ranges** rather than pasting large blobs — Codex will read the files
-itself. Each `mcp__codex__codex` call starts a fresh session with no
-memory of ours; use `mcp__codex__codex-reply` to continue an in-flight
-thread (cheaper than re-priming context for follow-ups on the same
-question).
+own file-reading tools) running in this same repo; it reads this file
+through the `AGENTS.md` symlink. Pass **absolute file paths**, never
+pasted blobs — Codex reads the files itself. Use it at **three
+stages**, not just as a diff reviewer:
 
-### When to call Codex
+1. **Design**: before building a non-trivial change, hand Codex the
+   plan plus the relevant whole files; ask it to attack the approach
+   (failure modes, simpler alternatives, what breaks at the edges).
+   Before writing code, not after.
+2. **Implementation**: at a fork in the road, or after two failed fix
+   attempts, hand it the failing output, the error, and the files.
+   Don't churn a third low-confidence fix without an outside read.
+3. **Final review**: before declaring done on any non-trivial change
+   (new file, threading edit, FlexLib API change, CW Skimmer sync
+   change, release-pipeline rework), run a **deep audit** over the
+   whole change (whole files, severity-ranked findings), not just the
+   diff.
 
-1. **Adversarial review** — After any non-trivial change (new file,
-   threading edit, FlexLib API change, CW Skimmer sync logic change,
-   release-pipeline rework), ask Codex to review the diff for bugs, edge
-   cases, race conditions, FlexLib API misuse, audio routing
-   assumptions, and missed CLAUDE.md gates before declaring done.
-2. **Stuck-loop breaker** — If a fix has failed twice and tests or
-   live-radio behavior still aren't right, hand Codex the failing
-   output, the error, and the relevant files and weigh its proposal
-   before attempt three. Don't churn a third low-confidence fix without
-   an outside read.
-3. **Alternative implementation** — Before committing to a non-obvious
-   design (new abstraction, new project, refactor that touches >5
-   files), ask Codex to sketch an alternative. Compare trade-offs
-   explicitly in the reply.
-4. **Parallel work** — For independent modules with a clean interface
-   (e.g. an INI writer vs. a telnet client), implement one and delegate
-   the other. Pass the interface, types, and tests so the seams line up.
-5. **Spec / protocol questions** — For FlexLib API semantics, SmartSDR
-   command framing, CW Skimmer telnet quirks, INI format edge cases.
-   Codex's training cutoff and emphasis differ; useful second read.
+Also useful for: **parallel work** on independent modules with a clean
+interface (implement one, delegate the other; pass the interface,
+types, and tests so the seams line up), and **spec / protocol
+questions** (FlexLib API semantics, SmartSDR command framing, CW
+Skimmer telnet quirks, INI format edge cases).
+
+### Channels
+
+Prefer the **CLI via Bash** (inherits `~/.codex/config.toml`, sandboxes
+properly). Run from the repo root; trust is keyed to the project path,
+so approve the repo once if prompted.
+
+- **Always redirect stdin**: end every `codex exec` invocation with
+  `< /dev/null`. When stdin is a non-TTY pipe held open (as under the
+  Bash tool), `codex exec` prints "Reading additional input from
+  stdin..." and blocks forever before doing any work (diagnosed
+  2026-07-17 in TheMill: a two-hour hang with zero CPU). A hung run
+  shows zero CPU time and no output; kill it and relaunch with stdin
+  closed. Health check when a run seems stalled:
+  `timeout 60 codex exec --sandbox read-only "Reply with exactly: HEALTHCHECK OK" < /dev/null`
+- Read-only review: `codex exec --sandbox read-only "<prompt>" < /dev/null`
+- Review that builds and runs tests:
+  `codex exec --sandbox workspace-write "<prompt>" < /dev/null`. Only
+  meaningful on the **Windows seat**; the Linux seat has no dotnet
+  SDK, so Codex there is limited to read-only code review and must not
+  claim build or test evidence.
+- Follow-up in the same session (cheaper than re-priming):
+  `codex exec resume --last "<prompt>" < /dev/null` or
+  `codex exec resume <session-id>`
+- Deep audits can run for minutes; use a generous Bash timeout or
+  `run_in_background`.
+
+The `mcp__codex__codex` MCP tool is a **fallback** only (some sandbox
+modes cannot spawn processes and silently degrade Codex to text-only).
+If it must be used: `sandbox: "danger-full-access"` plus
+`approval-policy: "never"`, and state "read-only task, do not modify
+files" in the prompt; `mcp__codex__codex-reply` continues a thread.
+
+**No degraded reviews**: if Codex reports that commands failed or that
+it could not read the files, the review is void. Switch channels and
+rerun. Never accept findings from a Codex that has not actually read
+(and, for a Windows-seat deep audit, built and run) the code.
 
 ### When NOT to call Codex
 
@@ -203,23 +381,30 @@ question).
 - Questions where Claude hasn't yet read the relevant code; Codex is a
   reviewer, not a substitute for primary grounding.
 
-### How to call Codex
+### Two prompt shapes, pick by scope
 
-Required in every prompt:
+The focused shape gives shallow production-readiness passes; the
+deep-audit shape wastes minutes on a one-line question.
 
-- **Goal** in one sentence and the **deliverable shape** (review report?
-  unified diff? method body? yes/no with reasoning?).
-- **Absolute file paths + line ranges** for everything Codex needs to
-  read. Prefer `path:start-end` over pasting; paste only when the
-  content is ephemeral (test output, a diff not yet committed).
-- **Constraints**: .NET 8 / `net8.0-windows`, Avalonia 11.3.12, nullable
-  enabled, `dotnet build` warning-free, `dotnet test` clean, no new
-  NuGet dependencies without reason, the relevant blocking gates from
-  this file, live-radio verification before declaring done.
-- **Acceptance criteria** — what "correct" looks like, including which
-  test or live-radio behavior must still pass.
-- **What's already been tried and ruled out**, so Codex doesn't propose
-  approaches that have been eliminated.
+- **Focused** (a diff, a function, a specific yes/no). Include: a
+  one-sentence goal plus the deliverable shape (report, unified diff,
+  method body, yes/no with reasoning); absolute paths with line ranges
+  (`path:start-end`; paste only ephemeral content like test output);
+  the project constraints (.NET 8 / `net8.0-windows`, Avalonia 11.3.12,
+  nullable enabled, no new NuGet dependencies without reason) and the
+  blocking gates from this file; acceptance criteria including which
+  test or live-radio behavior must still pass; and what's already been
+  tried and ruled out.
+- **Deep audit** (design review, whole-file, production readiness; the
+  default for non-trivial work). Depth comes from breadth of mandate,
+  not prompt precision: give whole files, not line ranges; on the
+  Windows seat explicitly authorize action ("build it, run the tests,
+  investigate anything suspicious"; the workspace-write invocation);
+  ask for severity-ranked findings, each with `file:line` and a
+  concrete failure scenario; tell it to report findings outside the
+  named scope too (Codex withholds adjacent findings as "out of scope"
+  unless asked). Do not pre-narrow with a hypothesis list or tight
+  acceptance criteria; stating project constraints is fine.
 
 ### After Codex responds
 
@@ -236,6 +421,32 @@ Required in every prompt:
   rather than guess.
 - If Codex's answer is wrong or missed context, note what context was
   missing so the next call includes it.
+
+## Token Efficiency
+
+- **Mechanical edits use local tools, never model-generated Edit
+  calls**: `npx markdownlint-cli2 --fix` for markdown autofix;
+  `git grep -l <pat> | xargs sed -i 's/old/new/g'` (or `perl -pi -e`)
+  for bulk renames and repo-wide find-and-replace. If a mechanical
+  transform recurs and has no script yet, write one under `tools/` and
+  document it here so future sessions call the script.
+- **Delegate simple edits to project subagents** (`.claude/agents/`):
+  `editor-trivial` (Haiku) for typo fixes, comment/doc wording tweaks,
+  single-line or single-file edits with zero design decisions, and
+  applying an already-fully-specified diff; `editor-routine` (Sonnet)
+  for well-specified multi-file edits that follow an existing pattern
+  (adding a field everywhere, mirroring an existing method, mechanical
+  refactors too fuzzy for sed). Reserve the primary model for
+  architecture, debugging, sync logic, FlexLib integration, and
+  reviewing subagent output. Both subagents run the gates their seat
+  supports before returning; spot-check their diffs.
+- **Context hygiene**: read only the relevant line ranges of large
+  files (`MainWindowViewModel.cs` is 3,000+ lines); use Explore/search
+  subagents for broad codebase questions instead of pulling whole files
+  into main context; never re-read a file just edited; keep build
+  output and test dumps out of the main context (pipe through
+  `tail`/`grep`, or delegate to a subagent). Prefer ending the session
+  (or `/clear`) over continuing unrelated work in a long context.
 
 ## Bug Fix Comments
 
@@ -265,20 +476,12 @@ rationale") at secondary sites.
 
 ## Git
 
-Batch all related edits into a single commit, then push. Don't commit
-per file. Create commits when explicitly asked by the user — Claude does
-not commit autonomously, but does maintain control of the commit
-operation once asked (writing the message, staging the right files,
-pushing).
-
-- Never use `git add -A` / `git add .`; stage by name to avoid
-  sweeping in `.env`-style files or scratch artifacts.
-- Never use `--no-verify`, `--no-gpg-sign`, or any hook-skipping flag
-  unless the user explicitly asks. If a hook fails, fix the underlying
-  issue.
-- Never amend an existing commit unless the user asks for an amend; if
-  a hook blocks a commit, fix and create a new commit, don't amend.
-- Never force-push to `main`.
+Never create commits or write commit messages. The user maintains full
+control over all git write operations: staging, commits, pushes, tags,
+PR creation, and merges. Leave changes in the working tree and report
+them. Read-only git commands (`status`, `log`, `diff`, `show`) are fine
+without asking; ask before any other mutating operation (`pull`,
+`checkout`, `stash`).
 
 ## Build & Release
 
@@ -316,9 +519,9 @@ script invocations, so a hung session can never strand a release.
      `<label>+<commit-sha>`. Refuses to package the zip if not.
    - Produces `SmartStreamer4-v0.1.18b-win-x64.zip` (runtime suffix
      matches the `-Runtime` parameter; default `win-x64`).
-   - Appends (or replaces, idempotently) the matching line in
-     `artifacts/release/SHA256SUMS.txt`. Does not commit it; a failed
-     live test means no commit.
+   - Writes a single-line `SHA256SUMS.txt` sidecar next to the zip in
+     the publish dir. (The tracked `artifacts/release/SHA256SUMS.txt`
+     is a frozen v0.1.18b-era snapshot the script no longer updates.)
 
 ### Human gates between phases
 
@@ -330,8 +533,10 @@ script invocations, so a hung session can never strand a release.
    re-run phase 1.
 2. Push the tag once the zip is good: `git push origin v0.1.18b`.
 3. Confirm `RELEASE_NOTES-v0.1.18b.md` exists at the repo root and is
-   finalized. The file is gitignored. Claude drafts it from commits
-   since the prior tag; the operator reviews and edits in place.
+   finalized. The file is gitignored. Claude drafts it by analyzing the
+   actual code diffs between the prior tag and HEAD, never by
+   summarizing commit messages alone; the operator reviews and edits
+   in place.
 
 ### Phase 2 — publish (`.\publish-release.ps1 -Publish`)
 
@@ -339,10 +544,10 @@ script invocations, so a hung session can never strand a release.
    - Fails fast on any missing precondition: tag on `origin`, zip
      present, `SHA256SUMS.txt` line matches the zip, notes file
      present + non-empty.
-   - Commits the SHA256SUMS bump (idempotent — skipped if already
-     committed) and pushes to `origin`.
-   - Runs `gh release create $tag $zip --title ... --notes-file ...
-     --latest`. `--latest` is hard-coded; the script does not expose
+   - Runs `gh release create $tag $zip SHA256SUMS.txt --title ...
+     --notes-file ... --latest`, attaching the sidecar as a release
+     asset. Nothing is committed, so `origin/main` HEAD stays equal to
+     the tag commit. `--latest` is hard-coded; the script does not expose
      `--prerelease` (the `b` suffix has caused that wrong-flag mistake
      before).
    - Attaches the zip, not a raw `.exe` (browsers block `.exe`
@@ -410,6 +615,8 @@ Where to look first for common tasks:
   Verify on both before declaring a FlexLib-touching change done.
 - Release versioning: csproj uses `0.1.X-b`; release tag and zip use
   `v0.1.Xb` (no dash).
+- Changelogs/release notes: always analyze actual code diffs between
+  tags/commits, never summarize from commit messages alone.
 - Ask questions and present decisions in prose dialog, not
   multiple-choice prompts (AskUserQuestion). The operator prefers
   discussing options conversationally.
