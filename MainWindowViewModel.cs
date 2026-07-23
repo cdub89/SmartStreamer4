@@ -473,7 +473,7 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         }
     }
 
-    public string AboutDevelopedBy => "Developed by Chris L White, WX7V and Cursor.AI Premium Agent v31.14";
+    public string AboutDevelopedBy => "Developed by Chris L White, WX7V";
     public string AboutLicenseReference => "Licensed under the MIT License. See LICENSE for full terms.";
 
     // ── Constructor ───────────────────────────────────────────────────────────

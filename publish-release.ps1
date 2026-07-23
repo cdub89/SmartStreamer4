@@ -179,7 +179,21 @@ if (Test-Path $dllConfigPath) {
 }
 
 Write-Host "`n[5/6] Creating release zip..." -ForegroundColor Yellow
-Compress-Archive -Path $exePath -DestinationPath $zipPath -Force
+# The zip must carry the license and third-party notices alongside the exe;
+# wx7v.net will not host an artifact whose notices do not ship inside it.
+$licensePath = Join-Path $PSScriptRoot "LICENSE"
+$noticesPath = Join-Path $PSScriptRoot "THIRD-PARTY-NOTICES.txt"
+foreach ($required in @($licensePath, $noticesPath)) {
+    if (-not (Test-Path $required)) {
+        Write-Host "`nERROR: '$required' not found. Refusing to package without it." -ForegroundColor Red
+        exit 1
+    }
+}
+if (Select-String -Path $noticesPath -Pattern 'TODO' -Quiet) {
+    Write-Host "`nERROR: THIRD-PARTY-NOTICES.txt still contains a TODO placeholder. Refusing to package." -ForegroundColor Red
+    exit 1
+}
+Compress-Archive -Path $exePath, $licensePath, $noticesPath -DestinationPath $zipPath -Force
 $hash = (Get-FileHash $zipPath -Algorithm SHA256).Hash.ToLower()
 Write-Host "  $zipLabel" -ForegroundColor Green
 Write-Host "  SHA256: $hash" -ForegroundColor Green
