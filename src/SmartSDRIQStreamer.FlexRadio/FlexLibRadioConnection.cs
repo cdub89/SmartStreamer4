@@ -214,9 +214,12 @@ public sealed class FlexLibRadioConnection : IRadioConnection
             return;
         }
 
-        var suffix = _suppressedMoxTransitions > 0
-            ? $" ({_suppressedMoxTransitions} rapid transitions unlogged)"
-            : string.Empty;
+        var suffix = _suppressedMoxTransitions switch
+        {
+            0 => string.Empty,
+            1 => " (1 rapid transition unlogged)",
+            var n => $" ({n} rapid transitions unlogged)",
+        };
         _suppressedMoxTransitions = 0;
         _lastMoxLogUtc = now;
         EmitDiag($"MOX {(mox ? "on" : "off")}{suffix}.");
