@@ -623,7 +623,8 @@ Where to look first for common tasks:
 
 ## References
 
-- [CONTRIBUTING.md](CONTRIBUTING.md) — branch-per-change PR workflow.
+- [CONTRIBUTING.md](CONTRIBUTING.md) — direct-commit workflow (owner);
+  branches park incomplete work; PRs for outside contributors.
 - [Flexlib4-2-Migration-Guide.md](Flexlib4-2-Migration-Guide.md) —
   the 4.1.5 → 4.2.18 migration record.
 - [PLAN-skimmer-resync-and-refactor.md](PLAN-skimmer-resync-and-refactor.md) —

@@ -2,102 +2,83 @@
 
 ## Overview
 
-SmartStreamer4 uses a branch-per-change workflow with pull requests. All development targets the `main` branch.
+SmartStreamer4 is solo-developed by @cdub89. All development targets the
+`main` branch.
 
-- **Project owner** (@cdub89) commits directly to `main` for routine work. The PR workflow below is still encouraged for non-trivial changes that benefit from a paper trail or review.
-- **Listed collaborators** work in branches off `main` in this repo and merge via PR.
-- **Outside contributors** fork the repo on GitHub, push branches to your fork, and open PRs from there.
-
-For non-trivial changes (new features, refactors, anything touching FlexRadio or DAX-IQ integration), please open an issue first so we can agree on the approach before you invest time.
+- **Project owner**: development commits land directly on `main`. There
+  is no PR ceremony for routine work; the review gate is the Codex
+  adversarial audit and the blocking gates in [CLAUDE.md](CLAUDE.md),
+  which run *before* a commit exists.
+- **Branches** are for parking incomplete work, not process: a change
+  blocked mid-flight (for example, waiting on the Windows seat for
+  build, live-radio, or release-script verification) sits on a branch
+  so `main` stays shippable. When the work completes, it merges back;
+  a PR wrapper is optional.
+- **PRs** are reserved for two cases: changes the owner genuinely wants
+  to stare at as a standalone reviewable diff before landing, and all
+  outside contributions (below).
+- **Issues** track work across sessions and dev seats. Reference them
+  from commit messages with `(#N)` so the log links back and the issue
+  thread shows the commits.
 
 ## Prerequisites
 
 - .NET 8 SDK
-- Windows (the app targets `net8.0-windows`)
-- FlexLib API DLLs (intentionally excluded from version control — see README for setup)
+- Windows (the app targets `net8.0-windows`; see the Dev Environment
+  section of [CLAUDE.md](CLAUDE.md) for the two-seat setup)
+- FlexLib API DLLs (intentionally excluded from version control — see
+  README for setup)
 
-## Workflow
+## Development workflow (owner)
 
-### 1. Start from main
+1. **Start from main, on either seat**: `git checkout main && git pull`.
+   Never work on a stale clone; a clone left behind invalidates
+   file:line references and audit work.
+2. **Make the change** following the Task Lifecycle in
+   [CLAUDE.md](CLAUDE.md). Run the blocking gates before committing:
 
-```bash
-git checkout main && git pull
-```
+   ```bash
+   dotnet build SmartSDRIQStreamer.csproj
+   dotnet test tests/SmartSDRIQStreamer.CWSkimmer.Tests
+   ```
 
-### 2. Create a focused branch
+   `dotnet test` from the repo root finds nothing because there's no
+   `.sln` file — point it at a folder that contains a test csproj.
+   Then live-test in the running app: unit tests verify code
+   correctness, not feature correctness — exercise the change against
+   real hardware (radio + DAX + CW Skimmer as relevant).
+3. **Commit directly to `main`**, staging by name (never `git add -A`).
+   Write messages that explain *why*, not just *what*, and reference
+   the issue with `(#N)`.
+4. **Push at session end**, even for doc-only work — git is the only
+   channel the two dev seats share.
+5. **Park incomplete work on a branch** named for what it does, with
+   the issue number when available (bare number, no `#`, because `#`
+   becomes `%23` in GitHub URLs): `fix/29-dax-not-running-gate`.
+   Merge it back to `main` once verification completes.
 
-Name it after what it does and include the issue number when available. Use the bare number — no `#` — because `#` becomes `%23` in GitHub URLs:
+## Outside contributions
 
-```bash
-git checkout -b fix/29-dax-not-running-gate
-git checkout -b feature/42-skimmer-port-config
-```
+Fork the repo, push a branch to your fork, and open a PR against
+`cdub89/SmartStreamer4:main`. For non-trivial changes (new features,
+refactors, anything touching FlexRadio or DAX-IQ integration), please
+open an issue first so we can agree on the approach before you invest
+time.
 
-Save the `#` for commit messages and PR titles, where GitHub auto-links to the issue.
+- Keep each PR to one bug or one feature, ideally under ~200 lines of
+  diff.
+- Run both gates above before pushing, and note any FlexRadio firmware,
+  SmartSDR, or CW Skimmer version dependencies in the PR body.
+- The PR body should explain the motivation and alternatives
+  considered; a short paragraph is plenty for a small change.
 
-Keep each branch to one bug or one feature. Small scope = fast review.
-
-### 3. Make your changes
-
-Run these gates before committing — all must pass:
-
-```bash
-dotnet build SmartSDRIQStreamer.csproj
-dotnet test tests/SmartSDRIQStreamer.CWSkimmer.Tests
-```
-
-`dotnet test` from the repo root finds nothing because there's no `.sln` file — point it at a folder that contains a test csproj.
-
-Then live-test the change in the running app. Unit tests verify code correctness, not feature correctness — exercise the change against real hardware (radio + DAX + CW Skimmer as relevant) before moving on.
-
-### 4. Commit
-
-Stage specific files rather than `git add -A`:
-
-```bash
-git add MainWindow.axaml.cs MainWindowViewModel.cs
-git commit -m "Add DAX.exe-running startup gate (#29)"
-```
-
-Write commit messages that explain *why*, not just *what*. The diff shows what changed. Reference the issue number with `(#N)` so the commit links back from the git log and shows up on the issue thread.
-
-**Tangential edits picked up along the way?** Don't include them in this PR. Either stash them (`git stash push -- <file>`) and handle them on their own branch + PR, or leave them in your working tree and tackle them after this branch wraps up. Keep each PR focused on one bug or one feature.
-
-### 5. Push and open a pull request
-
-Collaborators:
-
-```bash
-git push -u origin fix/29-dax-not-running-gate
-gh pr create --base main --title "Add DAX.exe-running startup gate" --body "..."
-```
-
-Outside contributors: push to your fork and open the PR from the GitHub UI against `cdub89/SmartStreamer4:main`.
-
-PR body should explain the motivation and any alternatives considered. A short paragraph is plenty for a small change. If the change depends on specific FlexRadio firmware, SmartSDR, or CW Skimmer versions, note them.
-
-### 6. Review
-
-Reviewer (@cdub89) will either approve the PR or request changes. Run a Claude review pass first to catch obvious issues:
-
-- `/ultrareview <PR#>` — full multi-agent cloud review (more thorough, billed)
-- `/review <PR#>` — lighter pass; **output stays in your local Claude Code session and is not posted to the PR.** Use it as a triage aid, then either leave your own review comments on GitHub, or copy the relevant findings into a PR comment with `gh pr review <PR#> --comment --body "..."` if you want the contributor to see them verbatim.
-
-**Fixing issues on behalf of the contributor:**
-
-For small fixes (typos, missing disposes, formatting), use GitHub's "Suggested change" UI in a review comment — the contributor clicks "Commit suggestion" and it's applied to their branch with full attribution. Don't silently push commits to a contributor's branch — if you must push a fix yourself, leave a top-level PR comment explaining *what* you changed and *why* so the contributor isn't surprised when they pull.
-
-**After review — what to expect as the PR author:**
-
-*Listed collaborators (branches in this repo):*
-
-- *Approved:* you squash-merge into `main` yourself — either via GitHub's "Squash and merge" button on the PR page, or `gh pr merge <PR#> --squash --delete-branch`.
-- *Changes requested:* address each comment, push follow-up commits to the same branch (no force-push, no amend). Leave a brief PR comment summarizing what you addressed so the review → fix trail is visible later. Then click "Re-request review" on the PR. Iterate until approved, then merge.
-
-*Outside contributors (branches on your fork):*
-
-- *Approved:* @cdub89 merges into `main`. After the merge, delete the branch on your fork (GitHub will prompt you).
-- *Changes requested:* address each comment, push follow-up commits to your fork's branch (the PR updates automatically). Leave a brief PR comment summarizing what you addressed so the review → fix trail is visible later. Click "Re-request review". Iterate until @cdub89 approves and merges.
+Review: @cdub89 reviews (typically with a Claude review pass first),
+using GitHub's "Suggested change" UI for small fixes rather than
+pushing to your branch. On *changes requested*, push follow-up commits
+to your fork's branch (no force-push, no amend), summarize what you
+addressed in a PR comment, and re-request review. Approved PRs are
+squash-merged by @cdub89; delete the fork branch afterward when GitHub
+prompts.
 
 ## Reporting Bugs
 
@@ -110,16 +91,13 @@ When filing an issue, please include:
 - Reproduction steps, expected vs. actual behavior
 - Relevant log output
 
-## Tips for Smooth Reviews
+## Releases
 
-- Keep PRs under ~200 lines of diff (added/changed, excluding generated files).
-- Run both gates before pushing — reviewers should see a clean diff, not fixup commits.
-- Reference the issue number in the PR body if one exists.
-
-## Merging and Releases
-
-PRs are squash-merged into `main` after at least one approval. Releases are cut from `main` using `publish-release.ps1` and tagged `v<version>`.
+Releases are cut from `main` using `publish-release.ps1` and tagged
+`v<version>` (see the Build & Release section of
+[CLAUDE.md](CLAUDE.md)).
 
 ## License
 
-By submitting a pull request, you agree your contribution will be licensed under the project's MIT License (see [LICENSE](LICENSE)).
+By submitting a pull request, you agree your contribution will be
+licensed under the project's MIT License (see [LICENSE](LICENSE)).
