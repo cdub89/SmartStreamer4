@@ -21,6 +21,12 @@ public sealed class FlexLibRadioConnection : IRadioConnection
     private readonly HashSet<uint> _fallbackLoggedHandles = new();
     private readonly object _fallbackLoggedHandlesLock = new();
 
+    // MOX transition logging state (issue #51 diagnostics; see LogMoxTransition).
+    private static readonly TimeSpan MoxLogThrottle = TimeSpan.FromSeconds(2);
+    private DateTime _lastMoxLogUtc = DateTime.MinValue;
+    private bool? _lastSeenMox;
+    private int _suppressedMoxTransitions;
+
     public event Action<string>? DiagnosticEvent;
 
     private void EmitDiag(string line) => DiagnosticEvent?.Invoke(line);
@@ -174,7 +180,46 @@ public sealed class FlexLibRadioConnection : IRadioConnection
                 if (_radio?.Versions is { Length: > 0 } v)
                     EmitDiag($"Radio versions: {v}.");
                 break;
+            // Diagnostic for issue #51 (reported 2026-07-23): Skimmer's pan
+            // intermittently floods with the operator's own keying while
+            // SmartSDR's pan stays clean; suspected DAX-IQ fault in SmartSDR
+            // 4.2.20. Log TX transitions so streamer-status.log correlates
+            // fault onset with key-down. Logging only; no action on TX state.
+            // FlexLib derives Mox from the interlock state (Radio.cs:7588),
+            // so CW key-down surfaces here, not just the MOX button.
+            case "Mox":
+                if (_radio is { } moxRadio)
+                    LogMoxTransition(moxRadio.Mox);
+                break;
         }
+    }
+
+    /// <summary>
+    /// Emits a `[FLEX]` line per MOX on/off transition, throttled to one line
+    /// per <see cref="MoxLogThrottle"/>: QSK break-in can bounce the interlock
+    /// state per CW element, and unthrottled lines would flood the footer and
+    /// log. Bounces inside the window are counted and reported on the next
+    /// emitted line, so no transition is silently dropped.
+    /// </summary>
+    private void LogMoxTransition(bool mox)
+    {
+        if (_lastSeenMox == mox)
+            return;
+        _lastSeenMox = mox;
+
+        var now = DateTime.UtcNow;
+        if (now - _lastMoxLogUtc < MoxLogThrottle)
+        {
+            _suppressedMoxTransitions++;
+            return;
+        }
+
+        var suffix = _suppressedMoxTransitions > 0
+            ? $" ({_suppressedMoxTransitions} rapid transitions unlogged)"
+            : string.Empty;
+        _suppressedMoxTransitions = 0;
+        _lastMoxLogUtc = now;
+        EmitDiag($"MOX {(mox ? "on" : "off")}{suffix}.");
     }
 
     // ── Panadapters ──────────────────────────────────────────────────────────
