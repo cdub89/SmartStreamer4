@@ -35,6 +35,25 @@ attached to GitHub Releases.
   SHA256SUMS bump and runs `gh release create --latest`. Notes pulled
   from `RELEASE_NOTES-v0.1.Xb.md` (gitignored).
 
+## Dev Environment
+
+Two clones of this repo, one on each machine. VS Code + Claude Code run
+identically on both.
+
+- **Windows 11 (primary)**: build, test, run, live radio. Every blocking
+  gate (build, test, live-radio smoke, release script) executes here.
+- **Linux (secondary)**: docs, scripts, planning, and audit work. No
+  `dotnet` SDK and no `pwsh`, so build/test gates cannot run; any C# or
+  NuGet errors a Linux IDE shows are environmental noise, not real bugs.
+  After C# edits made on Linux, flag that Windows-side verification is
+  still required before merge.
+- **Git is the only channel the two seats share.** Claude Code
+  auto-memory is machine-local and never syncs. Durable cross-seat
+  knowledge belongs in this file (or TODO.md / PLAN.md for work state),
+  not in memory. Start every session with `git pull` and check
+  `git status` for "behind"; a stale clone invalidates file:line
+  references. Push at session end, even for doc-only changes.
+
 ## Modernization Philosophy
 
 Always prefer the latest stable version of every tool, API, and language
@@ -391,6 +410,9 @@ Where to look first for common tasks:
   Verify on both before declaring a FlexLib-touching change done.
 - Release versioning: csproj uses `0.1.X-b`; release tag and zip use
   `v0.1.Xb` (no dash).
+- Ask questions and present decisions in prose dialog, not
+  multiple-choice prompts (AskUserQuestion). The operator prefers
+  discussing options conversationally.
 
 ## References
 
