@@ -2279,7 +2279,7 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
 
     private void UpdateTelnetIniSummary()
     {
-        var iniDir = ResolveCwSkimmerIniDirPath();
+        var iniDir = ResolveCwSkimmerIniDir();
         StreamerIniFolderPath = iniDir;
         HasStreamerIniFolder = Directory.Exists(iniDir);
 
@@ -2344,7 +2344,7 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
 
         try
         {
-            var iniDir = ResolveCwSkimmerIniDirPath();
+            var iniDir = ResolveCwSkimmerIniDir();
             if (!Directory.Exists(iniDir))
                 return false;
 
@@ -2387,17 +2387,6 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         {
             AddStreamerStatus($"Unable to {targetDescription}: {ex.Message}");
         }
-    }
-
-    private static string ResolveCwSkimmerIniDirPath()
-    {
-        var repoRoot = TryFindRepoRoot(new DirectoryInfo(AppContext.BaseDirectory))
-            ?? TryFindRepoRoot(new DirectoryInfo(Environment.CurrentDirectory));
-
-        if (repoRoot is not null)
-            return Path.Combine(repoRoot.FullName, "artifacts", "cwskimmer", "ini");
-
-        return Path.Combine(AppDataPaths.Root, "artifacts", "cwskimmer", "ini");
     }
 
     private static (string ReleaseTag, string CommitHash, string Display, string BuildDate) ResolveAppBuildInfo()
