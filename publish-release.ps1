@@ -31,7 +31,8 @@ $ErrorActionPreference = "Stop"
 # snapshot of cumulative release hashes and is no longer updated by this script.
 # This keeps the release commit == tag commit (no "1 commit ahead").
 #
-# Version source: the git tag at HEAD (e.g. v0.1.18b, v0.1.17b1). csproj
+# Version source: the git tag at HEAD (e.g. v0.2.1, or v0.2.1b1 for a
+# prerelease patch; the v0.1.Xb beta series is retired as of GA). csproj
 # <Version> stays at a clean numeric default; MSBuild's condition evaluator
 # OOMs on any non-numeric character in <Version> (trailing 'b', '-b', etc.),
 # so release labels are kept out of the csproj entirely.
@@ -50,12 +51,12 @@ $tag = (& git describe --tags --exact-match HEAD 2>$null)
 if (-not $tag) {
     Write-Host "`nERROR: HEAD has no release tag." -ForegroundColor Red
     Write-Host "Tag the release first, then re-run, e.g.:" -ForegroundColor Yellow
-    Write-Host "  git tag v0.1.18b" -ForegroundColor White
+    Write-Host "  git tag v0.2.1" -ForegroundColor White
     Write-Host "  .\publish-release.ps1" -ForegroundColor White
     exit 1
 }
 if ($tag -notmatch '^v\d+\.\d+\.\d+(b\d*)?$') {
-    Write-Host "`nERROR: tag '$tag' does not match v<major>.<minor>.<patch>[b[<patch-num>]] (e.g. v0.1.18b, v0.1.17b1)." -ForegroundColor Red
+    Write-Host "`nERROR: tag '$tag' does not match v<major>.<minor>.<patch>[b[<patch-num>]] (e.g. v0.2.1, v0.2.1b1)." -ForegroundColor Red
     exit 1
 }
 $releaseLabel = $tag.Substring(1)   # strip leading 'v' for the embedded version string (SemVer convention)

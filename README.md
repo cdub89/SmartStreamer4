@@ -64,18 +64,18 @@ The tests cover INI generation and the CW Skimmer sync tracker. They do not exer
 Releases are produced by [`publish-release.ps1`](publish-release.ps1) in two phases, with live-test, tag push, and release-notes review happening between them:
 
 ```powershell
-git tag v0.1.18b
-.\publish-release.ps1            # phase 1: build, verify embedded version, zip, update SHA256SUMS
-# live-test the zip, then: git push origin v0.1.18b
-# confirm RELEASE_NOTES-v0.1.18b.md is finalized
-.\publish-release.ps1 -Publish   # phase 2: commit SHA256SUMS, push, gh release create --latest
+git tag v0.2.1
+.\publish-release.ps1            # phase 1: build, verify embedded version, zip, write SHA256SUMS sidecar
+# live-test the zip, then: git push origin v0.2.1
+# confirm RELEASE_NOTES-v0.2.1.md is finalized
+.\publish-release.ps1 -Publish   # phase 2: gh release create --latest with zip + sidecar attached
 ```
 
-Phase 1 runs tests, publishes a self-contained single-file exe, verifies its embedded `ProductVersion` matches `<tag>+<sha>`, zips it as `SmartStreamer4-v0.1.18b-win-x64.zip` (runtime suffix matches the `-Runtime` parameter), and updates `artifacts/release/SHA256SUMS.txt`. Phase 2 fails fast if the tag isn't on `origin`, the zip is missing, the SHA256SUMS line doesn't match, or the notes file is empty; otherwise it commits the SHA256SUMS bump, pushes, and creates the GitHub release with the zip attached (browsers block `.exe` downloads, so always ship the zip). `--latest` is hard-coded.
+Phase 1 runs the full test suite, publishes a self-contained single-file exe, verifies its embedded `ProductVersion` matches `<tag>+<sha>`, zips it as `SmartStreamer4-<tag>-win-x64.zip` (runtime suffix matches the `-Runtime` parameter) together with `LICENSE` and `THIRD-PARTY-NOTICES.txt`, and writes a `SHA256SUMS.txt` sidecar next to the zip. Phase 2 fails fast if the tag isn't on `origin`, the zip is missing, the SHA256SUMS line doesn't match, or the notes file is empty; otherwise it creates the GitHub release with the zip and sidecar attached (browsers block `.exe` downloads, so always ship the zip). Nothing is committed, so the release commit equals the tag commit. `--latest` is hard-coded.
 
-Versioning: the git tag at HEAD is the single source of truth. The csproj `<Version>` stays at a clean numeric default; the script reads the tag and embeds `<tag>+<sha>` in the published exe so the in-app version display and update check report the right release. Beta tags follow `vMAJOR.MINOR.PATCHb` (e.g. `v0.1.18b`); bug-fix patches on a beta use `vMAJOR.MINOR.PATCHbN` (e.g. `v0.1.17b1`).
+Versioning: the git tag at HEAD is the single source of truth. The csproj `<Version>` stays at a clean numeric default; the script reads the tag and embeds `<tag>+<sha>` in the published exe so the in-app version display and update check report the right release. As of v0.2.1 SmartStreamer4 is generally available and releases follow `vMAJOR.MINOR.PATCH` (e.g. `v0.2.1`); the `v0.1.Xb` beta series is retired, though prerelease suffixes (`b`, `rc`) remain supported by the tooling if ever needed.
 
-See [PLAN.md](PLAN.md) for what's slated for the next beta.
+See [PLAN.md](PLAN.md) for what's slated for the next release.
 
 ## Repo layout
 
@@ -96,7 +96,7 @@ Assets/                            Icons + screenshots referenced by the UI / do
 | [README.md](README.md) | This file. Install, build, test, release. |
 | [SETUP_GUIDE.md](SETUP_GUIDE.md) | Operator guide for both modes. Embedded in the app; opens via **Setup Guide** on the Help tab. |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Module layout, sync model, threading, conventions. |
-| [PLAN.md](PLAN.md) | Current implementation plan. What's blocking the next beta and what's deferred. |
+| [PLAN.md](PLAN.md) | Current implementation plan. What's blocking the next release and what's deferred. |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Branch / PR workflow for contributors. |
 | [CLAUDE.md](CLAUDE.md) | Project guide for Claude Code sessions in this repo. |
 | [Flexlib4-2-Migration-Guide.md](Flexlib4-2-Migration-Guide.md) | FlexLib 4.1.5 → 4.2.18 API surface reference. |

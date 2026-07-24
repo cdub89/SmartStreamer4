@@ -98,11 +98,11 @@ list before reporting completion.
   disk for historical reference only.
 - **Release**: `publish-release.ps1` is a two-phase script. Phase 1
   (default) builds, verifies the embedded version, zips
-  `SmartStreamer4-v0.1.Xb-win-x64.zip`, and writes a `SHA256SUMS.txt`
+  `SmartStreamer4-<tag>-win-x64.zip`, and writes a `SHA256SUMS.txt`
   sidecar next to the zip. Phase 2 (`-Publish`) runs
   `gh release create --latest`, attaching the zip and the sidecar;
   nothing is committed, so the release commit equals the tag commit.
-  Notes pulled from `RELEASE_NOTES-v0.1.Xb.md` (gitignored).
+  Notes pulled from `RELEASE_NOTES-<tag>.md` (gitignored).
 
 ## Dev Environment
 
@@ -502,7 +502,7 @@ dotnet build SmartStreamer4.sln                       # debug build (all project
 dotnet build SmartStreamer4.sln -c Release            # release build
 dotnet test SmartStreamer4.sln                        # run all tests
 .\publish-release.ps1                                 # phase 1: build + verify + zip + SHA256SUMS bump
-.\publish-release.ps1 -Publish                        # phase 2: commit SHA256SUMS, push, gh release create
+.\publish-release.ps1 -Publish                        # phase 2: gh release create with zip + sidecar
 ```
 
 The solution file must be named explicitly: the root also contains
@@ -511,28 +511,30 @@ with MSB1011 (ambiguous). Before 2026-07-23 the root solution was a
 `.slnx`, which the .NET 8 CLI silently ignores; bare `dotnet test` fell
 back to the app csproj and passed while running zero tests.
 
-Release versioning conventions:
+Release versioning conventions (GA as of v0.2.1; the `v0.1.Xb` beta
+series is retired — issue #56):
 
-- `vMAJOR.MINOR.PATCHb` — beta release (e.g. `v0.1.18b`).
-- `vMAJOR.MINOR.PATCHbN` — bug-fix patch on top of a beta (e.g.
-  `v0.1.18b1` is the first patch on `v0.1.18b`).
-- The next beta after `v0.1.18b` (or `v0.1.18b1`, `v0.1.18b2`, ...) is
-  `v0.1.19b`.
+- `vMAJOR.MINOR.PATCH` — general availability release (e.g. `v0.2.1`).
+  Bump PATCH for a fixes-only release, MINOR when a feature lands.
+- Prerelease suffixes stay supported by the tooling for future use
+  (`b`/`bN` as before; the update service also ranks `a`/`alpha` and
+  `rc`). A suffix-free tag outranks any suffixed tag at the same
+  numeric version, so `v0.2.1` supersedes a hypothetical `v0.2.1b`.
 
-**No beta without operator-facing benefit**: No beta ships unless it
-carries at least one change an existing operator would actually feel — a
-bug they hit gets fixed, a feature they asked for lands, or a
+**No release without operator-facing benefit**: No release ships unless
+it carries at least one change an existing operator would actually
+feel — a bug they hit gets fixed, a feature they asked for lands, or a
 reliability/performance gain they would notice. Maintainer-hygiene work
 alone (release-pipeline cleanups, internal refactors, doc/test renames,
 cosmetic AppData-folder alignment with silent migration) does not justify
 a release, even bundled together. Before recommending a release cut, list
-each commit since the last shipped beta and label it user-facing vs.
+each commit since the last published release and label it user-facing vs.
 maintainer hygiene; "an operator might see a new log line on an edge
 case" and "a silent migration ran on first launch" do not count. If
 nothing on the slate clears the bar, recommend pushing the release back
 and surface the gap rather than auto-shipping. Asking users to update
-from a working beta implies there is a reason to; shipping hygiene-only
-betas trains operators to ignore update prompts.
+from a working install implies there is a reason to; shipping
+hygiene-only releases trains operators to ignore update prompts.
 
 Release publishing flow. Two automated phases bracket three manual
 gates. The script does not pause for human input — gates happen between
@@ -540,7 +542,7 @@ script invocations, so a hung session can never strand a release.
 
 ### Phase 1 — build (`.\publish-release.ps1`)
 
-1. Tag the local HEAD with the release label: `git tag v0.1.18b`. The
+1. Tag the local HEAD with the release label: `git tag v0.2.1`. The
    csproj `<Version>` stays at the clean numeric default; release
    version comes from the tag.
 2. Run `.\publish-release.ps1`. The script:
@@ -550,7 +552,7 @@ script invocations, so a hung session can never strand a release.
      in-app About display and update check report the right version.
    - Verifies the published exe's embedded `ProductVersion` matches
      `<label>+<commit-sha>`. Refuses to package the zip if not.
-   - Produces `SmartStreamer4-v0.1.18b-win-x64.zip` (runtime suffix
+   - Produces `SmartStreamer4-<tag>-win-x64.zip` (runtime suffix
      matches the `-Runtime` parameter; default `win-x64`).
    - Writes a single-line `SHA256SUMS.txt` sidecar next to the zip in
      the publish dir. (The tracked `artifacts/release/SHA256SUMS.txt`
@@ -560,12 +562,12 @@ script invocations, so a hung session can never strand a release.
 
 1. Live-test the zip: extract to a temp directory **outside the repo**
    (so the runtime version resolver can't fall back to `git describe`),
-   run the exe, confirm About / status shows `v0.1.18b (<sha>)`, and
+   run the exe, confirm About / status shows `<tag> (<sha>)`, and
    trigger an update check to confirm it resolves the current tag
    correctly. If anything is wrong, delete the local tag, fix, retag,
    re-run phase 1.
-2. Push the tag once the zip is good: `git push origin v0.1.18b`.
-3. Confirm `RELEASE_NOTES-v0.1.18b.md` exists at the repo root and is
+2. Push the tag once the zip is good: `git push origin v0.2.1`.
+3. Confirm `RELEASE_NOTES-<tag>.md` exists at the repo root and is
    finalized. The file is gitignored. Claude drafts it by analyzing the
    actual code diffs between the prior tag and HEAD, never by
    summarizing commit messages alone; the operator reviews and edits
@@ -586,9 +588,10 @@ script invocations, so a hung session can never strand a release.
    - Attaches the zip, not a raw `.exe` (browsers block `.exe`
      downloads from GitHub Releases).
 2. Post-publish (manual). Re-launch a clean install of the prior
-   release (e.g. `v0.1.17b` on a tester machine) and confirm it sees
-   `v0.1.18b` as available. Then install `v0.1.18b` and confirm it
-   reports "up to date". If either fails, pull the release immediately.
+   published release (e.g. `v0.1.20b` on a tester machine) and confirm
+   it sees the new release as available. Then install the new release
+   and confirm it reports "up to date". If either fails, pull the
+   release immediately.
 
 ## Quick Start After /clear
 
@@ -646,8 +649,9 @@ Where to look first for common tasks:
 - FlexLib runtime compatibility: code targeting FlexLib 4.2.18 must
   remain compatible at runtime with SmartSDR servers 4.1.5 and 4.2.x.
   Verify on both before declaring a FlexLib-touching change done.
-- Release versioning: csproj uses `0.1.X-b`; release tag and zip use
-  `v0.1.Xb` (no dash).
+- Release versioning: the csproj `<Version>` stays at a clean numeric
+  default; the release version comes from the git tag at HEAD
+  (`vMAJOR.MINOR.PATCH`, e.g. `v0.2.1` — see Build & Release).
 - Changelogs/release notes: always analyze actual code diffs between
   tags/commits, never summarize from commit messages alone.
 - Ask questions and present decisions in prose dialog, not
