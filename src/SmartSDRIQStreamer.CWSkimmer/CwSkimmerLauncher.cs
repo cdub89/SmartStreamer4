@@ -143,8 +143,12 @@ public sealed class CwSkimmerLauncher : ICwSkimmerLauncher, IDisposable
 
         Process? process;
         try { process = Process.Start(psi); }
-        catch
+        catch (Exception ex)
         {
+            // Whatever the reason (missing exe, access denied, Win32 failure),
+            // ProcessStartFailed is the correct result; log so the cause is
+            // visible instead of silently swallowed (issue #50 Phase 3).
+            LogNonFatal("CwSkimmer.exe process start failed.", ex);
             return LaunchResult.ProcessStartFailed;
         }
 
@@ -326,7 +330,8 @@ public sealed class CwSkimmerLauncher : ICwSkimmerLauncher, IDisposable
             if (process.HasExited)
                 exitCode = process.ExitCode;
         }
-        catch
+        catch (Exception ex) when (
+            ex is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException)
         {
             // Ignore metadata fetch failures for exited process.
         }
@@ -538,9 +543,10 @@ public sealed class CwSkimmerLauncher : ICwSkimmerLauncher, IDisposable
             if (changed)
                 File.WriteAllLines(iniPath, lines);
         }
-        catch
+        catch (Exception ex)
         {
             // Tiling is cosmetic; failure to apply must not block launch.
+            LogNonFatal("CW Skimmer window tiling failed.", ex);
         }
     }
 
@@ -745,7 +751,8 @@ public sealed class CwSkimmerLauncher : ICwSkimmerLauncher, IDisposable
         {
             if (lifecycleCts is not null)
             {
-                try { lifecycleCts.Cancel(); } catch { }
+                try { lifecycleCts.Cancel(); }
+                catch (Exception ex) when (ex is ObjectDisposedException or AggregateException) { }
                 lifecycleCts.Dispose();
             }
 

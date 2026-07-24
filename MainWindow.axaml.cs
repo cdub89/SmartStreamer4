@@ -79,24 +79,50 @@ public partial class MainWindow : Window
     private Task<bool> OnStopRunningAppsConfirmRequested(string message)
         => Dispatcher.UIThread.InvokeAsync(() => ShowStopRunningConfirmDialogAsync(message));
 
+    /// <summary>
+    /// Failure sink for the async-void event handlers (issue #50 Phase 3): an
+    /// exception escaping an async-void method is rethrown on the dispatcher
+    /// and can take the app down, so each handler catches and reports here
+    /// instead. Posted because some source events arrive off the UI thread.
+    /// </summary>
+    private void ReportHandlerFailure(string action, Exception ex)
+    {
+        Dispatcher.UIThread.Post(() =>
+            (DataContext as MainWindowViewModel)?.AddStreamerStatus($"{action} failed: {ex.Message}"));
+    }
+
     private async void OnAudioIndexChangesDetected(IReadOnlyList<string> summary)
     {
-        // Dispatch onto the UI thread; the VM raises on whichever thread the
-        // DAX-IQ event arrived on. Show the dialog after the current event
-        // pump tick so the launch sequence's other UI updates settle first.
-        await Dispatcher.UIThread.InvokeAsync(async () =>
+        try
         {
-            if (DataContext is not MainWindowViewModel vm)
-                return;
+            // Dispatch onto the UI thread; the VM raises on whichever thread the
+            // DAX-IQ event arrived on. Show the dialog after the current event
+            // pump tick so the launch sequence's other UI updates settle first.
+            await Dispatcher.UIThread.InvokeAsync(async () =>
+            {
+                if (DataContext is not MainWindowViewModel vm)
+                    return;
 
-            await ShowAudioIndexChangedDialogAsync(vm, summary);
-        });
+                await ShowAudioIndexChangedDialogAsync(vm, summary);
+            });
+        }
+        catch (Exception ex)
+        {
+            ReportHandlerFailure("Audio device change dialog", ex);
+        }
     }
 
     private async void OnMainWindowOpened(object? sender, EventArgs e)
     {
-        await EnsureDaxRunningAsync();
-        TryShowFirstInstallWizard();
+        try
+        {
+            await EnsureDaxRunningAsync();
+            TryShowFirstInstallWizard();
+        }
+        catch (Exception ex)
+        {
+            ReportHandlerFailure("Startup check", ex);
+        }
     }
 
     private async Task EnsureDaxRunningAsync()
@@ -175,51 +201,72 @@ public partial class MainWindow : Window
 
     private async void OnBrowseCwSkimmer(object? sender, RoutedEventArgs e)
     {
-        var topLevel = TopLevel.GetTopLevel(this);
-        if (topLevel is null) return;
-
-        var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        try
         {
-            Title           = "Select CwSkimmer.exe",
-            AllowMultiple   = false,
-            FileTypeFilter  =
-            [
-                new FilePickerFileType("Executable") { Patterns = ["CwSkimmer.exe", "*.exe"] },
-                new FilePickerFileType("All files")  { Patterns = ["*"] }
-            ]
-        });
+            var topLevel = TopLevel.GetTopLevel(this);
+            if (topLevel is null) return;
 
-        if (files.Count > 0 && DataContext is MainWindowViewModel vm)
-            vm.CwSkimmerExePath = files[0].Path.LocalPath;
+            var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                Title           = "Select CwSkimmer.exe",
+                AllowMultiple   = false,
+                FileTypeFilter  =
+                [
+                    new FilePickerFileType("Executable") { Patterns = ["CwSkimmer.exe", "*.exe"] },
+                    new FilePickerFileType("All files")  { Patterns = ["*"] }
+                ]
+            });
+
+            if (files.Count > 0 && DataContext is MainWindowViewModel vm)
+                vm.CwSkimmerExePath = files[0].Path.LocalPath;
+        }
+        catch (Exception ex)
+        {
+            ReportHandlerFailure("Browse for CwSkimmer.exe", ex);
+        }
     }
 
     private async void OnBrowseCwSkimmerIni(object? sender, RoutedEventArgs e)
     {
-        var topLevel = TopLevel.GetTopLevel(this);
-        if (topLevel is null) return;
-
-        var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        try
         {
-            Title = "Select cwskimmer.ini",
-            AllowMultiple = false,
-            FileTypeFilter =
-            [
-                new FilePickerFileType("INI file") { Patterns = ["*.ini"] },
-                new FilePickerFileType("All files") { Patterns = ["*"] }
-            ]
-        });
+            var topLevel = TopLevel.GetTopLevel(this);
+            if (topLevel is null) return;
 
-        if (files.Count > 0 && DataContext is MainWindowViewModel vm)
-            vm.CwSkimmerIniPath = files[0].Path.LocalPath;
+            var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                Title = "Select cwskimmer.ini",
+                AllowMultiple = false,
+                FileTypeFilter =
+                [
+                    new FilePickerFileType("INI file") { Patterns = ["*.ini"] },
+                    new FilePickerFileType("All files") { Patterns = ["*"] }
+                ]
+            });
+
+            if (files.Count > 0 && DataContext is MainWindowViewModel vm)
+                vm.CwSkimmerIniPath = files[0].Path.LocalPath;
+        }
+        catch (Exception ex)
+        {
+            ReportHandlerFailure("Browse for cwskimmer.ini", ex);
+        }
     }
 
     private async void OnBrowseDigitalExe(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is not MainWindowViewModel vm) return;
-        var exeName = vm.ActiveEngineExeFileName;
-        var path = await BrowseForExeAsync($"Select {exeName}", exeName, vm.ActiveEngineExePath);
-        if (path is not null)
-            vm.ActiveEngineExePath = path;
+        try
+        {
+            if (DataContext is not MainWindowViewModel vm) return;
+            var exeName = vm.ActiveEngineExeFileName;
+            var path = await BrowseForExeAsync($"Select {exeName}", exeName, vm.ActiveEngineExePath);
+            if (path is not null)
+                vm.ActiveEngineExePath = path;
+        }
+        catch (Exception ex)
+        {
+            ReportHandlerFailure("Browse for digital engine exe", ex);
+        }
     }
 
     private async Task<string?> BrowseForExeAsync(string title, string preferredExe, string currentPath)
@@ -387,16 +434,23 @@ public partial class MainWindow : Window
 
     private async void OnResetChannelConfigRequested(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is not MainWindowViewModel vm)
-            return;
-
-        if (vm.IsCwSkimmerRunning)
+        try
         {
-            await ShowResetBlockedDialogAsync();
-            return;
-        }
+            if (DataContext is not MainWindowViewModel vm)
+                return;
 
-        await ShowResetWizardAsync(vm);
+            if (vm.IsCwSkimmerRunning)
+            {
+                await ShowResetBlockedDialogAsync();
+                return;
+            }
+
+            await ShowResetWizardAsync(vm);
+        }
+        catch (Exception ex)
+        {
+            ReportHandlerFailure("Reset channel config", ex);
+        }
     }
 
     private async Task ShowResetWizardAsync(MainWindowViewModel vm)

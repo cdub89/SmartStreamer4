@@ -1015,7 +1015,8 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
                     _lastInboundClickByChannel.Clear();
                     foreach (var cts in _streamRemovedDebounceCtsByChannel.Values)
                     {
-                        try { cts.Cancel(); } catch { }
+                        try { cts.Cancel(); }
+                        catch (Exception ex) when (ex is ObjectDisposedException or AggregateException) { }
                         cts.Dispose();
                     }
                     _streamRemovedDebounceCtsByChannel.Clear();
@@ -1674,6 +1675,13 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     private bool CanOpenLatestRelease() =>
         IsUpdateAvailable && !string.IsNullOrWhiteSpace(LatestReleaseUrl);
 
+    // Cumulative Releases page rather than the running version's tag URL, so
+    // the link cannot 404 for dev or tagged-but-unpublished builds (issue #50).
+    private const string ReleasesPageUrl = "https://github.com/cdub89/SmartStreamer4/releases";
+
+    [RelayCommand]
+    private void OpenReleaseNotes() => TryOpenPath(ReleasesPageUrl, "open the release notes page");
+
     private DaxIQStreamInfo? ResolveSliceLaunchStream(SliceViewModel? sliceVm)
     {
         if (sliceVm is null)
@@ -1936,7 +1944,8 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     public void Shutdown()
     {
         _updateCheckLoopCts.Cancel();
-        try { _updateCheckLoopTask?.Wait(TimeSpan.FromSeconds(1)); } catch { }
+        try { _updateCheckLoopTask?.Wait(TimeSpan.FromSeconds(1)); }
+        catch (Exception ex) when (ex is AggregateException or ObjectDisposedException) { }
 
         // Issue #57 (2026-07-23): app exit left digital engines (WSJT-X/JTDX/WSJT-Z)
         // running because Shutdown only stopped CW Skimmer. Stop both mode families
@@ -2173,7 +2182,8 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         }
         catch
         {
-            // Logging must not impact runtime behavior.
+            // Deliberate catch-all (issue #50 Phase 3 reviewed): this writer is
+            // the reporting channel of last resort, so it must never throw.
         }
     }
 
@@ -2194,7 +2204,8 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         }
         catch
         {
-            // Logging must not impact runtime behavior.
+            // Deliberate catch-all (issue #50 Phase 3 reviewed): this writer is
+            // the reporting channel of last resort, so it must never throw.
         }
     }
 
@@ -2386,8 +2397,13 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
             iniFiles = files;
             return true;
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            return false;
+        }
+        catch (Exception ex)
+        {
+            AppendStreamerLog($"Unexpected failure enumerating channel INI files: {ex}", "[STREAMER]");
             return false;
         }
     }
@@ -2540,8 +2556,15 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
                 .FirstOrDefault();
             return string.IsNullOrWhiteSpace(firstLine) ? null : firstLine.Trim();
         }
-        catch
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
         {
+            // git absent or not runnable; the probe is a convenience fallback
+            // only (ResolveReleaseTag prefers the assembly InformationalVersion).
+            return null;
+        }
+        catch (Exception ex)
+        {
+            AppendStreamerLog($"Unexpected failure probing git for the version tag: {ex}", "[STREAMER]");
             return null;
         }
     }
@@ -2595,9 +2618,13 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
             if (!string.IsNullOrWhiteSpace(processPath) && File.Exists(processPath))
                 return File.GetLastWriteTime(processPath).ToString("M/d/yyyy");
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // Fallback handled below.
+        }
+        catch (Exception ex)
+        {
+            AppendStreamerLog($"Unexpected failure reading the build date: {ex}", "[STREAMER]");
         }
 
         return "--";
@@ -2651,7 +2678,8 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
 
         if (previous is not null)
         {
-            try { previous.Cancel(); } catch { }
+            try { previous.Cancel(); }
+            catch (Exception ex) when (ex is ObjectDisposedException or AggregateException) { }
             previous.Dispose();
         }
 
@@ -2667,7 +2695,8 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
                 _streamRemovedDebounceCtsByChannel.Remove(daxIqChannel);
         }
         if (toDispose is null) return;
-        try { toDispose.Cancel(); } catch { }
+        try { toDispose.Cancel(); }
+        catch (Exception ex) when (ex is ObjectDisposedException or AggregateException) { }
         toDispose.Dispose();
     }
 

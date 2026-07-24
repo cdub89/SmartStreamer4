@@ -34,7 +34,10 @@ internal static class DirectSoundProbe
         };
 
         try { DirectSoundCaptureEnumerateW(callback, IntPtr.Zero); }
-        catch { /* dsound.dll absent or call failed — return whatever we have */ }
+        catch (Exception ex) when (IsInteropFault(ex))
+        {
+            // dsound.dll absent or the native call failed — return whatever we have.
+        }
 
         GC.KeepAlive(callback);
         return list;
@@ -50,11 +53,26 @@ internal static class DirectSoundProbe
         };
 
         try { DirectSoundEnumerateW(callback, IntPtr.Zero); }
-        catch { }
+        catch (Exception ex) when (IsInteropFault(ex))
+        {
+            // dsound.dll absent or the native call failed — return whatever we have.
+        }
 
         GC.KeepAlive(callback);
         return list;
     }
+
+    /// <summary>
+    /// The failure modes a P/Invoke into dsound.dll can realistically produce
+    /// (issue #50 Phase 3 catch narrowing): missing or wrong-architecture DLL,
+    /// missing export, or a native-side fault surfaced as an
+    /// <see cref="ExternalException"/> (covers SEH and COM errors).
+    /// </summary>
+    private static bool IsInteropFault(Exception ex) =>
+        ex is DllNotFoundException
+            or EntryPointNotFoundException
+            or BadImageFormatException
+            or ExternalException;
 
     [UnmanagedFunctionPointer(CallingConvention.StdCall, CharSet = CharSet.Unicode)]
     private delegate bool DSEnumCallback(

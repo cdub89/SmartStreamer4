@@ -765,7 +765,18 @@
                     <TextBlock Text="About" FontSize="15" FontWeight="SemiBold"/>
                     <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" RowDefinitions="Auto,Auto,Auto" RowSpacing="4">
                         <TextBlock Grid.Row="0" Grid.Column="0" Text="Release:" FontSize="11" Foreground="Gray"/>
-                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding AppReleaseDisplay}" FontSize="11"/>
+                        <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="12">
+                            <TextBlock Text="{Binding AppReleaseDisplay}" FontSize="11" VerticalAlignment="Center"/>
+                            <Button Content="Release notes"
+                                    FontSize="11"
+                                    Foreground="RoyalBlue"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Padding="0"
+                                    MinHeight="0"
+                                    VerticalAlignment="Center"
+                                    Command="{Binding OpenReleaseNotesCommand}"/>
+                        </StackPanel>
 
                         <TextBlock Grid.Row="1" Grid.Column="0" Text="Commit:" FontSize="11" Foreground="Gray"/>
                         <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding AppCommitHash}" FontSize="11"/>
