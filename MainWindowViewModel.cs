@@ -43,8 +43,10 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     [NotifyCanExecuteChangedFor("ConnectCommand")]
     private RadioConnectTarget? _selectedConnectTarget;
 
+    private const string DiscoveringStatus = "Discovering…";
+
     [ObservableProperty]
-    private string _statusText = "Discovering…";
+    private string _statusText = DiscoveringStatus;
 
     // ── Connection state ──────────────────────────────────────────────────────
 
@@ -643,9 +645,30 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
             AddStreamerStatus(line);
         StartUpdateChecks();
         _discovery.Start();
+        _ = FlagDiscoveryTimeoutAsync();
     }
 
     // ── Discovery ─────────────────────────────────────────────────────────────
+
+    private const int DiscoveryTimeoutSeconds = 30;
+
+    // Issue #49 (reported 2026-07-19): operators connecting to a remote radio via
+    // SmartLink saw "Discovering…" spin forever. Root cause: FlexRadio discovery is
+    // a LAN UDP broadcast that cannot cross SmartLink/VPN, so zero discovery events
+    // fire and the initial status is never replaced (the existing "No radios found"
+    // text only runs in the RadioAdded/Removed handlers). A one-shot timeout was
+    // chosen over cancelling discovery so a late radio still populates normally.
+    private async Task FlagDiscoveryTimeoutAsync()
+    {
+        await Task.Delay(TimeSpan.FromSeconds(DiscoveryTimeoutSeconds));
+        UIPost(() =>
+        {
+            if (Radios.Count > 0 || StatusText != DiscoveringStatus)
+                return;
+            StatusText = "No radios found on this PC's local network. See the Logs tab.";
+            AddStreamerStatus($"No radios discovered after {DiscoveryTimeoutSeconds} seconds. Discovery uses a local-network broadcast; radios reached over SmartLink or VPN cannot be seen.");
+        });
+    }
 
     private void OnRadioAdded(DiscoveredRadio radio) => UIPost(() =>
     {
