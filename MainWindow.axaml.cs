@@ -36,6 +36,10 @@ public partial class MainWindow : Window
         Opened += OnMainWindowOpened;
     }
 
+    // Issue #57: the Exit button only closes the window so the graceful teardown
+    // stays on the single OnClosing -> ViewModel.Shutdown path.
+    private void OnExitClick(object? sender, RoutedEventArgs e) => Close();
+
     protected override void OnClosing(WindowClosingEventArgs e)
     {
         if (_subscribedVm is not null)
