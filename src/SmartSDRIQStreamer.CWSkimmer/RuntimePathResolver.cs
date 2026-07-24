@@ -19,16 +19,28 @@ public static class RuntimePathResolver
     public static string ResolveLogsDir()
         => Path.Combine(ResolveArtifactsRoot(), "logs");
 
+    /// <summary>
+    /// Absolute path of the repo checkout the running binary (or current
+    /// directory) sits inside, or null when not running from a checkout.
+    /// This is the single canonical repo-root marker walk (issue #50 Phase 3
+    /// unification); callers must not duplicate the logic.
+    /// </summary>
+    public static string? TryFindRepoRootPath()
+        => TryFindRepoRootPath(AppContext.BaseDirectory, Environment.CurrentDirectory);
+
+    internal static string? TryFindRepoRootPath(string baseDir, string currentDir)
+        => (TryFindRepoRoot(new DirectoryInfo(baseDir))
+            ?? TryFindRepoRoot(new DirectoryInfo(currentDir)))?.FullName;
+
     private static string ResolveArtifactsRoot()
         => ResolveArtifactsRoot(AppContext.BaseDirectory, Environment.CurrentDirectory);
 
     internal static string ResolveArtifactsRoot(string baseDir, string currentDir)
     {
-        var repoRoot = TryFindRepoRoot(new DirectoryInfo(baseDir))
-            ?? TryFindRepoRoot(new DirectoryInfo(currentDir));
+        var repoRoot = TryFindRepoRootPath(baseDir, currentDir);
 
         if (repoRoot is not null)
-            return Path.Combine(repoRoot.FullName, "artifacts");
+            return Path.Combine(repoRoot, "artifacts");
 
         var appDataRoot = AppDataRootOverride
             ?? Path.Combine(

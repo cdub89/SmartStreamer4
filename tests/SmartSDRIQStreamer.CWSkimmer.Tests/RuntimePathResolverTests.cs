@@ -73,4 +73,31 @@ public sealed class RuntimePathResolverTests : IDisposable
 
         Assert.Equal(Path.Combine(repoRoot, "artifacts"), artifacts);
     }
+
+    [Fact]
+    public void TryFindRepoRootPath_ReturnsNull_OutsideACheckout()
+    {
+        Assert.Null(RuntimePathResolver.TryFindRepoRootPath(_isolatedDir, _isolatedDir));
+    }
+
+    [Fact]
+    public void TryFindRepoRootPath_WalksUpToTheMarkerFromANestedStartDir()
+    {
+        var repoRoot = Path.Combine(_isolatedDir, "fake-repo");
+        var nested = Path.Combine(repoRoot, "bin", "Debug");
+        Directory.CreateDirectory(nested);
+        File.WriteAllText(Path.Combine(repoRoot, "SmartSDRIQStreamer.csproj"), "<Project/>");
+
+        Assert.Equal(repoRoot, RuntimePathResolver.TryFindRepoRootPath(nested, _isolatedDir));
+    }
+
+    [Fact]
+    public void TryFindRepoRootPath_FallsBackToCurrentDir_WhenBaseDirHasNoMarker()
+    {
+        var repoRoot = Path.Combine(_isolatedDir, "fake-repo");
+        Directory.CreateDirectory(repoRoot);
+        File.WriteAllText(Path.Combine(repoRoot, "SmartSDRIQStreamer.csproj"), "<Project/>");
+
+        Assert.Equal(repoRoot, RuntimePathResolver.TryFindRepoRootPath(_isolatedDir, repoRoot));
+    }
 }

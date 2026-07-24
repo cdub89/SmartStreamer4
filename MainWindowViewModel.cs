@@ -1630,7 +1630,7 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
             return;
         }
 
-        var iniDir = ResolveCwSkimmerIniDir();
+        var iniDir = RuntimePathResolver.ResolveCwSkimmerIniDir();
         var deleted = 0;
 
         for (var channel = 1; channel <= 4; channel++)
@@ -2209,60 +2209,20 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         }
     }
 
+    // Issue #50 Phase 3 (2026-07-24): these were full copies of the
+    // RuntimePathResolver marker walk; the AppData branch used AppDataPaths.Root
+    // directly, which is equivalent at runtime because Program.Main assigns
+    // RuntimePathResolver.AppDataRootOverride = AppDataPaths.Root before any
+    // ViewModel code runs (see Program.cs). Resolution stays at call time so
+    // that invariant is the only ordering dependency.
     private static string ResolveStreamerLogPath()
-    {
-        var repoRoot = TryFindRepoRoot(new DirectoryInfo(AppContext.BaseDirectory))
-            ?? TryFindRepoRoot(new DirectoryInfo(Environment.CurrentDirectory));
-
-        if (repoRoot is not null)
-            return Path.Combine(repoRoot.FullName, "artifacts", "logs", "streamer-status.log");
-
-        return Path.Combine(AppDataPaths.Root, "artifacts", "logs", "streamer-status.log");
-    }
+        => Path.Combine(RuntimePathResolver.ResolveLogsDir(), "streamer-status.log");
 
     private static string ResolveSpotPayloadLogPath()
-    {
-        var repoRoot = TryFindRepoRoot(new DirectoryInfo(AppContext.BaseDirectory))
-            ?? TryFindRepoRoot(new DirectoryInfo(Environment.CurrentDirectory));
-
-        if (repoRoot is not null)
-            return Path.Combine(repoRoot.FullName, "artifacts", "logs", "spot-publish.log");
-
-        return Path.Combine(AppDataPaths.Root, "artifacts", "logs", "spot-publish.log");
-    }
+        => Path.Combine(RuntimePathResolver.ResolveLogsDir(), "spot-publish.log");
 
     private static string ResolveLogsFolderPath()
-    {
-        var streamerLogPath = ResolveStreamerLogPath();
-        return Path.GetDirectoryName(streamerLogPath) ?? string.Empty;
-    }
-
-    private static string ResolveCwSkimmerIniDir()
-    {
-        var repoRoot = TryFindRepoRoot(new DirectoryInfo(AppContext.BaseDirectory))
-            ?? TryFindRepoRoot(new DirectoryInfo(Environment.CurrentDirectory));
-
-        if (repoRoot is not null)
-            return Path.Combine(repoRoot.FullName, "artifacts", "cwskimmer", "ini");
-
-        return Path.Combine(AppDataPaths.Root, "artifacts", "cwskimmer", "ini");
-    }
-
-    private static DirectoryInfo? TryFindRepoRoot(DirectoryInfo? start)
-    {
-        var current = start;
-        while (current is not null)
-        {
-            // Repo-root marker is the app csproj (see RuntimePathResolver for
-            // rationale; the stale .slnx marker was removed 2026-07-23).
-            if (File.Exists(Path.Combine(current.FullName, "SmartSDRIQStreamer.csproj")))
-                return current;
-
-            current = current.Parent;
-        }
-
-        return null;
-    }
+        => RuntimePathResolver.ResolveLogsDir();
 
     private static string NormalizeSpotColor(string color)
     {
@@ -2318,7 +2278,7 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
 
     private void UpdateTelnetIniSummary()
     {
-        var iniDir = ResolveCwSkimmerIniDir();
+        var iniDir = RuntimePathResolver.ResolveCwSkimmerIniDir();
         StreamerIniFolderPath = iniDir;
         HasStreamerIniFolder = Directory.Exists(iniDir);
 
@@ -2383,7 +2343,7 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
 
         try
         {
-            var iniDir = ResolveCwSkimmerIniDir();
+            var iniDir = RuntimePathResolver.ResolveCwSkimmerIniDir();
             if (!Directory.Exists(iniDir))
                 return false;
 
@@ -2535,9 +2495,7 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     {
         try
         {
-            var repoRoot = TryFindRepoRoot(new DirectoryInfo(AppContext.BaseDirectory))
-                ?? TryFindRepoRoot(new DirectoryInfo(Environment.CurrentDirectory));
-            var workingDir = repoRoot?.FullName ?? Environment.CurrentDirectory;
+            var workingDir = RuntimePathResolver.TryFindRepoRootPath() ?? Environment.CurrentDirectory;
 
             var args = pointsAtHead
                 ? "tag --points-at HEAD --sort=-v:refname"
