@@ -200,10 +200,19 @@ SOFTWARE.
 ----------------------------------------------------------------------
 
 SmartStreamer4 links against FlexLib, the .NET API library for SmartSDR,
-which is Copyright (c) FlexRadio Systems. FlexRadio Systems permits
-redistribution of FlexLib with third-party applications; a software license
-from FlexRadio Systems is required for commercial applications.
+which is Copyright (c) FlexRadio Systems. All Rights Reserved.
 
-[TODO: paste the verbatim license/EULA text from the FlexLib API
-distribution (FlexLib_API_v4.2.18.41174) before the next release. This
-placeholder must not ship.]
+FlexRadio Systems publishes the FlexLib API to enable third-party
+applications for its radios (https://www.flexradio.com/api/). The FlexLib
+API distribution used by SmartStreamer4 (FlexLib_API_v4.2.18) ships as
+source code and does not include a standalone license or EULA file. The
+copyright notice carried in its source files reads:
+
+    Copyright FlexRadio Systems. All Rights Reserved.
+    Unauthorized use, duplication or distribution of this software is
+    strictly prohibited by law.
+
+SmartStreamer4 is a free, non-commercial amateur radio application built
+with the published FlexLib API. FlexLib remains the property of FlexRadio
+Systems and is not covered by the SmartStreamer4 MIT license. For FlexLib
+licensing questions, contact FlexRadio Systems (devhelp@flexradio.com).
