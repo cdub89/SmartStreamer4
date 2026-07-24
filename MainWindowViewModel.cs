@@ -473,7 +473,7 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         }
     }
 
-    public string AboutDevelopedBy => "Developed by Chris L White, WX7V and Cursor.AI Premium Agent v31.14";
+    public string AboutDevelopedBy => "Developed by Chris L White, WX7V";
     public string AboutLicenseReference => "Licensed under the MIT License. See LICENSE for full terms.";
 
     // ── Constructor ───────────────────────────────────────────────────────────
@@ -1915,7 +1915,12 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         _updateCheckLoopCts.Cancel();
         try { _updateCheckLoopTask?.Wait(TimeSpan.FromSeconds(1)); } catch { }
 
-        if (IsCwSkimmerRunning) _launcher.Stop();
+        // Issue #57 (2026-07-23): app exit left digital engines (WSJT-X/JTDX/WSJT-Z)
+        // running because Shutdown only stopped CW Skimmer. Stop both mode families
+        // here, silently (no confirm on exit; the operator asked to leave), routed
+        // through the same helpers the mode-switch path uses so there is one stop path.
+        StopAllCwSkimmerInstances();
+        _digitalLauncher.Stop();
         if (IsConnected) _connection.Disconnect();
         _ritStatusEmitter.Dispose();
         _updateCheckLock.Dispose();
