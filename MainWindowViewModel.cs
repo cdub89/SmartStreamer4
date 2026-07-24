@@ -1682,6 +1682,11 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     [RelayCommand]
     private void OpenReleaseNotes() => TryOpenPath(ReleasesPageUrl, "open the release notes page");
 
+    private const string Wx7vSiteUrl = "https://wx7v.net";
+
+    [RelayCommand]
+    private void OpenWx7vSite() => TryOpenPath(Wx7vSiteUrl, "open the wx7v.net site");
+
     private DaxIQStreamInfo? ResolveSliceLaunchStream(SliceViewModel? sliceVm)
     {
         if (sliceVm is null)

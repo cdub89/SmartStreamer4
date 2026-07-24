@@ -542,8 +542,10 @@ script invocations, so a hung session can never strand a release.
 
 ### Phase 1 — build (`.\publish-release.ps1`)
 
-1. Tag the local HEAD with the release label: `git tag v0.2.1`. The
-   csproj `<Version>` stays at the clean numeric default; release
+1. Tag the local HEAD with the release label, always as an
+   **annotated** tag: `git tag -a v0.2.1 -m "SmartStreamer4 v0.2.1"`.
+   Lightweight tags have caused busted releases before; annotated only.
+   The csproj `<Version>` stays at the clean numeric default; release
    version comes from the tag.
 2. Run `.\publish-release.ps1`. The script:
    - Refuses to run if the tag at HEAD is absent or doesn't match the
@@ -566,7 +568,11 @@ script invocations, so a hung session can never strand a release.
    trigger an update check to confirm it resolves the current tag
    correctly. If anything is wrong, delete the local tag, fix, retag,
    re-run phase 1.
-2. Push the tag once the zip is good: `git push origin v0.2.1`.
+2. Push the tag once the zip is good: `git push origin v0.2.1`. The
+   tag must be on origin before `-Publish` runs; if `gh release create`
+   ran against a tag missing from origin, GitHub would fabricate its
+   own lightweight tag server-side (the script's phase 2 precondition
+   check exists to prevent exactly this).
 3. Confirm `RELEASE_NOTES-<tag>.md` exists at the repo root and is
    finalized. The file is gitignored. Claude drafts it by analyzing the
    actual code diffs between the prior tag and HEAD, never by

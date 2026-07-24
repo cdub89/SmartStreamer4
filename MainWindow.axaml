@@ -776,6 +776,15 @@
                                     MinHeight="0"
                                     VerticalAlignment="Center"
                                     Command="{Binding OpenReleaseNotesCommand}"/>
+                            <Button Content="wx7v.net"
+                                    FontSize="11"
+                                    Foreground="RoyalBlue"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Padding="0"
+                                    MinHeight="0"
+                                    VerticalAlignment="Center"
+                                    Command="{Binding OpenWx7vSiteCommand}"/>
                         </StackPanel>
 
                         <TextBlock Grid.Row="1" Grid.Column="0" Text="Commit:" FontSize="11" Foreground="Gray"/>

@@ -64,9 +64,9 @@ The tests cover INI generation and the CW Skimmer sync tracker. They do not exer
 Releases are produced by [`publish-release.ps1`](publish-release.ps1) in two phases, with live-test, tag push, and release-notes review happening between them:
 
 ```powershell
-git tag v0.2.1
+git tag -a v0.2.1 -m "SmartStreamer4 v0.2.1"   # annotated, never lightweight
 .\publish-release.ps1            # phase 1: build, verify embedded version, zip, write SHA256SUMS sidecar
-# live-test the zip, then: git push origin v0.2.1
+# live-test the zip, then push the tag BEFORE publishing: git push origin v0.2.1
 # confirm RELEASE_NOTES-v0.2.1.md is finalized
 .\publish-release.ps1 -Publish   # phase 2: gh release create --latest with zip + sidecar attached
 ```

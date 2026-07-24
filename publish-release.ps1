@@ -51,7 +51,7 @@ $tag = (& git describe --tags --exact-match HEAD 2>$null)
 if (-not $tag) {
     Write-Host "`nERROR: HEAD has no release tag." -ForegroundColor Red
     Write-Host "Tag the release first, then re-run, e.g.:" -ForegroundColor Yellow
-    Write-Host "  git tag v0.2.1" -ForegroundColor White
+    Write-Host "  git tag -a v0.2.1 -m `"SmartStreamer4 v0.2.1`"" -ForegroundColor White
     Write-Host "  .\publish-release.ps1" -ForegroundColor White
     exit 1
 }
