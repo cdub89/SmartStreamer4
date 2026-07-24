@@ -34,8 +34,8 @@ public sealed class AppSettingsStore
     {
         try
         {
-            var dir = Path.GetDirectoryName(FilePath)!;
-            Directory.CreateDirectory(dir);
+            if (Path.GetDirectoryName(FilePath) is { Length: > 0 } dir)
+                Directory.CreateDirectory(dir);
             File.WriteAllText(FilePath, JsonSerializer.Serialize(settings, JsonOptions));
         }
         catch { /* non-fatal */ }

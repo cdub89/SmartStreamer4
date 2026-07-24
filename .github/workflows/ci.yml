@@ -1,0 +1,35 @@
+# Issue #50 Phase 1 (2026-07-23): CI for the gates a clean checkout can run.
+#
+# The FlexLib_API_* vendor source is gitignored (FlexRadio's license does not
+# permit redistribution), so SmartSDRIQStreamer.FlexRadio, the app project,
+# and App.Tests cannot build here. Those builds, App.Tests, and the
+# live-radio smoke remain Windows dev-seat gates. CI covers markdownlint and
+# the FlexLib-independent module trees (CWSkimmer, Digital), built with
+# warnings-as-errors enforced by the root Directory.Build.props.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  markdownlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: >-
+          npx markdownlint-cli2 "**/*.md" "!**/node_modules/**" "!.claude/**"
+          "!.trunk/**" "!RELEASE_NOTES-*.md" "!artifacts/**"
+
+  build-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Build and test CWSkimmer module
+        run: dotnet test tests/SmartSDRIQStreamer.CWSkimmer.Tests/SmartSDRIQStreamer.CWSkimmer.Tests.csproj
+      - name: Build and test Digital module
+        run: dotnet test tests/SmartSDRIQStreamer.Digital.Tests/SmartSDRIQStreamer.Digital.Tests.csproj

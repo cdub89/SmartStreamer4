@@ -2214,11 +2214,10 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         var current = start;
         while (current is not null)
         {
-            if (File.Exists(Path.Combine(current.FullName, "SmartSDRIQStreamer.csproj")) ||
-                File.Exists(Path.Combine(current.FullName, "SmartSDRIQStreamer.slnx")))
-            {
+            // Repo-root marker is the app csproj (see RuntimePathResolver for
+            // rationale; the stale .slnx marker was removed 2026-07-23).
+            if (File.Exists(Path.Combine(current.FullName, "SmartSDRIQStreamer.csproj")))
                 return current;
-            }
 
             current = current.Parent;
         }
@@ -2287,9 +2286,10 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         if (TryResolveStreamerIniFiles(out var iniFiles) && iniFiles.Count > 0)
         {
             var byChannel = iniFiles
-                .Select(f => new { File = f, Channel = ExtractChannelFromIniFileName(f.Name) })
-                .Where(x => x.Channel.HasValue)
-                .GroupBy(x => x.Channel!.Value)
+                .SelectMany(f => ExtractChannelFromIniFileName(f.Name) is { } channel
+                    ? new[] { (File: f, Channel: channel) }
+                    : Array.Empty<(FileInfo File, int Channel)>())
+                .GroupBy(x => x.Channel)
                 .ToDictionary(
                     g => g.Key,
                     g => g.OrderByDescending(x => x.File.LastWriteTimeUtc).First().File);

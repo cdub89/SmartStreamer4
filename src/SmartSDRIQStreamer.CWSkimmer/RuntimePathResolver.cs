@@ -42,11 +42,11 @@ public static class RuntimePathResolver
         var current = start;
         while (current is not null)
         {
-            if (File.Exists(Path.Combine(current.FullName, "SmartSDRIQStreamer.csproj")) ||
-                File.Exists(Path.Combine(current.FullName, "SmartSDRIQStreamer.slnx")))
-            {
+            // Repo-root marker is the app csproj. (A second marker,
+            // SmartSDRIQStreamer.slnx, was removed 2026-07-23 when the .slnx
+            // was replaced by SmartStreamer4.sln; see issue #50.)
+            if (File.Exists(Path.Combine(current.FullName, "SmartSDRIQStreamer.csproj")))
                 return current;
-            }
 
             current = current.Parent;
         }

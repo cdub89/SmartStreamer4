@@ -473,6 +473,18 @@ rationale") at secondary sites.
   succession. After 2 failed iterations, prefer asking Codex for a
   second read (see Codex collaboration above) over a third blind
   attempt.
+- **Data over prior triage notes**: When a diagnostic capture comes back
+  from a tester (a `[FLEX]` devbuild log, a field trace), lead with what
+  the log empirically shows before referencing any earlier triage
+  write-up. Treat the hypotheses in prior notes as scaffolding that
+  produced the diagnostic build, not as conclusions to confirm — the
+  build exists to replace guesses with ground truth. State plainly what
+  the data does and does not show, then use it to refute or support the
+  old hypotheses; do not fit the data to them. Precedent: issue #30
+  (Maestro empty Operating tab) had four triage hypotheses; the devbuild
+  log refuted three in the first 100 ms and the real cause (a trailing
+  space on the `Maestro` station name, desyncing runtime vs. discovery)
+  was outside the hypothesis set entirely.
 
 ## Git
 
@@ -486,12 +498,18 @@ without asking; ask before any other mutating operation (`pull`,
 ## Build & Release
 
 ```powershell
-dotnet build                                          # debug build
-dotnet build -c Release                               # release build
-dotnet test                                           # run all tests
+dotnet build SmartStreamer4.sln                       # debug build (all projects incl. tests)
+dotnet build SmartStreamer4.sln -c Release            # release build
+dotnet test SmartStreamer4.sln                        # run all tests
 .\publish-release.ps1                                 # phase 1: build + verify + zip + SHA256SUMS bump
 .\publish-release.ps1 -Publish                        # phase 2: commit SHA256SUMS, push, gh release create
 ```
+
+The solution file must be named explicitly: the root also contains
+`SmartSDRIQStreamer.csproj`, so bare `dotnet build` / `dotnet test` fail
+with MSB1011 (ambiguous). Before 2026-07-23 the root solution was a
+`.slnx`, which the .NET 8 CLI silently ignores; bare `dotnet test` fell
+back to the app csproj and passed while running zero tests.
 
 Release versioning conventions:
 
@@ -500,6 +518,21 @@ Release versioning conventions:
   `v0.1.18b1` is the first patch on `v0.1.18b`).
 - The next beta after `v0.1.18b` (or `v0.1.18b1`, `v0.1.18b2`, ...) is
   `v0.1.19b`.
+
+**No beta without operator-facing benefit**: No beta ships unless it
+carries at least one change an existing operator would actually feel — a
+bug they hit gets fixed, a feature they asked for lands, or a
+reliability/performance gain they would notice. Maintainer-hygiene work
+alone (release-pipeline cleanups, internal refactors, doc/test renames,
+cosmetic AppData-folder alignment with silent migration) does not justify
+a release, even bundled together. Before recommending a release cut, list
+each commit since the last shipped beta and label it user-facing vs.
+maintainer hygiene; "an operator might see a new log line on an edge
+case" and "a silent migration ran on first launch" do not count. If
+nothing on the slate clears the bar, recommend pushing the release back
+and surface the gap rather than auto-shipping. Asking users to update
+from a working beta implies there is a reason to; shipping hygiene-only
+betas trains operators to ignore update prompts.
 
 Release publishing flow. Two automated phases bracket three manual
 gates. The script does not pause for human input — gates happen between

@@ -129,7 +129,16 @@ if ($Publish) {
 # -----------------------------------------------------------------------------
 if (-not $SkipTests) {
     Write-Host "`n[1/6] Running tests..." -ForegroundColor Yellow
-    dotnet test
+    # Issue #50 fix 2026-07-23: bare `dotnet test` never discovered any test
+    # project (the root .slnx was invisible to the .NET 8 CLI, so the command
+    # fell back to the app csproj and ran zero tests), and no exit-code check
+    # meant a failure would not have blocked the release. Name the solution
+    # and fail fast so this gate is real.
+    dotnet test SmartStreamer4.sln
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Tests failed (exit $LASTEXITCODE). Aborting release build." -ForegroundColor Red
+        exit 1
+    }
 } else {
     Write-Host "`n[1/6] Skipping tests (--SkipTests)." -ForegroundColor Yellow
 }

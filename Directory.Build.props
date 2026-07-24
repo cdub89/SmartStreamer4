@@ -1,0 +1,15 @@
+<Project>
+  <!--
+    Issue #50 Phase 1 (2026-07-23): fail the build on any first-party
+    compiler warning, enforcing the CLAUDE.md zero-warning gate at the
+    compiler level. The FlexLib_API_* subtree is excluded: third-party
+    vendor source (gitignored, referenced by project path) whose warnings
+    are outside our control. The exclusion uses a path condition here
+    rather than a shield Directory.Build.props inside the FlexLib folder
+    because that folder is gitignored, so a file placed there would not
+    survive a fresh clone.
+  -->
+  <PropertyGroup Condition="!$(MSBuildProjectDirectory.Contains('FlexLib_API_'))">
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+</Project>

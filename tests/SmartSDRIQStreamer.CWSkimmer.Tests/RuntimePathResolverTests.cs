@@ -12,7 +12,7 @@ public sealed class RuntimePathResolverTests : IDisposable
     public RuntimePathResolverTests()
     {
         _savedOverride = RuntimePathResolver.AppDataRootOverride;
-        // Use a temp dir that doesn't contain SmartSDRIQStreamer.csproj/.slnx
+        // Use a temp dir that doesn't contain SmartSDRIQStreamer.csproj
         // so the resolver's repo-root detection falls through to the appdata
         // branch (the path we're actually testing).
         _isolatedDir = Path.Combine(Path.GetTempPath(), "RuntimePathResolverTests-" + Guid.NewGuid().ToString("N"));

@@ -83,10 +83,13 @@ public sealed class CwSkimmerIniModelFactory
         // channel, write a WDM-mode INI with that index. This is the only
         // reliable way to drive multi-channel WDM (see issue #19). When null,
         // fall back to MME mode and copy the master WDM index inertly.
-        var useWdm = config.OperatorWdmSignalDevIndex is int operatorWdmUi && operatorWdmUi > 0;
-        var wdmSignal = useWdm
-            ? config.OperatorWdmSignalDevIndex!.Value - 1
-            : wdmIQ1;
+        var useWdm = false;
+        var wdmSignal = wdmIQ1;
+        if (config.OperatorWdmSignalDevIndex is int operatorWdmUi && operatorWdmUi > 0)
+        {
+            useWdm = true;
+            wdmSignal = operatorWdmUi - 1;
+        }
 
         return new CwSkimmerIniModel(
             WdmSignalDevIndex:          wdmSignal,
