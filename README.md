@@ -15,13 +15,13 @@ License: MIT (see [LICENSE](LICENSE)).
 
 ## Status
 
-- Beta. Latest release: see [GitHub Releases](https://github.com/cdub89/SmartStreamer4/releases).
+- Generally available as of v0.2.1 (2026-07-24). Latest release: see [GitHub Releases](https://github.com/cdub89/SmartStreamer4/releases).
 - Requires SmartSDR 4.x and FlexRadio firmware ≥ 3.3.32.8203 (FlexLib 4.2.18 minimum).
 - Tested against SmartSDR 4.1.5 and 4.2.x server radios.
 
 ## Install
 
-1. Download `SmartStreamer4-v<version>.zip` from the latest [GitHub Release](https://github.com/cdub89/SmartStreamer4/releases).
+1. Download `SmartStreamer4-v<version>-win-x64.zip` from the latest [GitHub Release](https://github.com/cdub89/SmartStreamer4/releases).
 2. Extract `SmartStreamer4.exe` somewhere convenient.
 3. Run it. Allow firewall access if Windows prompts.
 
