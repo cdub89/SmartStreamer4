@@ -19,11 +19,7 @@
         </Style>
     </Window.Styles>
 
-    <!-- Issue #57: window-level footer strip so Exit is reachable from every tab.
-         The button is pure UI sugar: it only calls Window.Close(), so the one
-         graceful-shutdown path (OnClosing -> ViewModel.Shutdown) stays single. -->
-    <Grid RowDefinitions="*,Auto">
-    <TabControl Grid.Row="0" Margin="0" SelectedIndex="{Binding SelectedTabIndex, Mode=TwoWay}">
+    <TabControl Margin="0" SelectedIndex="{Binding SelectedTabIndex, Mode=TwoWay}">
         <TabControl.Styles>
             <Style Selector="TabItem">
                 <Setter Property="Padding" Value="10,4"/>
@@ -788,12 +784,4 @@
             </ScrollViewer>
         </TabItem>
     </TabControl>
-        <Border Grid.Row="1" BorderBrush="#E3E6EA" BorderThickness="0,1,0,0" Padding="8,3">
-            <Button Content="Exit"
-                    FontSize="11"
-                    Padding="14,2"
-                    HorizontalAlignment="Right"
-                    Click="OnExitClick"/>
-        </Border>
-    </Grid>
 </Window>
