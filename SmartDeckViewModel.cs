@@ -37,6 +37,15 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
     private readonly Action<Action> _postToUi;
     private readonly BandMemory _bandMemory;
 
+    // Writes a [STREAMER] line to streamer-status.log. Injected rather than
+    // reached through IRadioConnection: what a band button restored is an
+    // app-level fact, not something the radio told us.
+    private readonly Action<string> _logStatus;
+
+    // Injected so tests run a band restore without real time passing. Production
+    // uses Task.Delay; see BandWriteSettle for why the delay exists at all.
+    private readonly Func<TimeSpan, Task> _settle;
+
     private bool _started;
 
     // Set while pushing radio state into the bound properties, so the setters
@@ -48,13 +57,17 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
         IRadioConnection connection,
         string controlStation,
         Action<Action>? postToUi = null,
-        BandMemory? bandMemory = null)
+        BandMemory? bandMemory = null,
+        Action<string>? logStatus = null,
+        Func<TimeSpan, Task>? settle = null)
     {
         ArgumentNullException.ThrowIfNull(connection);
         _connection = connection;
         _controlStation = controlStation ?? string.Empty;
         _postToUi = postToUi ?? (action => Dispatcher.UIThread.Post(action));
         _bandMemory = bandMemory ?? new BandMemory();
+        _logStatus = logStatus ?? (_ => { });
+        _settle = settle ?? Task.Delay;
     }
 
     [ObservableProperty]
@@ -213,15 +226,32 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string _currentBand = string.Empty;
 
-    [RelayCommand]
+    // Bug fix 2026-08-03 (operator-reported: RX/TX antenna buttons bounced
+    // between values on some band changes before settling correct). Symptom was
+    // cosmetic but the cause was not. The five writes used to be issued inside
+    // one millisecond, far faster than the radio's ~175-250 ms status round
+    // trip. The radio answers each command with a correct snapshot of itself at
+    // that instant, so the frequency command's reply legitimately still carried
+    // the old antennas; arriving after we had optimistically cached the new
+    // ones, it overwrote them until the later replies caught up. A live capture
+    // showed the same race silently corrupting band memory: a status reset the
+    // cached AGC-T to a pre-write value, and the next band press captured that
+    // stale number as the departing state, persisting a value the radio never
+    // held. Spacing the writes so each reply lands before the next command
+    // makes the status stream monotonic and fixes both. Chosen over suppressing
+    // the repaint, which would have hidden the corruption rather than fixed it.
+    private static readonly TimeSpan BandWriteSettle = TimeSpan.FromMilliseconds(250);
+
     /// <remarks>
     /// Writes are ordered frequency, mode, antennas, AGC-T. Frequency leads so
-    /// the band change lands before anything band-dependent, and the antennas
-    /// sit late because the radio refuses them while transmitting: a refusal
-    /// there should not strand the rest of the restore. Each field is written
-    /// only when the band actually remembers one, so a band's first visit tunes
-    /// it and leaves everything else exactly as the radio has it.
+    /// the band change lands immediately and the operator is on the new band
+    /// while the rest settles behind it, and the antennas sit late because the
+    /// radio refuses them while transmitting: a refusal there should not strand
+    /// the rest of the restore. Each field is written only when the band
+    /// actually remembers one, so a band's first visit tunes it and leaves
+    /// everything else exactly as the radio has it.
     /// </remarks>
+    [RelayCommand]
     private async Task SelectBandAsync(string band)
     {
         if (SelectedSlice is not { } slice) return;
@@ -238,16 +268,46 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
         await _connection.SetSliceFrequencyAsync(slice, target.FreqMhz);
 
         if (target.Mode is { } mode)
+        {
+            await _settle(BandWriteSettle);
             await _connection.SetSliceModeAsync(slice, mode);
+        }
 
         if (target.RxAntenna is { } rxAntenna)
+        {
+            await _settle(BandWriteSettle);
             await _connection.SetSliceRxAntennaAsync(slice, rxAntenna);
+        }
 
         if (target.TxAntenna is { } txAntenna)
+        {
+            await _settle(BandWriteSettle);
             await _connection.SetSliceTxAntennaAsync(slice, txAntenna);
+        }
 
         if (target.AgcThreshold is { } agcThreshold)
+        {
+            await _settle(BandWriteSettle);
             await _connection.SetSliceAgcThresholdAsync(slice, agcThreshold);
+        }
+
+        // One line naming what the press did, rather than a line per write.
+        // The frequency and mode writes are not logged individually on purpose:
+        // SetSliceFrequencyAsync is also the CW Skimmer spot-click path, which
+        // fires on every spot and would swamp the log (issue #58). Listing only
+        // what was actually restored means a band's first visit reads as bare
+        // frequency, which is itself the useful signal.
+        List<string> restored = [$"{FormatFrequency(target.FreqMhz)} MHz"];
+        if (target.Mode is { } restoredMode)
+            restored.Add($"mode {restoredMode.ToRadioValue()}");
+        if (target.RxAntenna is { } restoredRx)
+            restored.Add($"RX {restoredRx}");
+        if (target.TxAntenna is { } restoredTx)
+            restored.Add($"TX {restoredTx}");
+        if (target.AgcThreshold is { } restoredAgc)
+            restored.Add($"AGC-T {restoredAgc}");
+
+        _logStatus($"Band {band}: {string.Join(", ", restored)}");
 
         CurrentBand = band;
     }

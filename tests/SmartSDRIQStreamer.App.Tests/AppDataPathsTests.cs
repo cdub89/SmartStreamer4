@@ -69,8 +69,11 @@ public sealed class AppDataPathsTests : IDisposable
     }
 
     [Fact]
-    public void BothPresent_UsesCurrentFolder_AndWarns()
+    public void BothPresent_UsesCurrentFolder_Silently()
     {
+        // Says nothing, by design. The condition persists until the operator
+        // deletes the legacy folder, so warning about it logged the same line
+        // on every launch without ever telling them anything new.
         var legacy = Path.Combine(_appDataRoot, AppDataPaths.LegacyFolderName);
         var current = Path.Combine(_appDataRoot, AppDataPaths.CurrentFolderName);
         Directory.CreateDirectory(legacy);
@@ -80,9 +83,7 @@ public sealed class AppDataPathsTests : IDisposable
 
         Assert.Equal(current, AppDataPaths.Root);
         Assert.True(Directory.Exists(legacy));
-        var messages = AppDataPaths.DrainMigrationMessages();
-        Assert.Single(messages);
-        Assert.Contains("Both", messages[0], StringComparison.Ordinal);
+        Assert.Empty(AppDataPaths.DrainMigrationMessages());
     }
 
     [Fact]

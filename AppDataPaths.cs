@@ -79,9 +79,13 @@ public static class AppDataPaths
 
             if (legacyExists && currentExists)
             {
-                _migrationMessages.Add(
-                    $"Both %APPDATA%\\{LegacyFolderName} and %APPDATA%\\{CurrentFolderName} are present. " +
-                    $"Using %APPDATA%\\{CurrentFolderName}; legacy folder left intact for manual review.");
+                // Deliberately silent. This used to log "both folders present,
+                // legacy left intact for manual review" on every launch, which
+                // is a nag rather than a diagnostic: the condition is permanent
+                // until the operator deletes the legacy folder, so the message
+                // repeated at every startup from the issue #34 rename onward
+                // without ever telling them anything new. The behaviour is
+                // unchanged; only the logging is gone.
                 _root = current;
                 return;
             }

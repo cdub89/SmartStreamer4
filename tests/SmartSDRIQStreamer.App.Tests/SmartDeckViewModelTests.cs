@@ -834,7 +834,7 @@ public class SmartDeckViewModelTests
         var connection = new FakeTelemetryConnection();
         connection.SetSlices(Slice("A", freqMhz: 14.031_5));
         var viewModel = new SmartDeckViewModel(
-            connection, TestStation, postToUi: action => action(), bandMemory: new BandMemory());
+            connection, TestStation, postToUi: action => action(), bandMemory: new BandMemory(), settle: _ => Task.CompletedTask);
         viewModel.Start();
 
         viewModel.SelectBandCommand.Execute("40m");
@@ -856,7 +856,7 @@ public class SmartDeckViewModelTests
         var connection = new FakeTelemetryConnection();
         connection.SetSlices(Slice("A", mode: "CW", rxAnt: "ANT1", txAnt: "ANT1", freqMhz: 14.031_5));
         var viewModel = new SmartDeckViewModel(
-            connection, TestStation, postToUi: action => action(), bandMemory: memory);
+            connection, TestStation, postToUi: action => action(), bandMemory: memory, settle: _ => Task.CompletedTask);
         viewModel.Start();
 
         viewModel.SelectBandCommand.Execute("40m");
@@ -876,7 +876,7 @@ public class SmartDeckViewModelTests
         connection.SetSlices(
             Slice("A", mode: "CW", rxAnt: "RX_A", txAnt: "ANT2", freqMhz: 14.031_5, agcThreshold: 65));
         var viewModel = new SmartDeckViewModel(
-            connection, TestStation, postToUi: action => action(), bandMemory: new BandMemory(store));
+            connection, TestStation, postToUi: action => action(), bandMemory: new BandMemory(store), settle: _ => Task.CompletedTask);
         viewModel.Start();
 
         viewModel.SelectBandCommand.Execute("40m");
@@ -898,7 +898,7 @@ public class SmartDeckViewModelTests
         var connection = new FakeTelemetryConnection();
         connection.SetSlices(Slice("A", mode: "DIGU", rxAnt: "ANT1", freqMhz: 14.074));
         var viewModel = new SmartDeckViewModel(
-            connection, TestStation, postToUi: action => action(), bandMemory: new BandMemory(store));
+            connection, TestStation, postToUi: action => action(), bandMemory: new BandMemory(store), settle: _ => Task.CompletedTask);
         viewModel.Start();
 
         viewModel.SelectBandCommand.Execute("40m");
@@ -909,12 +909,51 @@ public class SmartDeckViewModelTests
     }
 
     [Fact]
+    public void A_band_press_logs_one_line_naming_what_it_restored()
+    {
+        // One line per press, not one per write. The frequency and mode writes
+        // are deliberately not logged individually: SetSliceFrequencyAsync is
+        // also the CW Skimmer spot-click path and would swamp the log.
+        var memory = new BandMemory(new Dictionary<string, BandState>
+        {
+            ["40m"] = new(7.118, SliceMode.Lsb, "ANT2", "XVTR", 30),
+        });
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", freqMhz: 14.031_5));
+        List<string> log = [];
+        var viewModel = new SmartDeckViewModel(
+            connection, TestStation, postToUi: action => action(), bandMemory: memory, logStatus: log.Add, settle: _ => Task.CompletedTask);
+        viewModel.Start();
+
+        viewModel.SelectBandCommand.Execute("40m");
+
+        Assert.Equal("Band 40m: 7.118.000 MHz, mode LSB, RX ANT2, TX XVTR, AGC-T 30", Assert.Single(log));
+    }
+
+    [Fact]
+    public void A_first_visit_logs_the_frequency_alone()
+    {
+        // Nothing else was restored, and the bare line says so.
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", freqMhz: 14.031_5));
+        List<string> log = [];
+        var viewModel = new SmartDeckViewModel(
+            connection, TestStation, postToUi: action => action(),
+            bandMemory: new BandMemory(), logStatus: log.Add, settle: _ => Task.CompletedTask);
+        viewModel.Start();
+
+        viewModel.SelectBandCommand.Execute("40m");
+
+        Assert.Equal("Band 40m: 7.055.000 MHz", Assert.Single(log));
+    }
+
+    [Fact]
     public void A_band_smartdeck_does_not_offer_writes_nothing_at_all()
     {
         var connection = new FakeTelemetryConnection();
         connection.SetSlices(Slice("A", freqMhz: 14.031_5));
         var viewModel = new SmartDeckViewModel(
-            connection, TestStation, postToUi: action => action(), bandMemory: new BandMemory());
+            connection, TestStation, postToUi: action => action(), bandMemory: new BandMemory(), settle: _ => Task.CompletedTask);
         viewModel.Start();
 
         viewModel.SelectBandCommand.Execute("6m");

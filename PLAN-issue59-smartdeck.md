@@ -561,6 +561,61 @@ The per-band record therefore grows from a frequency to **frequency, mode, RX
 antenna, TX antenna, AGC-T**. All five are slice-scoped, so a restore is one
 write target.
 
+### What follows a direct frequency change, and what does not
+
+The load-bearing rule behind this whole section, established by bench testing
+against SmartSDR with SmartDeck closed (2026-08-03). It predicts what SmartDeck
+has to remember and what it must leave alone, so check a setting against it
+before adding it to `BandState`.
+
+| Scope | Follows a band change? | Examples |
+|-------|------------------------|----------|
+| Slice | **No.** SmartDeck must remember it. | Mode, RX antenna, TX antenna, AGC-T |
+| Radio / panadapter | **Yes**, the radio persists it per band. | RF gain, RF power, tune power |
+
+Slice-scoped settings do not follow because slice persistence loads only when a
+slice is *created* (`Radio.RequestSlice`, `load_from=PERSISTENCE`,
+`Radio.cs:5494-5501`), and SmartDeck never creates one: it writes `Slice.Freq`
+on a live slice so CW Skimmer and WSJT-X stay bound. Radio and panadapter
+settings do follow, because those objects are not recreated either. They simply
+move to the new band and the radio applies what it has stored for them.
+
+Verified directly: with SmartDeck closed, direct frequency entry across bands
+leaves RX and TX antenna exactly where they were, while RF gain changes on its
+own. **RF power and tune power behave the same way as RF gain** (operator,
+2026-08-03), which matters for phase 3: QRP/QRO presets do not need per-band
+memory, and building it would fight the radio.
+
+**AGC-T follows the rule: slice-scoped, not band-persistent, so SmartDeck
+remembers it.** Settled 2026-08-03 by direct bench test, twice. The decisive
+run: set AGC-T on 15m, enter a 20m frequency (it does not move), reduce it,
+return to 15m (it does not move), increase it. The radio simply leaves AGC-T
+where it is.
+
+Recorded because it cost an hour: a harness capture appeared to show the radio
+volunteering a per-band AGC-T value ~200 ms after each frequency change, three
+times out of three, and that reading was wrong. **Do not treat AGC-T values in a
+slice status dump as evidence of anything.** The reachability capture proved the
+radio never echoes `agc_threshold` in response to a set, unlike antennas which
+are confirmed within ~200 ms. Our AGC writes are therefore never acknowledged,
+FlexLib's cache and the radio drift apart freely, and AGC-T is the least
+trustworthy field in any capture. The bench test is authoritative here; the wire
+trace is not.
+
+A useful consequence: because there is no echo to wait for, SmartDeck's
+optimistic AGC-T readout is the only option available, not a shortcut. RF gain
+is different, since the radio does echo that (`Panadapter.cs:1137`).
+
+FlexLib's client-side handling was audited and is not the culprit: the setter
+emits `slice set <n> agc_threshold=<v>` correctly, and the status parser maps
+`agc_threshold` and `agc_off_level` to their own fields with correct clamping
+(`Slice.cs:1360-1380`, `2056-2089`). If something is misbehaving it is
+radio-side. Worth knowing for whoever looks next: **both AGC status branches
+silently discard a value that fails `uint.TryParse` or exceeds 100**, logging
+only to `Debug.WriteLine`. In a release build a malformed or out-of-range
+`agc_threshold` disappears with no trace and the cached value simply persists,
+which is indistinguishable from the radio never having reported.
+
 **RF gain is deliberately excluded, and adding it would be a bug.** The weak
 reason is that it is a panadapter property reached through
 `SliceInfo.PanadapterStreamId`, so including it would make a restore two write
@@ -600,12 +655,52 @@ the mode would persist as an ordinal and reordering `SliceMode` would silently
 remap every saved band. The converter writes the C# member name, so the JSON
 reads `"Cw"` while the radio wire value is `"CW"`.
 
+## Live-radio capture harness (recipe)
+
+Three questions in the layout and band-memory work could not be settled by
+clicking buttons and watching: they needed millisecond ordering of what we wrote
+against what the radio reported. A temporary harness answered all three in an
+afternoon, and the useful discovery is that **it needs no production code at
+all**. `IRadioConnection` already exposes `SliceUpdated`, `PanadapterUpdated`,
+`ConnectionStateChanged` and `DiagnosticEvent`, so a test-side subscriber sees
+everything. This is unlike the phase-1 telemetry spike, which did need temporary
+code in the app and had to be deleted from it afterwards.
+
+Shape, should phase 3 want one:
+
+- A `[Fact]` in `tests/SmartSDRIQStreamer.App.Tests/`, returning early unless an
+  environment variable is set, so `dotnet test` stays offline and green.
+- Discover, `ConnectAsync`, wait ~3 s for slices. SmartSDR must be running:
+  SmartStreamer is a non-GUI client and cannot create a slice.
+- Subscribe the connection events, stamping each with
+  `Stopwatch.ElapsedMilliseconds` and `Environment.CurrentManagedThreadId`. The
+  thread id is what distinguishes our own optimistic cache writes from
+  radio-originated status arriving on the pump thread, and that distinction was
+  the whole answer to the antenna question.
+- Drive the real ViewModel command rather than reproducing its writes, so the
+  capture exercises the shipping code path.
+- Report the output path via `Assert.Fail`, since a passing test prints nothing.
+
+Delete it once the questions are answered. A harness left behind is a test that
+asserts nothing while inflating the count, and phase 3's captures will need
+different bodies anyway.
+
+**Phase 3 caution:** everything there transmits. A harness that keys the radio
+is a different risk class from one that changes bands on receive, and deserves
+its own guards written deliberately rather than inherited from this one.
+
 ## Phase 3 outline (deferred)
 
 TX and PTT (`Radio.Mox`), guarded by `Radio.InterlockState` /
 `InterlockReason`. QRP/QRO presets are cheap when they arrive: `Radio.RFPower`
 (`Radio.cs:8370`) is an int in watts clamped 0-100, emitting
-`transmit set rfpower=N`, with `TunePower` separate. CWX is a full surface, not
+`transmit set rfpower=N`, with `TunePower` separate.
+
+**Neither power setting needs per-band memory.** Both are radio-scoped, so per
+"What follows a direct frequency change" above they already persist per band on
+the radio and follow a direct frequency entry on their own (operator-verified
+2026-08-03). Adding them to `BandState` would race the radio's own value, which
+is the mistake that section exists to prevent. CWX is a full surface, not
 a stub: `CWX.cs` has `SendMacro(int)`, `Send(string)`, a `Macros[]` array with
 `GetMacro` / `SetMacro`, plus `Speed`, `Delay`, `QskEnabled` and
 `MessageQueued` / `CharSent` events, so "send CW from memories" is
