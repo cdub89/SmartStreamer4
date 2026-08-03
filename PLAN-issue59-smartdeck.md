@@ -542,7 +542,7 @@ decision, not an oversight.
   Stream Deck look (bright blue on near-black) is open, and deliberately
   separated from the arrangement.
 
-## Next: per-band memory beyond frequency
+## Per-band memory beyond frequency (live-validated 2026-08-03)
 
 `BandMemory` stores a frequency per band. The operator's FlexButtons and Stream
 Deck buttons stack several commands behind one press, setting band, frequency,
@@ -561,15 +561,44 @@ The per-band record therefore grows from a frequency to **frequency, mode, RX
 antenna, TX antenna, AGC-T**. All five are slice-scoped, so a restore is one
 write target.
 
-**RF gain is deliberately excluded.** It is a panadapter property reached
-through `SliceInfo.PanadapterStreamId`, so including it would make a restore
-two write targets against two different objects, and its range is
-radio-reported per panadapter rather than protocol-fixed. It stays a live
-`-`/`+` control that a band button does not touch.
+**RF gain is deliberately excluded, and adding it would be a bug.** The weak
+reason is that it is a panadapter property reached through
+`SliceInfo.PanadapterStreamId`, so including it would make a restore two write
+targets against two different objects. The real reason is empirical, confirmed
+in the 2026-08-03 live test: **the radio already restores RF gain per band by
+itself**, and writing our own remembered value would fight it.
 
-This change carries a settings migration: `AppSettings.SmartDeckBandMemoryMhz`
-is a `Dictionary<string, double>` today, and the widened record is not a
-double.
+The mechanism is the mirror image of the slice problem above.
+`Panadapter.RFGain`'s setter only sends `display pan set 0x<id> rfgain=N`, and
+`Panadapter.cs:1137` has a `case "rfgain":` branch that accepts the value *from*
+radio status. There is no client-side band logic. Pressing a band button moves
+`Slice.Freq`, the panadapter follows the slice, the radio applies its own stored
+per-band gain for that panadapter and pushes it back, and `PanadapterUpdated`
+runs `ApplyRfGainState()` so the readout tracks. The operator sees per-band RF
+gain without SmartDeck doing anything.
+
+Slice state gets none of this because `Radio.RequestSlice` loads persistence
+only via an explicit `load_from=PERSISTENCE` flag at slice *creation*
+(`Radio.cs:5494-5501`), and SmartDeck never creates a slice. The panadapter is
+not recreated either; it simply moves, which is why its own persistence still
+applies.
+
+So RF gain stays a live `-`/`+` control that a band button does not touch. Do
+not add it to `BandState`: doing so would race the radio's own per-band value on
+every band change and sometimes overwrite it with a staler number.
+
+**No migration, by the operator's choice.**
+`AppSettings.SmartDeckBandMemoryMhz` (a `Dictionary<string, double>`) is
+replaced outright by `SmartDeckBandMemory` (a `Dictionary<string, BandState>`).
+The old key is simply left unread in existing settings files, and each band
+re-learns on its first departure, so the only cost is one visit per band.
+
+One persistence detail worth knowing before editing a settings file by hand:
+`BandState.Mode` carries its own `JsonStringEnumConverter` rather than relying
+on the store's options, which have no global string-enum converter. Without it
+the mode would persist as an ordinal and reordering `SliceMode` would silently
+remap every saved band. The converter writes the C# member name, so the JSON
+reads `"Cw"` while the radio wire value is `"CW"`.
 
 ## Phase 3 outline (deferred)
 

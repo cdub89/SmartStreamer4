@@ -819,6 +819,110 @@ public class SmartDeckViewModelTests
         Assert.Equal("B", Assert.Single(viewModel.SliceOptions, slice => slice.IsCurrent).Label);
     }
 
+    // ── Per-band state memory ────────────────────────────────────────────────
+    // A band button restores frequency, mode, both antennas and AGC-T. The
+    // radio cannot do this for us: a real band change on the radio tears the
+    // slice down and rebuilds it from slice persistence, and SmartDeck
+    // deliberately never does that, because Skimmer and WSJT-X are bound per
+    // slice. RF gain is excluded: it is panadapter-scoped.
+
+    [Fact]
+    public void A_bands_first_visit_tunes_it_and_changes_nothing_else()
+    {
+        // Nothing is remembered yet, so guessing a mode or antenna would be
+        // worse than leaving the radio as the operator set it.
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", freqMhz: 14.031_5));
+        var viewModel = new SmartDeckViewModel(
+            connection, TestStation, postToUi: action => action(), bandMemory: new BandMemory());
+        viewModel.Start();
+
+        viewModel.SelectBandCommand.Execute("40m");
+
+        Assert.Equal(7.055, Assert.Single(connection.FrequencyWrites).FreqMHz);
+        Assert.Empty(connection.ModeWrites);
+        Assert.Empty(connection.RxAntennaWrites);
+        Assert.Empty(connection.TxAntennaWrites);
+        Assert.Empty(connection.AgcThresholdWrites);
+    }
+
+    [Fact]
+    public void Returning_to_a_band_restores_everything_it_was_left_with()
+    {
+        var memory = new BandMemory(new Dictionary<string, BandState>
+        {
+            ["40m"] = new(7.118, SliceMode.Lsb, "ANT2", "XVTR", 30),
+        });
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", mode: "CW", rxAnt: "ANT1", txAnt: "ANT1", freqMhz: 14.031_5));
+        var viewModel = new SmartDeckViewModel(
+            connection, TestStation, postToUi: action => action(), bandMemory: memory);
+        viewModel.Start();
+
+        viewModel.SelectBandCommand.Execute("40m");
+
+        Assert.Equal(7.118, Assert.Single(connection.FrequencyWrites).FreqMHz);
+        Assert.Equal(SliceMode.Lsb, Assert.Single(connection.ModeWrites).Mode);
+        Assert.Equal("ANT2", Assert.Single(connection.RxAntennaWrites).Antenna);
+        Assert.Equal("XVTR", Assert.Single(connection.TxAntennaWrites).Antenna);
+        Assert.Equal(30, Assert.Single(connection.AgcThresholdWrites).Threshold);
+    }
+
+    [Fact]
+    public void Leaving_a_band_captures_its_full_state_for_next_time()
+    {
+        var store = new Dictionary<string, BandState>();
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(
+            Slice("A", mode: "CW", rxAnt: "RX_A", txAnt: "ANT2", freqMhz: 14.031_5, agcThreshold: 65));
+        var viewModel = new SmartDeckViewModel(
+            connection, TestStation, postToUi: action => action(), bandMemory: new BandMemory(store));
+        viewModel.Start();
+
+        viewModel.SelectBandCommand.Execute("40m");
+
+        var remembered = Assert.Contains("20m", store);
+        Assert.Equal(14.031_5, remembered.FreqMhz);
+        Assert.Equal(SliceMode.Cw, remembered.Mode);
+        Assert.Equal("RX_A", remembered.RxAntenna);
+        Assert.Equal("ANT2", remembered.TxAntenna);
+        Assert.Equal(65, remembered.AgcThreshold);
+    }
+
+    [Fact]
+    public void Leaving_a_band_in_a_mode_smartdeck_does_not_offer_records_no_mode()
+    {
+        // DIGU is WSJT-X's business. Recording it would need an untyped mode
+        // write to restore, so the band remembers everything except the mode.
+        var store = new Dictionary<string, BandState>();
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", mode: "DIGU", rxAnt: "ANT1", freqMhz: 14.074));
+        var viewModel = new SmartDeckViewModel(
+            connection, TestStation, postToUi: action => action(), bandMemory: new BandMemory(store));
+        viewModel.Start();
+
+        viewModel.SelectBandCommand.Execute("40m");
+
+        var remembered = Assert.Contains("20m", store);
+        Assert.Null(remembered.Mode);
+        Assert.Equal("ANT1", remembered.RxAntenna);
+    }
+
+    [Fact]
+    public void A_band_smartdeck_does_not_offer_writes_nothing_at_all()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", freqMhz: 14.031_5));
+        var viewModel = new SmartDeckViewModel(
+            connection, TestStation, postToUi: action => action(), bandMemory: new BandMemory());
+        viewModel.Start();
+
+        viewModel.SelectBandCommand.Execute("6m");
+
+        Assert.Empty(connection.FrequencyWrites);
+        Assert.Empty(connection.ModeWrites);
+    }
+
     [Fact]
     public void Disconnecting_drops_the_stale_slice_and_disables_the_controls()
     {

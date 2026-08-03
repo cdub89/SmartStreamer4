@@ -150,10 +150,15 @@ public sealed class AppSettings
     public double? SmartDeckHeight { get; set; }
     public bool SmartDeckAlwaysOnTop { get; set; }
 
-    // Per-band frequency memory for the SmartDeck band buttons (issue #59
-    // phase 2b), keyed by band label ("20m"). Persisted rather than
-    // session-scoped: an operator who sets 20m to their CW spot expects the
-    // button to return there next session, which is the whole point of band
-    // memory. Empty until the operator first leaves a band.
-    public Dictionary<string, double> SmartDeckBandMemoryMhz { get; set; } = [];
+    // Per-band state memory for the SmartDeck band buttons (issue #59 phase 2b,
+    // widened past frequency to mode, both antennas and AGC-T on 2026-08-03),
+    // keyed by band label ("20m"). Persisted rather than session-scoped: an
+    // operator who sets 20m to their CW spot expects the button to return there
+    // next session, which is the whole point of band memory. Empty until the
+    // operator first leaves a band.
+    //
+    // Replaces SmartDeckBandMemoryMhz, which held bare frequencies. No
+    // migration by operator's choice: the old key is simply left unread in
+    // existing settings files, and each band re-learns on its first departure.
+    public Dictionary<string, BandState> SmartDeckBandMemory { get; set; } = [];
 }

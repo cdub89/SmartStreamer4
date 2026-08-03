@@ -2210,7 +2210,7 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     public SmartDeckViewModel CreateSmartDeckViewModel(AppSettings settings) =>
         // The band memory is handed the settings dictionary itself, so bands the
         // operator leaves are recorded straight into what gets persisted.
-        new(_connection, SelectedControlStation, bandMemory: new BandMemory(settings.SmartDeckBandMemoryMhz));
+        new(_connection, SelectedControlStation, bandMemory: new BandMemory(settings.SmartDeckBandMemory));
 
     // Issue #28 (WSJT-X / JTDX setup-and-launch): dumps every Windows audio
     // endpoint (full DirectSound names + WinMM cross-reference) to

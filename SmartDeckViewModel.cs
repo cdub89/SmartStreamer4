@@ -214,12 +214,41 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
     private string _currentBand = string.Empty;
 
     [RelayCommand]
+    /// <remarks>
+    /// Writes are ordered frequency, mode, antennas, AGC-T. Frequency leads so
+    /// the band change lands before anything band-dependent, and the antennas
+    /// sit late because the radio refuses them while transmitting: a refusal
+    /// there should not strand the rest of the restore. Each field is written
+    /// only when the band actually remembers one, so a band's first visit tunes
+    /// it and leaves everything else exactly as the radio has it.
+    /// </remarks>
     private async Task SelectBandAsync(string band)
     {
         if (SelectedSlice is not { } slice) return;
-        if (_bandMemory.SwitchTo(band, slice.FreqMHz) is not { } targetMhz) return;
 
-        await _connection.SetSliceFrequencyAsync(slice, targetMhz);
+        var departing = new BandState(
+            slice.FreqMHz,
+            slice.OfferedMode,
+            string.IsNullOrEmpty(slice.RxAntenna) ? null : slice.RxAntenna,
+            string.IsNullOrEmpty(slice.TxAntenna) ? null : slice.TxAntenna,
+            slice.AgcThreshold);
+
+        if (_bandMemory.SwitchTo(band, departing) is not { } target) return;
+
+        await _connection.SetSliceFrequencyAsync(slice, target.FreqMhz);
+
+        if (target.Mode is { } mode)
+            await _connection.SetSliceModeAsync(slice, mode);
+
+        if (target.RxAntenna is { } rxAntenna)
+            await _connection.SetSliceRxAntennaAsync(slice, rxAntenna);
+
+        if (target.TxAntenna is { } txAntenna)
+            await _connection.SetSliceTxAntennaAsync(slice, txAntenna);
+
+        if (target.AgcThreshold is { } agcThreshold)
+            await _connection.SetSliceAgcThresholdAsync(slice, agcThreshold);
+
         CurrentBand = band;
     }
 
