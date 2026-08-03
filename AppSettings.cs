@@ -149,4 +149,11 @@ public sealed class AppSettings
     public double? SmartDeckWidth { get; set; }
     public double? SmartDeckHeight { get; set; }
     public bool SmartDeckAlwaysOnTop { get; set; }
+
+    // Per-band frequency memory for the SmartDeck band buttons (issue #59
+    // phase 2b), keyed by band label ("20m"). Persisted rather than
+    // session-scoped: an operator who sets 20m to their CW spot expects the
+    // button to return there next session, which is the whole point of band
+    // memory. Empty until the operator first leaves a band.
+    public Dictionary<string, double> SmartDeckBandMemoryMhz { get; set; } = [];
 }

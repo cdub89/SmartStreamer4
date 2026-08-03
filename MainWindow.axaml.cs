@@ -424,7 +424,7 @@ public partial class MainWindow : Window
 
         if (DataContext is not MainWindowViewModel vm) return;
 
-        var deck = new SmartDeckWindow(vm.CreateSmartDeckViewModel(), _settingsSession.Settings);
+        var deck = new SmartDeckWindow(vm.CreateSmartDeckViewModel(_settingsSession.Settings), _settingsSession.Settings);
         deck.Closed += (_, _) => _smartDeck = null;
         _smartDeck = deck;
         deck.Show(this);

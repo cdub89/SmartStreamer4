@@ -2207,7 +2207,10 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     // ViewModel needs the radio connection, which stays private here. Handing
     // out a factory keeps _connection encapsulated instead of exposing the
     // whole connection as a public property.
-    public SmartDeckViewModel CreateSmartDeckViewModel() => new(_connection);
+    public SmartDeckViewModel CreateSmartDeckViewModel(AppSettings settings) =>
+        // The band memory is handed the settings dictionary itself, so bands the
+        // operator leaves are recorded straight into what gets persisted.
+        new(_connection, SelectedControlStation, bandMemory: new BandMemory(settings.SmartDeckBandMemoryMhz));
 
     // Issue #28 (WSJT-X / JTDX setup-and-launch): dumps every Windows audio
     // endpoint (full DirectSound names + WinMM cross-reference) to

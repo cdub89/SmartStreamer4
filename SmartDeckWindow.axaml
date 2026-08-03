@@ -3,12 +3,13 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:SDRIQStreamer.App"
-        mc:Ignorable="d" d:DesignWidth="420" d:DesignHeight="120"
+        xmlns:flex="clr-namespace:SDRIQStreamer.FlexRadio;assembly=SmartStreamer4.FlexRadio"
+        mc:Ignorable="d" d:DesignWidth="420" d:DesignHeight="306"
         x:Class="SDRIQStreamer.App.SmartDeckWindow"
         x:DataType="local:SmartDeckViewModel"
         Title="SmartDeck"
-        Width="420" Height="118"
-        MinWidth="360" MinHeight="100"
+        Width="420" Height="306"
+        MinWidth="380" MinHeight="290"
         WindowStartupLocation="CenterOwner">
 
     <Window.Styles>
@@ -25,6 +26,12 @@
             <Setter Property="Foreground" Value="Gray"/>
             <Setter Property="HorizontalAlignment" Value="Center"/>
         </Style>
+        <Style Selector="Button.deck-button">
+            <Setter Property="Height" Value="24"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Margin" Value="0,0,4,0"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        </Style>
         <Style Selector="TextBlock.telemetry-unit">
             <Setter Property="FontSize" Value="11"/>
             <Setter Property="Foreground" Value="Gray"/>
@@ -33,8 +40,80 @@
         </Style>
     </Window.Styles>
 
-    <Grid RowDefinitions="*,Auto" Margin="10,8">
-        <Grid Grid.Row="0" ColumnDefinitions="*,*,*,*">
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto" RowSpacing="6" Margin="10,8">
+
+        <!-- Slice selector. The control surface targets an explicitly chosen
+             slice: SmartStreamer runs Skimmer and WSJT-X per slice
+             concurrently, so there is no single active slice to follow. -->
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*" ColumnSpacing="6">
+            <TextBlock Grid.Column="0" Text="Slice" FontSize="11" Foreground="Gray" VerticalAlignment="Center"/>
+            <ComboBox Grid.Column="1"
+                      ItemsSource="{Binding Slices}"
+                      SelectedItem="{Binding SelectedSlice}"
+                      HorizontalAlignment="Stretch"
+                      FontSize="11">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="flex:SliceInfo">
+                        <TextBlock Text="{Binding DisplayLabel}" FontSize="11"/>
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
+        </Grid>
+
+        <Grid Grid.Row="1" ColumnDefinitions="Auto,*" ColumnSpacing="6" IsEnabled="{Binding HasSelectedSlice}">
+            <TextBlock Grid.Column="0" Text="Mode" FontSize="11" Foreground="Gray" VerticalAlignment="Center" Width="34"/>
+            <UniformGrid Grid.Column="1" Columns="4" >
+                <Button Classes="deck-button" Content="CW"
+                        Command="{Binding SetModeCommand}" CommandParameter="{x:Static flex:SliceMode.Cw}"/>
+                <Button Classes="deck-button" Content="USB"
+                        Command="{Binding SetModeCommand}" CommandParameter="{x:Static flex:SliceMode.Usb}"/>
+                <Button Classes="deck-button" Content="LSB"
+                        Command="{Binding SetModeCommand}" CommandParameter="{x:Static flex:SliceMode.Lsb}"/>
+                <Button Classes="deck-button" Content="AM"
+                        Command="{Binding SetModeCommand}" CommandParameter="{x:Static flex:SliceMode.Am}"/>
+            </UniformGrid>
+        </Grid>
+
+        <!-- Band buttons. A band change is a write to Slice.Freq, not an API
+             verb, so the per-band memory behind these lives in BandMemory. -->
+        <Grid Grid.Row="4" ColumnDefinitions="Auto,*" ColumnSpacing="6" IsEnabled="{Binding HasSelectedSlice}">
+            <TextBlock Grid.Column="0" Text="Band" FontSize="11" Foreground="Gray" VerticalAlignment="Center" Width="34"/>
+            <ItemsControl Grid.Column="1" ItemsSource="{Binding Bands}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <UniformGrid Columns="5"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="x:String">
+                        <Button Classes="deck-button"
+                                Content="{Binding}"
+                                Command="{Binding $parent[Window].((local:SmartDeckViewModel)DataContext).SelectBandCommand}"
+                                CommandParameter="{Binding}"/>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </Grid>
+
+        <Grid Grid.Row="2" ColumnDefinitions="Auto,*" ColumnSpacing="6" IsEnabled="{Binding HasSelectedSlice}">
+            <TextBlock Grid.Column="0" Text="RX ant" FontSize="11" Foreground="Gray" VerticalAlignment="Center" Width="34"/>
+            <ComboBox Grid.Column="1"
+                      ItemsSource="{Binding RxAntennaOptions}"
+                      SelectedItem="{Binding SelectedRxAntenna}"
+                      HorizontalAlignment="Stretch"
+                      FontSize="11"/>
+        </Grid>
+
+        <Grid Grid.Row="3" ColumnDefinitions="Auto,*" ColumnSpacing="6" IsEnabled="{Binding HasSelectedSlice}">
+            <TextBlock Grid.Column="0" Text="TX ant" FontSize="11" Foreground="Gray" VerticalAlignment="Center" Width="34"/>
+            <ComboBox Grid.Column="1"
+                      ItemsSource="{Binding TxAntennaOptions}"
+                      SelectedItem="{Binding SelectedTxAntenna}"
+                      HorizontalAlignment="Stretch"
+                      FontSize="11"/>
+        </Grid>
+
+        <Grid Grid.Row="5" ColumnDefinitions="*,*,*,*" VerticalAlignment="Center">
             <StackPanel Grid.Column="0">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                     <TextBlock Classes="telemetry-value" Text="{Binding PowerText}"/>
@@ -65,10 +144,14 @@
             </StackPanel>
         </Grid>
 
-        <CheckBox Grid.Row="1"
+        <!-- Top margin keeps this clear of the telemetry labels when the window
+             is dragged down to its minimum height and the telemetry row's star
+             sizing has no slack left to absorb. -->
+        <CheckBox Grid.Row="6"
                   Name="AlwaysOnTopCheck"
                   Content="Always on top"
                   FontSize="10"
+                  Margin="0,10,0,0"
                   HorizontalAlignment="Right"
                   IsCheckedChanged="OnAlwaysOnTopChanged"/>
     </Grid>

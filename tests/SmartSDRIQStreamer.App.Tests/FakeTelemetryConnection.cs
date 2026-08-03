@@ -45,7 +45,7 @@ internal sealed class FakeTelemetryConnection : IRadioConnection
     public bool VerboseDiagnostics { get; set; }
 
     public IReadOnlyList<PanadapterInfo> Panadapters => [];
-    public IReadOnlyList<SliceInfo> Slices => [];
+    public IReadOnlyList<SliceInfo> Slices => _slices;
     public IReadOnlyList<DaxIQStreamInfo> DaxIQStreams => [];
     public IReadOnlyList<GuiClientInfo> GuiClients => [];
 
@@ -53,9 +53,49 @@ internal sealed class FakeTelemetryConnection : IRadioConnection
     public void Disconnect() { }
     public Task<RequestStreamResult> RequestDaxIQStreamAsync(PanadapterInfo pan) => Task.FromResult(RequestStreamResult.Success);
     public Task<RequestStreamResult> StopDaxIQStreamAsync(PanadapterInfo pan) => Task.FromResult(RequestStreamResult.Success);
-    public Task SetSliceFrequencyAsync(SliceInfo slice, double freqMHz) => Task.CompletedTask;
+    public List<(SliceInfo Slice, double FreqMHz)> FrequencyWrites { get; } = [];
+
+    public Task SetSliceFrequencyAsync(SliceInfo slice, double freqMHz)
+    {
+        FrequencyWrites.Add((slice, freqMHz));
+        return Task.CompletedTask;
+    }
+
     public Task PublishSpotAsync(RadioSpotInfo spot) => Task.CompletedTask;
     public void ResetNetworkStatus() { }
+
+    // ── Slice control surface, recorded for assertions ───────────────────────
+
+    public List<(SliceInfo Slice, SliceMode Mode)> ModeWrites { get; } = [];
+    public List<(SliceInfo Slice, string Antenna)> RxAntennaWrites { get; } = [];
+    public List<(SliceInfo Slice, string Antenna)> TxAntennaWrites { get; } = [];
+
+    public Task SetSliceModeAsync(SliceInfo slice, SliceMode mode)
+    {
+        ModeWrites.Add((slice, mode));
+        return Task.CompletedTask;
+    }
+
+    public Task SetSliceRxAntennaAsync(SliceInfo slice, string antenna)
+    {
+        RxAntennaWrites.Add((slice, antenna));
+        return Task.CompletedTask;
+    }
+
+    public Task SetSliceTxAntennaAsync(SliceInfo slice, string antenna)
+    {
+        TxAntennaWrites.Add((slice, antenna));
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Sets the slice list the ViewModel reads on refresh.</summary>
+    public void SetSlices(params SliceInfo[] slices) => _slices = slices;
+
+    public void RaiseSliceUpdated(SliceInfo slice) => SliceUpdated?.Invoke(slice);
+    public void RaiseSliceRemoved(SliceInfo slice) => SliceRemoved?.Invoke(slice);
+    public void RaiseSliceAdded(SliceInfo slice) => SliceAdded?.Invoke(slice);
+
+    private SliceInfo[] _slices = [];
 
     public event Action<PanadapterInfo>? PanadapterAdded;
     public event Action<PanadapterInfo>? PanadapterRemoved;
@@ -77,9 +117,6 @@ internal sealed class FakeTelemetryConnection : IRadioConnection
         PanadapterAdded?.Invoke(default!);
         PanadapterRemoved?.Invoke(default!);
         PanadapterUpdated?.Invoke(default!);
-        SliceAdded?.Invoke(default!);
-        SliceRemoved?.Invoke(default!);
-        SliceUpdated?.Invoke(default!);
         DaxIQStreamAdded?.Invoke(default!);
         DaxIQStreamRemoved?.Invoke(default!);
         DaxIQStreamUpdated?.Invoke(default!);

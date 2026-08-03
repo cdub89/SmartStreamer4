@@ -1,4 +1,6 @@
+using System.Collections.Specialized;
 using SDRIQStreamer.App;
+using SDRIQStreamer.FlexRadio;
 
 namespace SmartSDRIQStreamer.App.Tests;
 
@@ -10,6 +12,24 @@ namespace SmartSDRIQStreamer.App.Tests;
 /// </summary>
 public class SmartDeckViewModelTests
 {
+    private const string TestStation = "SUPERWIN10";
+    private const string OtherStation = "WX7V-M";
+
+    private static SliceInfo Slice(
+        string letter,
+        string station = TestStation,
+        string mode = "CW",
+        string rxAnt = "ANT1",
+        string txAnt = "ANT1",
+        double freqMhz = 14.050) =>
+        new(letter, mode, freqMhz, false, 0, 0, PanadapterStreamId: 100, ClientStation: station)
+        {
+            RxAntenna = rxAnt,
+            TxAntenna = txAnt,
+            RxAntennaOptions = ["ANT1", "ANT2", "RX_A"],
+            TxAntennaOptions = ["ANT1", "ANT2"]
+        };
+
     // ── Absent renders as dashes ─────────────────────────────────────────────
 
     [Fact]
@@ -113,7 +133,7 @@ public class SmartDeckViewModelTests
     public void Start_and_stop_are_idempotent()
     {
         var connection = new FakeTelemetryConnection();
-        var viewModel = new SmartDeckViewModel(connection);
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
 
         viewModel.Start();
         viewModel.Start();
@@ -132,7 +152,7 @@ public class SmartDeckViewModelTests
         // observe, so without re-arming the footer stayed on dashes until the
         // window was closed and reopened.
         var connection = new FakeTelemetryConnection();
-        var viewModel = new SmartDeckViewModel(connection);
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
 
         viewModel.Start();
         connection.RaiseConnectionStateChanged(false);
@@ -146,7 +166,7 @@ public class SmartDeckViewModelTests
     {
         // The window is gone, so nothing should re-subscribe behind it.
         var connection = new FakeTelemetryConnection();
-        var viewModel = new SmartDeckViewModel(connection);
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
 
         viewModel.Start();
         viewModel.Stop();
@@ -159,11 +179,324 @@ public class SmartDeckViewModelTests
     public void Losing_the_connection_alone_does_not_restart_telemetry()
     {
         var connection = new FakeTelemetryConnection();
-        var viewModel = new SmartDeckViewModel(connection);
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
 
         viewModel.Start();
         connection.RaiseConnectionStateChanged(false);
 
         Assert.Equal(1, connection.StartTelemetryCalls);
+    }
+
+    // ── Mode discriminator mapping ───────────────────────────────────────────
+
+    [Theory]
+    [InlineData(SliceMode.Cw, "CW")]
+    [InlineData(SliceMode.Usb, "USB")]
+    [InlineData(SliceMode.Lsb, "LSB")]
+    [InlineData(SliceMode.Am, "AM")]
+    public void Mode_maps_to_the_radios_wire_value(SliceMode mode, string expected)
+    {
+        Assert.Equal(expected, mode.ToRadioValue());
+    }
+
+    [Theory]
+    [InlineData("CW", SliceMode.Cw)]
+    [InlineData("usb", SliceMode.Usb)]
+    [InlineData(" LSB ", SliceMode.Lsb)]
+    public void Mode_parses_back_from_the_radios_wire_value(string wire, SliceMode expected)
+    {
+        Assert.Equal(expected, SliceModes.FromRadioValue(wire));
+    }
+
+    [Theory]
+    // Real modes the radio supports that SmartDeck deliberately does not offer,
+    // plus the never-reported case. All are absent, not errors.
+    [InlineData("DIGU")]
+    [InlineData("RTTY")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void Modes_smartdeck_does_not_offer_map_to_absent(string? wire)
+    {
+        Assert.Null(SliceModes.FromRadioValue(wire));
+    }
+
+    // ── Slice control surface (phase 2a) ─────────────────────────────────────
+
+    [Fact]
+    public void Slice_list_is_scoped_to_the_control_station()
+    {
+        // Matches how slice sync and pan visibility already filter, so SmartDeck
+        // cannot reach a second station's slice.
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A"), Slice("B", station: OtherStation), Slice("C"));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+
+        viewModel.Start();
+
+        Assert.Equal(["A", "C"], viewModel.Slices.Select(s => s.Letter));
+    }
+
+    [Fact]
+    public void Slice_list_is_ordered_by_letter()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("C"), Slice("A"), Slice("B"));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+
+        viewModel.Start();
+
+        Assert.Equal(["A", "B", "C"], viewModel.Slices.Select(s => s.Letter));
+    }
+
+    [Fact]
+    public void First_slice_is_selected_by_default()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A"), Slice("B"));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+
+        viewModel.Start();
+
+        Assert.Equal("A", viewModel.SelectedSlice?.Letter);
+        Assert.True(viewModel.HasSelectedSlice);
+    }
+
+    [Fact]
+    public void No_slices_leaves_the_controls_without_a_target()
+    {
+        var connection = new FakeTelemetryConnection();
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+
+        viewModel.Start();
+
+        Assert.Null(viewModel.SelectedSlice);
+        Assert.False(viewModel.HasSelectedSlice);
+    }
+
+    [Fact]
+    public void Selecting_a_slice_adopts_its_mode_and_antennas()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", mode: "USB", rxAnt: "ANT2", txAnt: "ANT2"));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+
+        viewModel.Start();
+
+        Assert.Equal(SliceMode.Usb, viewModel.CurrentMode);
+        Assert.Equal("ANT2", viewModel.SelectedRxAntenna);
+        Assert.Equal("ANT2", viewModel.SelectedTxAntenna);
+    }
+
+    [Fact]
+    public void Adopting_a_slices_state_does_not_write_it_back_to_the_radio()
+    {
+        // The selectors are two-way bound, so echoing the radio's own value back
+        // as a command would be a write storm on every slice update.
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", rxAnt: "ANT2"));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+
+        viewModel.Start();
+
+        Assert.Empty(connection.RxAntennaWrites);
+        Assert.Empty(connection.TxAntennaWrites);
+    }
+
+    [Fact]
+    public void A_mode_in_a_mode_smartdeck_does_not_offer_leaves_no_button_lit()
+    {
+        // A slice sitting in DIGU is valid; SmartDeck simply offers no button
+        // for it, which is absent rather than an error.
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", mode: "DIGU"));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+
+        viewModel.Start();
+
+        Assert.Null(viewModel.CurrentMode);
+    }
+
+    [Fact]
+    public async Task Setting_the_mode_writes_to_the_selected_slice()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A"), Slice("B"));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+        viewModel.Start();
+        viewModel.SelectedSlice = viewModel.Slices.Single(s => s.Letter == "B");
+
+        await viewModel.SetModeCommand.ExecuteAsync(SliceMode.Lsb);
+
+        var (slice, mode) = Assert.Single(connection.ModeWrites);
+        Assert.Equal("B", slice.Letter);
+        Assert.Equal(SliceMode.Lsb, mode);
+        Assert.Equal(SliceMode.Lsb, viewModel.CurrentMode);
+    }
+
+    [Fact]
+    public void Choosing_an_antenna_writes_to_the_selected_slice()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A"));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+        viewModel.Start();
+
+        viewModel.SelectedRxAntenna = "RX_A";
+        viewModel.SelectedTxAntenna = "ANT2";
+
+        var (rxSlice, rxAntenna) = Assert.Single(connection.RxAntennaWrites);
+        Assert.Equal("A", rxSlice.Letter);
+        Assert.Equal("RX_A", rxAntenna);
+
+        var (_, txAntenna) = Assert.Single(connection.TxAntennaWrites);
+        Assert.Equal("ANT2", txAntenna);
+    }
+
+    [Fact]
+    public void Selection_survives_a_slice_list_refresh()
+    {
+        // Sticky by design: with Skimmer on one slice and WSJT-X on another, a
+        // selection that moved on its own would be worse than useless.
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A"), Slice("B"));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+        viewModel.Start();
+        viewModel.SelectedSlice = viewModel.Slices.Single(s => s.Letter == "B");
+
+        // A slice update republishes the whole list.
+        connection.SetSlices(Slice("A"), Slice("B", mode: "USB"));
+        connection.RaiseSliceUpdated(Slice("B", mode: "USB"));
+
+        Assert.Equal("B", viewModel.SelectedSlice?.Letter);
+        Assert.Equal(SliceMode.Usb, viewModel.CurrentMode);
+    }
+
+    /// <summary>
+    /// Mimics what a bound ComboBox does to the ViewModel: when the ItemsSource
+    /// is cleared, the control writes null back through the two-way SelectedItem
+    /// binding, because the selected item genuinely is not in the list at that
+    /// instant. Tests that skip this pass against selection bugs that the real
+    /// UI hits, which is exactly what happened with the phase 2b regression
+    /// below.
+    /// </summary>
+    private static void AttachComboBoxSelectionBehaviour(SmartDeckViewModel viewModel)
+    {
+        viewModel.Slices.CollectionChanged += (_, e) =>
+        {
+            if (e.Action == NotifyCollectionChangedAction.Reset)
+                viewModel.SelectedSlice = null;
+        };
+    }
+
+    [Fact]
+    public async Task Selecting_a_second_slice_and_changing_band_keeps_that_slice_selected()
+    {
+        // Operator-reported 2026-08-02: with two slices, selecting slice B and
+        // pressing a band button snapped the selector back to slice A. The band
+        // write echoes back as SliceUpdated, which rebuilds the list, and the
+        // rebuild was losing the selection.
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", freqMhz: 14.031_5), Slice("B", freqMhz: 7.118));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+        viewModel.Start();
+        AttachComboBoxSelectionBehaviour(viewModel);
+
+        viewModel.SelectedSlice = viewModel.Slices.Single(s => s.Letter == "B");
+        await viewModel.SelectBandCommand.ExecuteAsync("20m");
+
+        // The radio echoes the new frequency for slice B.
+        connection.SetSlices(Slice("A", freqMhz: 14.031_5), Slice("B", freqMhz: 14.050));
+        connection.RaiseSliceUpdated(Slice("B", freqMhz: 14.050));
+
+        Assert.Equal("B", viewModel.SelectedSlice?.Letter);
+    }
+
+    [Fact]
+    public void Selection_survives_a_refresh_even_when_the_control_nulls_it_on_clear()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A"), Slice("B"));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+        viewModel.Start();
+        AttachComboBoxSelectionBehaviour(viewModel);
+
+        viewModel.SelectedSlice = viewModel.Slices.Single(s => s.Letter == "B");
+        connection.RaiseSliceUpdated(Slice("A"));
+
+        Assert.Equal("B", viewModel.SelectedSlice?.Letter);
+    }
+
+    // ── Band buttons (phase 2b) ──────────────────────────────────────────────
+
+    [Fact]
+    public async Task Pressing_a_band_tunes_the_selected_slice_to_that_bands_default()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", freqMhz: 14.031_5));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+        viewModel.Start();
+
+        await viewModel.SelectBandCommand.ExecuteAsync("40m");
+
+        var (slice, freq) = Assert.Single(connection.FrequencyWrites);
+        Assert.Equal("A", slice.Letter);
+        Assert.Equal(7.055, freq);
+        Assert.Equal("40m", viewModel.CurrentBand);
+    }
+
+    [Fact]
+    public async Task Pressing_a_band_you_have_used_before_returns_to_where_you_left_it()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", freqMhz: 14.031_5));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+        viewModel.Start();
+
+        // Leave 20m at 14.0315, then come back to it from 40m.
+        await viewModel.SelectBandCommand.ExecuteAsync("40m");
+        connection.SetSlices(Slice("A", freqMhz: 7.055));
+        connection.RaiseSliceUpdated(Slice("A", freqMhz: 7.055));
+        await viewModel.SelectBandCommand.ExecuteAsync("20m");
+
+        Assert.Equal(14.031_5, connection.FrequencyWrites[^1].FreqMHz);
+    }
+
+    [Fact]
+    public async Task Pressing_a_band_with_no_slice_selected_writes_nothing()
+    {
+        var connection = new FakeTelemetryConnection();
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+        viewModel.Start();
+
+        await viewModel.SelectBandCommand.ExecuteAsync("40m");
+
+        Assert.Empty(connection.FrequencyWrites);
+    }
+
+    [Fact]
+    public void Current_band_follows_the_selected_slices_frequency()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", freqMhz: 7.030_7));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+
+        viewModel.Start();
+
+        Assert.Equal("40m", viewModel.CurrentBand);
+    }
+
+    [Fact]
+    public void Selection_falls_back_when_the_selected_slice_disappears()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A"), Slice("B"));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+        viewModel.Start();
+        viewModel.SelectedSlice = viewModel.Slices.Single(s => s.Letter == "B");
+
+        connection.SetSlices(Slice("A"));
+        connection.RaiseSliceRemoved(Slice("B"));
+
+        Assert.Equal("A", viewModel.SelectedSlice?.Letter);
     }
 }

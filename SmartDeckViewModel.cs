@@ -1,29 +1,60 @@
 using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Globalization;
+using System.Linq;
+using System.Threading.Tasks;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using SDRIQStreamer.FlexRadio;
 
 namespace SDRIQStreamer.App;
 
 /// <summary>
-/// Backs the SmartDeck window's telemetry footer (issue #59, phase 1).
-/// Owns the telemetry subscription lifetime: it starts when the window opens
-/// and stops when it closes, so a session that never opens SmartDeck does no
+/// Backs the SmartDeck window: the radio-level telemetry footer (issue #59
+/// phase 1) and the slice control surface (phase 2a). Owns the telemetry
+/// subscription lifetime, starting it when the window opens and stopping it
+/// when the window closes, so a session that never opens SmartDeck does no
 /// coalescing work.
 /// </summary>
+/// <remarks>
+/// The control surface targets an explicitly selected slice rather than the
+/// radio's active slice. SmartStreamer runs CW Skimmer and WSJT-X per slice
+/// concurrently, so there is no single slice to follow, and a target that
+/// moved whenever the operator changed focus in SmartSDR would fight that.
+/// </remarks>
 public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
 {
     /// <summary>Shown in place of a value that has never been reported.</summary>
     private const string Absent = "---";
 
     private readonly IRadioConnection _connection;
+    private readonly string _controlStation;
+
+    // Injected so tests can run the marshalling synchronously; production uses
+    // the Avalonia dispatcher. Same shape as ThrottledStatusEmitter's postToUi.
+    private readonly Action<Action> _postToUi;
+    private readonly BandMemory _bandMemory;
+
     private bool _started;
 
-    public SmartDeckViewModel(IRadioConnection connection)
+    // Set while pushing radio state into the bound properties, so the setters
+    // can tell an operator edit from an echo of the radio's own value and skip
+    // writing it straight back.
+    private bool _applyingSliceState;
+
+    public SmartDeckViewModel(
+        IRadioConnection connection,
+        string controlStation,
+        Action<Action>? postToUi = null,
+        BandMemory? bandMemory = null)
     {
         ArgumentNullException.ThrowIfNull(connection);
         _connection = connection;
+        _controlStation = controlStation ?? string.Empty;
+        _postToUi = postToUi ?? (action => Dispatcher.UIThread.Post(action));
+        _bandMemory = bandMemory ?? new BandMemory();
     }
 
     [ObservableProperty]
@@ -38,6 +69,138 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string _voltsText = Absent;
 
+    // ── Slice control surface (phase 2a) ─────────────────────────────────────
+
+    /// <summary>Slices belonging to the control station, in letter order.</summary>
+    public ObservableCollection<SliceInfo> Slices { get; } = [];
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasSelectedSlice))]
+    [NotifyPropertyChangedFor(nameof(RxAntennaOptions))]
+    [NotifyPropertyChangedFor(nameof(TxAntennaOptions))]
+    private SliceInfo? _selectedSlice;
+
+    [ObservableProperty]
+    private string? _selectedRxAntenna;
+
+    [ObservableProperty]
+    private string? _selectedTxAntenna;
+
+    /// <summary>The mode SmartDeck offers that the slice is currently in, if any.</summary>
+    [ObservableProperty]
+    private SliceMode? _currentMode;
+
+    public bool HasSelectedSlice => SelectedSlice is not null;
+
+    public IReadOnlyList<string> RxAntennaOptions => SelectedSlice?.RxAntennaOptions ?? [];
+    public IReadOnlyList<string> TxAntennaOptions => SelectedSlice?.TxAntennaOptions ?? [];
+
+    [RelayCommand]
+    private async Task SetModeAsync(SliceMode mode)
+    {
+        if (SelectedSlice is not { } slice) return;
+        await _connection.SetSliceModeAsync(slice, mode);
+        CurrentMode = mode;
+    }
+
+    // ── Band buttons (phase 2b) ──────────────────────────────────────────────
+
+    /// <summary>Band labels in button order.</summary>
+    public IReadOnlyList<string> Bands => BandMemory.Bands;
+
+    /// <summary>The band the selected slice is currently sitting in, if any.</summary>
+    [ObservableProperty]
+    private string _currentBand = string.Empty;
+
+    [RelayCommand]
+    private async Task SelectBandAsync(string band)
+    {
+        if (SelectedSlice is not { } slice) return;
+        if (_bandMemory.SwitchTo(band, slice.FreqMHz) is not { } targetMhz) return;
+
+        await _connection.SetSliceFrequencyAsync(slice, targetMhz);
+        CurrentBand = band;
+    }
+
+    partial void OnSelectedSliceChanged(SliceInfo? value) => ApplySliceState(value);
+
+    // No transmit guard on either antenna change: the radio refuses them while
+    // transmitting, so guarding here would duplicate a hardware interlock.
+    partial void OnSelectedRxAntennaChanged(string? value)
+    {
+        if (_applyingSliceState || value is null) return;
+        if (SelectedSlice is { } slice)
+            _ = _connection.SetSliceRxAntennaAsync(slice, value);
+    }
+
+    partial void OnSelectedTxAntennaChanged(string? value)
+    {
+        if (_applyingSliceState || value is null) return;
+        if (SelectedSlice is { } slice)
+            _ = _connection.SetSliceTxAntennaAsync(slice, value);
+    }
+
+    private void ApplySliceState(SliceInfo? slice)
+    {
+        _applyingSliceState = true;
+        try
+        {
+            SelectedRxAntenna = string.IsNullOrEmpty(slice?.RxAntenna) ? null : slice.RxAntenna;
+            SelectedTxAntenna = string.IsNullOrEmpty(slice?.TxAntenna) ? null : slice.TxAntenna;
+            CurrentMode = slice?.OfferedMode;
+            CurrentBand = slice is null ? string.Empty : HamBands.Label(slice.FreqMHz);
+        }
+        finally
+        {
+            _applyingSliceState = false;
+        }
+    }
+
+    private void RefreshSlices()
+    {
+        var wanted = _connection.Slices
+            .Where(BelongsToControlStation)
+            .OrderBy(s => s.Letter, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        // Bug fix 2026-08-02 (operator-reported, phase 2b live test): with two
+        // slices, selecting slice B and pressing a band button snapped the
+        // selector back to slice A. Root cause is that the ComboBox writes null
+        // back through the two-way SelectedItem binding the moment Slices is
+        // cleared, so reading SelectedSlice after the clear saw null and the
+        // sticky-selection logic fell through to the first slice. Captured
+        // before the clear rather than suppressing the binding write, because
+        // the null is the control behaving correctly: the item genuinely is not
+        // in the list at that instant.
+        var previous = SelectedSlice;
+
+        Slices.Clear();
+        foreach (var slice in wanted)
+            Slices.Add(slice);
+
+        // Selection is sticky: keep the operator's slice across list churn and
+        // only re-resolve when it is gone. With Skimmer on one slice and WSJT-X
+        // on another, a selection that moved on its own would be worse than
+        // useless.
+        var keep = previous is { } current
+            ? wanted.FirstOrDefault(s => SameSlice(s, current))
+            : null;
+
+        SelectedSlice = keep ?? wanted.FirstOrDefault();
+        if (SelectedSlice is { } refreshed)
+            ApplySliceState(refreshed);
+    }
+
+    private bool BelongsToControlStation(SliceInfo slice) =>
+        string.IsNullOrWhiteSpace(_controlStation) ||
+        string.Equals(slice.ClientStation, _controlStation, StringComparison.OrdinalIgnoreCase);
+
+    private static bool SameSlice(SliceInfo a, SliceInfo b) =>
+        string.Equals(a.Letter, b.Letter, StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(a.ClientStation, b.ClientStation, StringComparison.OrdinalIgnoreCase);
+
+    private void OnSliceListChanged(SliceInfo slice) => _postToUi(RefreshSlices);
+
     /// <summary>Subscribes and starts the radio publishing telemetry. Idempotent.</summary>
     public void Start()
     {
@@ -46,7 +209,12 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
 
         _connection.TelemetryChanged += OnTelemetryChanged;
         _connection.ConnectionStateChanged += OnConnectionStateChanged;
+        _connection.SliceAdded += OnSliceListChanged;
+        _connection.SliceRemoved += OnSliceListChanged;
+        _connection.SliceUpdated += OnSliceListChanged;
         _connection.StartTelemetry();
+
+        RefreshSlices();
 
         // Adopt whatever the connection already holds, so a reopened window
         // shows values immediately instead of dashes until the next event.
@@ -61,13 +229,16 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
 
         _connection.TelemetryChanged -= OnTelemetryChanged;
         _connection.ConnectionStateChanged -= OnConnectionStateChanged;
+        _connection.SliceAdded -= OnSliceListChanged;
+        _connection.SliceRemoved -= OnSliceListChanged;
+        _connection.SliceUpdated -= OnSliceListChanged;
         _connection.StopTelemetry();
         Apply(RadioTelemetryInfo.Empty);
     }
 
     // TelemetryChanged fires on the pump thread, not the UI thread.
     private void OnTelemetryChanged(RadioTelemetryInfo telemetry) =>
-        Dispatcher.UIThread.Post(() => Apply(telemetry));
+        _postToUi(() => Apply(telemetry));
 
     // Bug fix 2026-08-02 (found by the Codex deep audit before this change
     // shipped): with SmartDeck left open across a radio-side drop and

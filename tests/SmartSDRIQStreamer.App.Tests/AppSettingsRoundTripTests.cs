@@ -83,6 +83,36 @@ public sealed class AppSettingsRoundTripTests
     }
 
     [Fact]
+    public void SmartDeckBandMemory_DefaultsToEmpty()
+    {
+        Assert.Empty(new AppSettings().SmartDeckBandMemoryMhz);
+    }
+
+    [Fact]
+    public void SmartDeckBandMemory_RoundTrips()
+    {
+        var settings = new AppSettings();
+        settings.SmartDeckBandMemoryMhz["20m"] = 14.031_5;
+        settings.SmartDeckBandMemoryMhz["40m"] = 7.118;
+
+        var restored = RoundTrip(settings);
+
+        Assert.Equal(14.031_5, restored.SmartDeckBandMemoryMhz["20m"]);
+        Assert.Equal(7.118, restored.SmartDeckBandMemoryMhz["40m"]);
+    }
+
+    [Fact]
+    public void SmartDeckBandMemory_MissingFromJson_LoadsAsEmptyNotNull()
+    {
+        // Settings files written before issue #59 phase 2b have no band memory;
+        // BandMemory mutates this dictionary in place, so it must never be null.
+        var restored = JsonSerializer.Deserialize<AppSettings>("{}")!;
+
+        Assert.NotNull(restored.SmartDeckBandMemoryMhz);
+        Assert.Empty(restored.SmartDeckBandMemoryMhz);
+    }
+
+    [Fact]
     public void SmartDeckPlacement_MissingFromJson_LoadsAsNeverPositioned()
     {
         // Settings files written before issue #59 have no SmartDeck properties.

@@ -240,6 +240,10 @@ public sealed class CwSkimmerWorkflowServiceTests
         public void StartTelemetry() { }
         public void StopTelemetry() { }
 
+        public Task SetSliceModeAsync(SliceInfo slice, SliceMode mode)             => Task.CompletedTask;
+        public Task SetSliceRxAntennaAsync(SliceInfo slice, string antenna)        => Task.CompletedTask;
+        public Task SetSliceTxAntennaAsync(SliceInfo slice, string antenna)        => Task.CompletedTask;
+
         public event Action<bool>? ConnectionStateChanged;
         public event Action<PanadapterInfo>? PanadapterAdded;
         public event Action<PanadapterInfo>? PanadapterRemoved;

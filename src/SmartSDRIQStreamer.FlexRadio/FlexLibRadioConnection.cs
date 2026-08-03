@@ -360,9 +360,7 @@ public sealed class FlexLibRadioConnection : IRadioConnection
 
     public Task SetSliceFrequencyAsync(SliceInfo slice, double freqMHz)
     {
-        var target = _flexSlices.Values.FirstOrDefault(s =>
-            string.Equals(s.Letter, slice.Letter, StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(ResolveStation(s.ClientHandle), slice.ClientStation, StringComparison.OrdinalIgnoreCase));
+        var target = FindFlexSlice(slice);
 
         if (target is not null)
         {
@@ -372,6 +370,47 @@ public sealed class FlexLibRadioConnection : IRadioConnection
         }
         return Task.CompletedTask;
     }
+
+    // ── Slice control surface (issue #59 phase 2a) ───────────────────────────
+
+    public Task SetSliceModeAsync(SliceInfo slice, SliceMode mode)
+    {
+        if (FindFlexSlice(slice) is { } target)
+            target.DemodMode = mode.ToRadioValue();
+        return Task.CompletedTask;
+    }
+
+    // No MOX guard on either antenna setter: the radio itself refuses antenna
+    // changes while transmitting, so a guard here would be app-side code
+    // duplicating a hardware interlock.
+    public Task SetSliceRxAntennaAsync(SliceInfo slice, string antenna)
+    {
+        if (string.IsNullOrWhiteSpace(antenna)) return Task.CompletedTask;
+
+        if (FindFlexSlice(slice) is { } target && !string.Equals(target.RXAnt, antenna, StringComparison.Ordinal))
+        {
+            target.RXAnt = antenna;
+            EmitDiag($"Slice {slice.Letter}: RX antenna set to {antenna}.");
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task SetSliceTxAntennaAsync(SliceInfo slice, string antenna)
+    {
+        if (string.IsNullOrWhiteSpace(antenna)) return Task.CompletedTask;
+
+        if (FindFlexSlice(slice) is { } target && !string.Equals(target.TXAnt, antenna, StringComparison.Ordinal))
+        {
+            target.TXAnt = antenna;
+            EmitDiag($"Slice {slice.Letter}: TX antenna set to {antenna}.");
+        }
+        return Task.CompletedTask;
+    }
+
+    private Slice? FindFlexSlice(SliceInfo slice) =>
+        _flexSlices.Values.FirstOrDefault(s =>
+            string.Equals(s.Letter, slice.Letter, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(ResolveStation(s.ClientHandle), slice.ClientStation, StringComparison.OrdinalIgnoreCase));
 
     public Task PublishSpotAsync(RadioSpotInfo spot)
     {
@@ -747,7 +786,16 @@ public sealed class FlexLibRadioConnection : IRadioConnection
             ResolveTuneStepHz(slc),
             slc.PanadapterStreamID,
             ResolveStation(slc.ClientHandle),
-            slc.DAXChannel);
+            slc.DAXChannel)
+        {
+            // Issue #59 phase 2a. The antenna lists are radio-reported and can
+            // be null before the radio has answered, which is why they collapse
+            // to empty rather than being dereferenced.
+            RxAntenna = slc.RXAnt ?? string.Empty,
+            TxAntenna = slc.TXAnt ?? string.Empty,
+            RxAntennaOptions = slc.RXAntList ?? [],
+            TxAntennaOptions = slc.TXAntList ?? []
+        };
 
     private static bool ShouldPublishSliceUpdate(string? propertyName)
     {
@@ -755,6 +803,13 @@ public sealed class FlexLibRadioConnection : IRadioConnection
             return true;
 
         if (propertyName is "Freq" or "DemodMode" or "DAXChannel")
+            return true;
+
+        // Issue #59 phase 2a: antenna selection and the radio-reported option
+        // lists drive the SmartDeck control surface, so their changes have to
+        // reach the UI. Without this the selectors would never populate,
+        // because the lists arrive after the slice is first tracked.
+        if (propertyName is "RXAnt" or "TXAnt" or "RXAntList" or "TXAntList")
             return true;
 
         // FlexLib variants expose RIT state/offset and tune-step with different names.

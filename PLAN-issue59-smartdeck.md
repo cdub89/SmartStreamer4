@@ -359,15 +359,64 @@ capture below is also taken.
 All C# in this plan is written on whichever seat, but no part of it is verified
 until the Windows-side gates and the live-radio smoke have passed.
 
-## Phase 2 outline (not committed)
+## Phase 2: design pass done, split into 2a / 2b / 2c
 
 Antenna selector, RF gain up/down with readout, ten band buttons with per-band
-memory, four mode buttons. Requires the active-slice path first:
-`Radio.BoundClientID` calls `BindGUIClient` (`Radio.cs:795-804`, `14395`) and
-`Slice.Active` exists (`Slice.cs:104`), so binding to the GUI client behind
-`SelectedControlStation` is the route. That binding is new connection state and
-interacts with the existing multi-station logic in the CW and Digital tabs, so
-it gets its own design pass.
+memory, four mode buttons. Roughly seventeen controls, split by risk profile:
+
+- **2a (built 2026-08-02)**: slice selector, four mode buttons, RX and TX
+  antenna selectors.
+- **2b (built 2026-08-02)**: ten band buttons with per-band frequency memory.
+  App-side logic in `BandMemory.cs` reusing `HamBands.Label`, no new FlexLib
+  surface. Pressing a band stores the departing frequency under its own band,
+  then tunes to the stored frequency for the band entered, falling back to that
+  band's default the first time. **Memory is persisted** in
+  `AppSettings.SmartDeckBandMemoryMhz`, not session-scoped: an operator who
+  sets 20m to their CW spot expects the button to return there next session.
+  The `BandMemory` instance is handed the settings dictionary itself, so
+  departures land directly in what gets saved. Defaults are the **SKCC calling
+  frequencies** (operator's choice after the first live test; an earlier
+  band-edge-CW set sat too low in each range to be a useful landing point), and
+  each is overwritten the first time that band is left, so a default only ever
+  matters once. 60m is included in the ten; it is channelized and has no SKCC
+  calling frequency, so its default is a US channel centre.
+- **2c**: RF gain up/down with readout. Needs the panadapter hop plus
+  `GetRFGainInfo()` for radio-reported min/max/step.
+
+### No GUI-client binding, and no "active slice"
+
+An earlier draft of this plan said phase 2 required binding via
+`Radio.BoundClientID` / `BindGUIClient` and following `Slice.Active`. **Both
+were dropped.**
+
+**Binding buys nothing these controls need.** Every phase-2 control targets a
+slice (`RXAnt`, `TXAnt`, `DemodMode`, `Freq`) or the panadapter behind it
+(`RFGain`, via `SliceInfo.PanadapterStreamId`). None is client-scoped, and the
+CW Skimmer spot-click path has been writing `Slice.Freq` on the control
+station's slice unbound, in the field, for releases.
+
+**There is no single active slice to follow.** SmartStreamer launches CW
+Skimmer and WSJT-X per slice, concurrently. A control target that moved
+whenever the operator changed focus in SmartSDR would fight the way the app is
+actually operated. `Slice.Active` is also per GUI client, so on a multi-station
+radio more than one slice reports `active=1` at once.
+
+**So SmartDeck uses an explicit slice selector**, scoped to
+`SelectedControlStation` (matching how slice sync and pan visibility already
+filter) and sticky: the selection survives list churn and re-resolves only when
+the selected slice disappears.
+
+### No app-side transmit guard on antenna changes
+
+An earlier draft guarded antenna changes on `Radio.Mox`, on the grounds that
+hot-switching is a hardware-damage path. The radio itself refuses antenna
+changes while transmitting, so the guard was app-side code duplicating a
+hardware interlock, and was removed.
+
+One residual to watch in live testing: FlexLib's `RXAnt` / `TXAnt` setters
+update their local cache *before* sending the command (`Slice.cs:185-198`), so
+a radio-refused change could leave FlexLib's cached value briefly ahead of the
+radio until the next status update corrects it.
 
 ## Phase 3 outline (deferred)
 

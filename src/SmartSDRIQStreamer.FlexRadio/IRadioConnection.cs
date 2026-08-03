@@ -111,6 +111,26 @@ public interface IRadioConnection
     /// </summary>
     Task PublishSpotAsync(RadioSpotInfo spot);
 
+    // ── Slice control surface (issue #59 phase 2a) ───────────────────────────
+
+    /// <summary>
+    /// Set the slice's demodulation mode. No-op if the slice is not found.
+    /// </summary>
+    Task SetSliceModeAsync(SliceInfo slice, SliceMode mode);
+
+    /// <summary>
+    /// Set the slice's receive antenna to one of its radio-reported
+    /// <see cref="SliceInfo.RxAntennaOptions"/>. The radio refuses antenna
+    /// changes while transmitting, so no app-side transmit guard is applied.
+    /// </summary>
+    Task SetSliceRxAntennaAsync(SliceInfo slice, string antenna);
+
+    /// <summary>
+    /// Set the slice's transmit antenna to one of its radio-reported
+    /// <see cref="SliceInfo.TxAntennaOptions"/>.
+    /// </summary>
+    Task SetSliceTxAntennaAsync(SliceInfo slice, string antenna);
+
     /// <summary>
     /// Reset session network status display values.
     /// Subsequent FlexLib updates repopulate current and max RTT values.
