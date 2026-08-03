@@ -76,8 +76,7 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSelectedSlice))]
-    [NotifyPropertyChangedFor(nameof(RxAntennaOptions))]
-    [NotifyPropertyChangedFor(nameof(TxAntennaOptions))]
+    [NotifyPropertyChangedFor(nameof(FrequencyText))]
     private SliceInfo? _selectedSlice;
 
     [ObservableProperty]
@@ -88,12 +87,48 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
 
     /// <summary>The mode SmartDeck offers that the slice is currently in, if any.</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ModeText))]
     private SliceMode? _currentMode;
 
     public bool HasSelectedSlice => SelectedSlice is not null;
 
-    public IReadOnlyList<string> RxAntennaOptions => SelectedSlice?.RxAntennaOptions ?? [];
-    public IReadOnlyList<string> TxAntennaOptions => SelectedSlice?.TxAntennaOptions ?? [];
+    /// <summary>
+    /// Selected slice frequency for the header readout, grouped the way SmartSDR
+    /// groups it, or dashes when no slice is selected.
+    /// </summary>
+    public string FrequencyText => SelectedSlice is { } slice ? FormatFrequency(slice.FreqMHz) : Absent;
+
+    /// <summary>The selected slice's mode, named as the radio names it.</summary>
+    public string ModeText => CurrentMode is { } mode ? mode.ToRadioValue() : string.Empty;
+
+    /// <summary>
+    /// Groups a frequency as MHz.kHz.Hz, so 14.05 MHz reads "14.050.000". The
+    /// header readout is scanned mid-QSO, and grouped digits are what the
+    /// operator already reads off SmartSDR.
+    /// </summary>
+    internal static string FormatFrequency(double mhz)
+    {
+        var hz = (long)Math.Round(mhz * 1_000_000d);
+        return string.Join(
+            ".",
+            (hz / 1_000_000).ToString(CultureInfo.InvariantCulture),
+            (hz / 1_000 % 1_000).ToString("000", CultureInfo.InvariantCulture),
+            (hz % 1_000).ToString("000", CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>The modes SmartDeck offers, in button order.</summary>
+    private static readonly SliceMode[] OfferedModes =
+        [SliceMode.Cw, SliceMode.Usb, SliceMode.Lsb, SliceMode.Am];
+
+    /// <summary>Mode buttons, each tracking whether it is the slice's current mode.</summary>
+    public IReadOnlyList<ModeOption> ModeOptions { get; } =
+        OfferedModes.Select(mode => new ModeOption(mode, mode.ToRadioValue())).ToArray();
+
+    /// <summary>RX antenna buttons for the selected slice, from the radio's own list.</summary>
+    public ObservableCollection<DeckOption> RxAntennaButtons { get; } = [];
+
+    /// <summary>TX antenna buttons for the selected slice, from the radio's own list.</summary>
+    public ObservableCollection<DeckOption> TxAntennaButtons { get; } = [];
 
     [RelayCommand]
     private async Task SetModeAsync(SliceMode mode)
@@ -103,10 +138,76 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
         CurrentMode = mode;
     }
 
+    // Antenna buttons drive the same two-way properties the selectors used
+    // before the layout pass, so the radio write still happens in one place:
+    // the property-changed hooks below.
+    [RelayCommand]
+    private void SelectRxAntenna(string antenna) => SelectedRxAntenna = antenna;
+
+    [RelayCommand]
+    private void SelectTxAntenna(string antenna) => SelectedTxAntenna = antenna;
+
+    /// <summary>Slice buttons for the control station, in letter order.</summary>
+    public ObservableCollection<DeckOption> SliceOptions { get; } = [];
+
+    // Selects by letter rather than by SliceInfo so the button carries a plain
+    // string like every other group; SelectedSlice stays the single source of
+    // truth, including its sticky-selection behaviour in RefreshSlices.
+    [RelayCommand]
+    private void SelectSlice(string letter)
+    {
+        if (Slices.FirstOrDefault(slice =>
+                string.Equals(slice.Letter, letter, StringComparison.OrdinalIgnoreCase)) is { } found)
+            SelectedSlice = found;
+    }
+
+    private void ApplySliceButtonState()
+    {
+        foreach (var option in SliceOptions)
+            option.IsCurrent = string.Equals(option.Label, SelectedSlice?.Letter, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Rebuilds a button list only when the radio's options actually differ.
+    /// Slice events fire on every radio update, and clearing a bound collection
+    /// on each one would drop keyboard focus mid-press.
+    /// </summary>
+    private static void SyncOptions(ObservableCollection<DeckOption> buttons, IReadOnlyList<string> options)
+    {
+        if (buttons.Count == options.Count &&
+            buttons.Select(button => button.Label).SequenceEqual(options, StringComparer.Ordinal))
+            return;
+
+        buttons.Clear();
+        foreach (var option in options)
+            buttons.Add(new DeckOption(option));
+    }
+
+    private void ApplyAntennaButtonState()
+    {
+        foreach (var button in RxAntennaButtons)
+            button.IsCurrent = string.Equals(button.Label, SelectedRxAntenna, StringComparison.OrdinalIgnoreCase);
+        foreach (var button in TxAntennaButtons)
+            button.IsCurrent = string.Equals(button.Label, SelectedTxAntenna, StringComparison.OrdinalIgnoreCase);
+    }
+
+    partial void OnCurrentModeChanged(SliceMode? value)
+    {
+        foreach (var option in ModeOptions)
+            option.IsCurrent = option.Mode == value;
+    }
+
+    partial void OnCurrentBandChanged(string value)
+    {
+        foreach (var option in BandOptions)
+            option.IsCurrent = string.Equals(option.Label, value, StringComparison.OrdinalIgnoreCase);
+    }
+
     // ── Band buttons (phase 2b) ──────────────────────────────────────────────
 
-    /// <summary>Band labels in button order.</summary>
-    public IReadOnlyList<string> Bands => BandMemory.Bands;
+    /// <summary>Band buttons in grid order, each tracking whether it is the current band.</summary>
+    public IReadOnlyList<DeckOption> BandOptions { get; } =
+        BandMemory.Bands.Select(band => new DeckOption(band)).ToArray();
 
     /// <summary>The band the selected slice is currently sitting in, if any.</summary>
     [ObservableProperty]
@@ -211,12 +312,20 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
 
     private void OnPanadapterListChanged(PanadapterInfo panadapter) => _postToUi(ApplyRfGainState);
 
-    partial void OnSelectedSliceChanged(SliceInfo? value) => ApplySliceState(value);
+    partial void OnSelectedSliceChanged(SliceInfo? value)
+    {
+        ApplySliceButtonState();
+        ApplySliceState(value);
+    }
 
     // No transmit guard on either antenna change: the radio refuses them while
     // transmitting, so guarding here would duplicate a hardware interlock.
     partial void OnSelectedRxAntennaChanged(string? value)
     {
+        // Lit state tracks the value however it arrived, including the radio's
+        // own echo, so this runs before the guard rather than after it.
+        ApplyAntennaButtonState();
+
         if (_applyingSliceState || value is null) return;
         if (SelectedSlice is { } slice)
             _ = _connection.SetSliceRxAntennaAsync(slice, value);
@@ -224,6 +333,8 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
 
     partial void OnSelectedTxAntennaChanged(string? value)
     {
+        ApplyAntennaButtonState();
+
         if (_applyingSliceState || value is null) return;
         if (SelectedSlice is { } slice)
             _ = _connection.SetSliceTxAntennaAsync(slice, value);
@@ -234,11 +345,20 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
         _applyingSliceState = true;
         try
         {
+            // Buttons first: the antenna setters below light whichever button
+            // matches, so the list has to hold this slice's options by then.
+            SyncOptions(RxAntennaButtons, slice?.RxAntennaOptions ?? []);
+            SyncOptions(TxAntennaButtons, slice?.TxAntennaOptions ?? []);
+
             SelectedRxAntenna = string.IsNullOrEmpty(slice?.RxAntenna) ? null : slice.RxAntenna;
             SelectedTxAntenna = string.IsNullOrEmpty(slice?.TxAntenna) ? null : slice.TxAntenna;
             CurrentMode = slice?.OfferedMode;
             CurrentBand = slice is null ? string.Empty : HamBands.Label(slice.FreqMHz);
             AgcThresholdText = slice is null ? Absent : FormatAgcThreshold(slice.AgcThreshold);
+
+            // Switching slices can rebuild the buttons without changing the
+            // selected antenna, and the property hooks only fire on a change.
+            ApplyAntennaButtonState();
             ApplyRfGainState();
         }
         finally
@@ -268,6 +388,8 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
         Slices.Clear();
         foreach (var slice in wanted)
             Slices.Add(slice);
+
+        SyncOptions(SliceOptions, wanted.Select(slice => slice.Letter).ToArray());
 
         // Selection is sticky: keep the operator's slice across list churn and
         // only re-resolve when it is gone. With Skimmer on one slice and WSJT-X
@@ -348,7 +470,23 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
     // lifetime defines it.
     private void OnConnectionStateChanged(bool connected)
     {
-        if (!connected) return;
+        // Bug fix 2026-08-03 (found by the Codex deep audit of the layout
+        // pass): with SmartDeck left open across a disconnect, the deck kept
+        // the last slice selected, its frequency in the header, and its band,
+        // mode and antenna buttons lit and enabled, so presses landed on a
+        // stale SliceInfo. Root cause is that Disconnect() clears its own slice
+        // map directly and raises only ConnectionStateChanged(false), having
+        // already unsubscribed the per-slice handler, so no SliceRemoved ever
+        // reaches this ViewModel. Refreshing from the now-empty connection
+        // rather than clearing by hand keeps one code path deciding what the
+        // deck shows. The telemetry footer needs no equivalent: StopTelemetry
+        // already publishes an empty snapshot, so it falls back to dashes.
+        if (!connected)
+        {
+            _postToUi(RefreshSlices);
+            return;
+        }
+
         _connection.StartTelemetry();
     }
 

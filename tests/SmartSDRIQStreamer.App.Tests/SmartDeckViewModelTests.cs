@@ -710,4 +710,171 @@ public class SmartDeckViewModelTests
 
         Assert.Equal("A", viewModel.SelectedSlice?.Letter);
     }
+
+    // ── Button state for the layout pass ─────────────────────────────────────
+    // Every group on the deck is a row of buttons that has to show which value
+    // the radio currently holds. Before the layout pass the controls were
+    // write-only, so "what am I on" could only be answered by opening a
+    // dropdown. These cover the lit state itself; the XAML that renders it is
+    // UI-only wiring covered by the live-radio smoke gate.
+
+    [Theory]
+    [InlineData(14.050, "14.050.000")]
+    [InlineData(1.8125, "1.812.500")]
+    [InlineData(28.0, "28.000.000")]
+    [InlineData(7.055, "7.055.000")]
+    public void Frequency_reads_grouped_the_way_smartsdr_groups_it(double mhz, string expected)
+    {
+        Assert.Equal(expected, SmartDeckViewModel.FormatFrequency(mhz));
+    }
+
+    [Fact]
+    public void No_slice_leaves_the_header_frequency_absent()
+    {
+        var connection = new FakeTelemetryConnection();
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+
+        viewModel.Start();
+
+        Assert.Equal("---", viewModel.FrequencyText);
+        Assert.Equal(string.Empty, viewModel.ModeText);
+    }
+
+    [Fact]
+    public void The_band_holding_the_slice_is_the_only_one_lit()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", freqMhz: 7.055));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+
+        viewModel.Start();
+
+        Assert.Equal("40m", Assert.Single(viewModel.BandOptions, band => band.IsCurrent).Label);
+    }
+
+    [Fact]
+    public void The_slices_mode_is_the_only_one_lit()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", mode: "LSB"));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+
+        viewModel.Start();
+
+        Assert.Equal(SliceMode.Lsb, Assert.Single(viewModel.ModeOptions, mode => mode.IsCurrent).Mode);
+    }
+
+    [Fact]
+    public void A_mode_smartdeck_does_not_offer_lights_nothing()
+    {
+        // A slice sitting in DIGU is valid; no button should claim to be it.
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", mode: "DIGU"));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+
+        viewModel.Start();
+
+        Assert.DoesNotContain(viewModel.ModeOptions, mode => mode.IsCurrent);
+    }
+
+    [Fact]
+    public void Antenna_buttons_come_from_the_radios_own_options_with_the_current_one_lit()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", rxAnt: "RX_A", txAnt: "ANT2"));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+
+        viewModel.Start();
+
+        Assert.Equal(["ANT1", "ANT2", "RX_A"], viewModel.RxAntennaButtons.Select(button => button.Label));
+        Assert.Equal("RX_A", Assert.Single(viewModel.RxAntennaButtons, button => button.IsCurrent).Label);
+        Assert.Equal("ANT2", Assert.Single(viewModel.TxAntennaButtons, button => button.IsCurrent).Label);
+    }
+
+    [Fact]
+    public void Pressing_an_antenna_button_writes_it_and_moves_the_lit_state()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", rxAnt: "ANT1"));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+        viewModel.Start();
+
+        viewModel.SelectRxAntennaCommand.Execute("ANT2");
+
+        Assert.Equal("ANT2", Assert.Single(connection.RxAntennaWrites).Antenna);
+        Assert.Equal("ANT2", Assert.Single(viewModel.RxAntennaButtons, button => button.IsCurrent).Label);
+    }
+
+    [Fact]
+    public void The_selected_slice_is_the_only_chip_lit()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A"), Slice("B"));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+        viewModel.Start();
+
+        viewModel.SelectSliceCommand.Execute("B");
+
+        Assert.Equal("B", viewModel.SelectedSlice?.Letter);
+        Assert.Equal("B", Assert.Single(viewModel.SliceOptions, slice => slice.IsCurrent).Label);
+    }
+
+    [Fact]
+    public void Disconnecting_drops_the_stale_slice_and_disables_the_controls()
+    {
+        // Found by the Codex deep audit 2026-08-03. Disconnect() clears the
+        // connection's slice map directly and raises only
+        // ConnectionStateChanged(false), so no SliceRemoved arrives and the
+        // deck went on showing the old slice with its buttons lit and enabled.
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", freqMhz: 7.055));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+        viewModel.Start();
+
+        connection.SetSlices();
+        connection.RaiseConnectionStateChanged(false);
+
+        Assert.Null(viewModel.SelectedSlice);
+        Assert.False(viewModel.HasSelectedSlice);
+        Assert.Empty(viewModel.Slices);
+        Assert.Empty(viewModel.SliceOptions);
+        Assert.DoesNotContain(viewModel.BandOptions, band => band.IsCurrent);
+        Assert.DoesNotContain(viewModel.ModeOptions, mode => mode.IsCurrent);
+        Assert.Equal("---", viewModel.FrequencyText);
+    }
+
+    [Fact]
+    public void Reconnecting_after_a_disconnect_restores_the_slice_controls()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", freqMhz: 7.055));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+        viewModel.Start();
+
+        connection.SetSlices();
+        connection.RaiseConnectionStateChanged(false);
+        connection.SetSlices(Slice("A", freqMhz: 14.050));
+        connection.RaiseConnectionStateChanged(true);
+        connection.RaiseSliceAdded(Slice("A", freqMhz: 14.050));
+
+        Assert.Equal("A", viewModel.SelectedSlice?.Letter);
+        Assert.Equal("20m", Assert.Single(viewModel.BandOptions, band => band.IsCurrent).Label);
+    }
+
+    [Fact]
+    public void Antenna_buttons_survive_a_slice_update_that_does_not_change_the_options()
+    {
+        // Slice events fire on every radio update. Rebuilding the bound
+        // collection each time would drop keyboard focus mid-press, so the
+        // instances have to be reused when the radio's option list is the same.
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A"));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+        viewModel.Start();
+        var before = viewModel.RxAntennaButtons.ToArray();
+
+        connection.RaiseSliceUpdated(Slice("A", freqMhz: 21.050));
+
+        Assert.Equal(before, viewModel.RxAntennaButtons);
+    }
 }

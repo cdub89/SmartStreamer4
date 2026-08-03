@@ -31,7 +31,7 @@ Required for both modes:
 
 - Windows 10/11 is supported today (FlexLib .NET 8.0 requirement)
 - FLEX-6000/8000 radio is powered on and connected to the local network
-- SmartSDR 4.x installed and running (SmartStreamer4 is designed for SmartSDR 4.x; firmware ≥ 3.3.32 required)
+- SmartSDR 4.2.x installed and running (your radio's firmware version matches its SmartSDR version, so there is no separate firmware requirement)
 - DAX 4.x installed and running
 
 CW Mode additionally needs:

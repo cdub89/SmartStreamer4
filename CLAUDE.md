@@ -60,9 +60,8 @@ list before reporting completion.
   zero errors/warnings on a seat that can run it; gates the current
   seat cannot run are explicitly named as deferred to Windows.
 - [ ] Live-radio smoke passed for changes touching FlexLib calls, CW
-  Skimmer sync logic, audio device selection, or the workflow service;
-  FlexLib-touching changes verified against both SmartSDR 4.1.5 and
-  4.2.x servers.
+  Skimmer sync logic, audio device selection, or the workflow service,
+  against a SmartSDR 4.2.x server.
 - [ ] A test add/extend/skip decision is recorded for every new element
   (skip requires a one-line reason in the report or an inline comment).
 - [ ] Dead code left by a pivot or replaced approach is deleted.
@@ -616,8 +615,7 @@ Where to look first for common tasks:
 - **FlexLib radio bug**:
   [src/SmartSDRIQStreamer.FlexRadio/FlexLibRadioConnection.cs](src/SmartSDRIQStreamer.FlexRadio/FlexLibRadioConnection.cs) +
   [FlexLibRadioDiscovery.cs](src/SmartSDRIQStreamer.FlexRadio/FlexLibRadioDiscovery.cs).
-  FlexLib 4.2.20 client must keep working against both SmartSDR 4.1.5
-  and 4.2.x server radios in the field.
+  FlexLib 4.2.20 client, targeting SmartSDR 4.2.x server radios.
 - **Audio device discovery (WDM/MME)**:
   [src/SmartSDRIQStreamer.CWSkimmer/WdmAudioDeviceFinder.cs](src/SmartSDRIQStreamer.CWSkimmer/WdmAudioDeviceFinder.cs).
 - **Settings persistence**:
@@ -653,9 +651,11 @@ Where to look first for common tasks:
   reflection-based `Path=` bindings.
 - Nullable reference types are enabled. No `!` suppressions without
   justification — fix the type, don't paper over it.
-- FlexLib runtime compatibility: code targeting FlexLib 4.2.20 must
-  remain compatible at runtime with SmartSDR servers 4.1.5 and 4.2.x.
-  Verify on both before declaring a FlexLib-touching change done.
+- FlexLib runtime compatibility: the app targets FlexLib 4.2.20 against
+  **SmartSDR 4.2.x servers only**. Support for 4.1.5 and earlier was
+  dropped 2026-08-03; do not add code, tests, or docs that claim it.
+  Historical 4.1.5 notes in the migration guide stay as a record of how
+  the API got here, not as a supported configuration.
 - Release versioning: the csproj `<Version>` stays at a clean numeric
   default; the release version comes from the git tag at HEAD
   (`vMAJOR.MINOR.PATCH`, e.g. `v0.2.1` — see Build & Release).

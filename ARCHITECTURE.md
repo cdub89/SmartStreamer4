@@ -56,7 +56,7 @@ Discovery uses FlexLib's local-network UDP broadcast listener (UDP 4992) wrapped
 
 Why the abstraction: keeping FlexLib types out of the rest of the app makes it possible to write tests against the CW Skimmer module without spinning up FlexLib, and isolates breakage when FlexLib evolves (e.g. the 4.1.5 → 4.2.18 migration documented in [Flexlib4-2-Migration-Guide.md](Flexlib4-2-Migration-Guide.md)).
 
-The FlexRadio module must remain runtime-compatible with both SmartSDR 4.1.5 and 4.2.x server radios.
+The FlexRadio module targets SmartSDR 4.2.x server radios. Support for 4.1.5 and earlier was dropped 2026-08-03.
 
 ## CW Skimmer integration
 

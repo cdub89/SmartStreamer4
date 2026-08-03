@@ -3,188 +3,384 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:SDRIQStreamer.App"
-        xmlns:flex="clr-namespace:SDRIQStreamer.FlexRadio;assembly=SmartStreamer4.FlexRadio"
-        mc:Ignorable="d" d:DesignWidth="420" d:DesignHeight="366"
+        mc:Ignorable="d" d:DesignWidth="360" d:DesignHeight="362"
         x:Class="SDRIQStreamer.App.SmartDeckWindow"
         x:DataType="local:SmartDeckViewModel"
         Title="SmartDeck"
-        Width="420" Height="366"
-        MinWidth="380" MinHeight="350"
+        Width="360" Height="362"
+        MinWidth="340" MinHeight="346"
         WindowStartupLocation="CenterOwner">
 
+    <!-- Accelerators match the ones the operator already uses in FRStack.
+         In-app only, by the phase-1 decision: no Win32 RegisterHotKey, so
+         these fire while SmartDeck has focus and not while SmartSDR does. -->
+    <Window.KeyBindings>
+        <KeyBinding Gesture="F1" Command="{Binding RfGainDownCommand}"/>
+        <KeyBinding Gesture="F2" Command="{Binding RfGainUpCommand}"/>
+        <KeyBinding Gesture="F3" Command="{Binding AgcThresholdDownCommand}"/>
+        <KeyBinding Gesture="F4" Command="{Binding AgcThresholdUpCommand}"/>
+    </Window.KeyBindings>
+
+    <Window.Resources>
+        <SolidColorBrush x:Key="DeckLitBrush" Color="#0067C0"/>
+        <SolidColorBrush x:Key="DeckLitHoverBrush" Color="#005FB4"/>
+    </Window.Resources>
+
     <Window.Styles>
-        <!-- Telemetry readouts are glanced at mid-QSO, so the value is large and
-             the label small. Tabular figures keep the numbers from shifting
-             sideways as digits change at 4 Hz. -->
+        <!-- Telemetry readouts are glanced at mid-QSO. They carry the same size
+             and weight as the RF gain and AGC-T readouts, so every number on the
+             window reads as one family rather than the footer being its own
+             thing (operator-reported, layout pass). -->
         <Style Selector="TextBlock.telemetry-value">
-            <Setter Property="FontSize" Value="20"/>
+            <Setter Property="FontSize" Value="13"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="HorizontalAlignment" Value="Center"/>
         </Style>
         <Style Selector="TextBlock.telemetry-label">
-            <Setter Property="FontSize" Value="10"/>
-            <Setter Property="Foreground" Value="Gray"/>
+            <Setter Property="FontSize" Value="9"/>
+            <Setter Property="Foreground" Value="#4F4F4F"/>
             <Setter Property="HorizontalAlignment" Value="Center"/>
         </Style>
-        <Style Selector="Button.deck-button">
-            <Setter Property="Height" Value="24"/>
-            <Setter Property="FontSize" Value="11"/>
-            <Setter Property="Margin" Value="0,0,4,0"/>
-            <Setter Property="HorizontalAlignment" Value="Stretch"/>
-        </Style>
         <Style Selector="TextBlock.telemetry-unit">
-            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontSize" Value="10"/>
             <Setter Property="Foreground" Value="Gray"/>
             <Setter Property="VerticalAlignment" Value="Bottom"/>
-            <Setter Property="Margin" Value="2,0,0,3"/>
+            <Setter Property="Margin" Value="2,0,0,2"/>
+        </Style>
+
+        <!-- One heading per group, rather than a label beside every row: the
+             40px gutter it replaces is 40px the buttons get back. -->
+        <Style Selector="TextBlock.group-label">
+            <Setter Property="FontSize" Value="10"/>
+            <!-- Darker than the Gray these started at: at 10px that read as
+                 disabled text rather than as a heading (operator-reported,
+                 layout pass). Still well below the button labels, so the
+                 headings name the group without competing with it. -->
+            <Setter Property="Foreground" Value="#4F4F4F"/>
+            <Setter Property="Margin" Value="1,0,0,1"/>
+        </Style>
+
+        <!-- Uniform margin rather than a trailing one, so a row of buttons ends
+             flush with the group above it instead of 4px short. The host panel
+             cancels the outer edge with a matching negative margin. -->
+        <Style Selector="Button.deck-button">
+            <Setter Property="Height" Value="26"/>
+            <Setter Property="FontSize" Value="11.5"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="2"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <!-- Fluent's default button face is light enough that a grid of
+                 small labels reads washed out at a glance. Weight and ink both
+                 lift a step; the lit styles below still override both. -->
+            <Setter Property="FontWeight" Value="Medium"/>
+            <Setter Property="Foreground" Value="#141414"/>
+        </Style>
+        <Style Selector="Button.deck-button /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="TextElement.Foreground" Value="#141414"/>
+        </Style>
+
+        <!-- "Lit" is the current value the radio holds, not a pressed state.
+             Set on the templated ContentPresenter as well as the Button so the
+             fill survives Fluent's own hover and pressed brushes. -->
+        <Style Selector="Button.lit">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style Selector="Button.lit /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{StaticResource DeckLitBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource DeckLitBrush}"/>
+            <Setter Property="TextElement.Foreground" Value="White"/>
+        </Style>
+        <Style Selector="Button.lit:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{StaticResource DeckLitHoverBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource DeckLitHoverBrush}"/>
+            <Setter Property="TextElement.Foreground" Value="White"/>
+        </Style>
+        <Style Selector="Button.lit:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{StaticResource DeckLitHoverBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource DeckLitHoverBrush}"/>
+            <Setter Property="TextElement.Foreground" Value="White"/>
+        </Style>
+
+        <!-- Always-on-top as a pushpin: hollow and grey when off, its inside
+             filled with the same lit blue as a selected band button when on.
+             Drawn as a vector rather than an icon-font glyph because the font's
+             pushpin codepoints are outlines, so recolouring one only tinted the
+             outline and the on state was hard to see (operator-reported twice,
+             layout pass). A filled box behind the pin was also tried and read
+             as a sixth radio control. -->
+        <Style Selector="ToggleButton.pin">
+            <Setter Property="Height" Value="26"/>
+            <Setter Property="MinWidth" Value="32"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="ToggleButton.pin Path">
+            <Setter Property="Fill" Value="Transparent"/>
+            <Setter Property="Stroke" Value="#6E6E6E"/>
+        </Style>
+        <Style Selector="ToggleButton.pin:checked Path">
+            <Setter Property="Fill" Value="{StaticResource DeckLitBrush}"/>
+            <Setter Property="Stroke" Value="{StaticResource DeckLitBrush}"/>
+        </Style>
+        <Style Selector="ToggleButton.pin /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="TextElement.Foreground" Value="#8A8A8A"/>
+        </Style>
+        <Style Selector="ToggleButton.pin:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#F0F0F0"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="TextElement.Foreground" Value="#5D5D5D"/>
+        </Style>
+        <Style Selector="ToggleButton.pin:checked">
+            <Setter Property="Content" Value="&#xE840;"/>
+        </Style>
+        <!-- The pin itself lights, not the box behind it: E840 is the solid
+             pushpin against E718's outline, so "on" reads as a filled accent
+             glyph on bare chrome. A filled box was tried first and read as a
+             sixth radio control (operator-reported, layout pass). -->
+        <Style Selector="ToggleButton.pin:checked /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+        </Style>
+        <Style Selector="ToggleButton.pin:checked:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#F0F0F0"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
         </Style>
     </Window.Styles>
 
-    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto" RowSpacing="6" Margin="10,8">
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto" RowSpacing="6" Margin="10,8">
 
-        <!-- Slice selector. The control surface targets an explicitly chosen
-             slice: SmartStreamer runs Skimmer and WSJT-X per slice
-             concurrently, so there is no single active slice to follow. -->
-        <Grid Grid.Row="0" ColumnDefinitions="Auto,*" ColumnSpacing="6">
-            <TextBlock Grid.Column="0" Text="Slice" FontSize="11" Foreground="Gray" VerticalAlignment="Center"/>
-            <ComboBox Grid.Column="1"
-                      ItemsSource="{Binding Slices}"
-                      SelectedItem="{Binding SelectedSlice}"
-                      HorizontalAlignment="Stretch"
-                      FontSize="11">
-                <ComboBox.ItemTemplate>
-                    <DataTemplate x:DataType="flex:SliceInfo">
-                        <TextBlock Text="{Binding DisplayLabel}" FontSize="11"/>
+        <!-- Header. Answers slice, frequency and mode without opening anything;
+             before the layout pass that state lived inside the slice dropdown's
+             label, which is the one place it could not be read at a glance. -->
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+            <!-- The readout spans all three columns so it centres on the window
+                 rather than on the gap between the chips and the pin, which are
+                 different widths. Declared first so the chips and the pin draw
+                 over it if a very wide frequency ever reaches them. -->
+            <StackPanel Grid.Column="0" Grid.ColumnSpan="3"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center">
+                <TextBlock Text="{Binding FrequencyText}" FontSize="17" FontWeight="SemiBold"/>
+                <TextBlock Text="MHz" FontSize="10" Foreground="Gray" VerticalAlignment="Bottom" Margin="3,0,0,2"/>
+                <!-- Mode is part of the answer to "what am I on", so it carries
+                     the same weight as the frequency rather than sitting at
+                     unit-label contrast beside it. -->
+                <TextBlock Text="{Binding ModeText}"
+                           FontSize="12"
+                           FontWeight="SemiBold"
+                           Foreground="#3A3A3A"
+                           VerticalAlignment="Bottom"
+                           Margin="7,0,0,1"/>
+            </StackPanel>
+
+            <ItemsControl Grid.Column="0" ItemsSource="{Binding SliceOptions}" Margin="-2">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="local:DeckOption">
+                        <Button Classes="deck-button"
+                                Classes.lit="{Binding IsCurrent}"
+                                Content="{Binding Label}"
+                                MinWidth="26"
+                                Command="{Binding $parent[Window].((local:SmartDeckViewModel)DataContext).SelectSliceCommand}"
+                                CommandParameter="{Binding Label}"/>
                     </DataTemplate>
-                </ComboBox.ItemTemplate>
-            </ComboBox>
-        </Grid>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
 
-        <Grid Grid.Row="1" ColumnDefinitions="Auto,*" ColumnSpacing="6" IsEnabled="{Binding HasSelectedSlice}">
-            <TextBlock Grid.Column="0" Text="Mode" FontSize="11" Foreground="Gray" VerticalAlignment="Center" Width="34"/>
-            <UniformGrid Grid.Column="1" Columns="4" >
-                <Button Classes="deck-button" Content="CW"
-                        Command="{Binding SetModeCommand}" CommandParameter="{x:Static flex:SliceMode.Cw}"/>
-                <Button Classes="deck-button" Content="USB"
-                        Command="{Binding SetModeCommand}" CommandParameter="{x:Static flex:SliceMode.Usb}"/>
-                <Button Classes="deck-button" Content="LSB"
-                        Command="{Binding SetModeCommand}" CommandParameter="{x:Static flex:SliceMode.Lsb}"/>
-                <Button Classes="deck-button" Content="AM"
-                        Command="{Binding SetModeCommand}" CommandParameter="{x:Static flex:SliceMode.Am}"/>
-            </UniformGrid>
+            <ToggleButton Grid.Column="2"
+                          Name="AlwaysOnTopCheck"
+                          Classes="pin"
+                          ToolTip.Tip="Keep SmartDeck above other windows"
+                          IsCheckedChanged="OnAlwaysOnTopChanged">
+                <!-- Thumbtack seen head-on: cap, shaft, flange, needle. The
+                     enclosed outline is the point, since the checked style
+                     fills its interior rather than the button behind it. -->
+                <Path Data="M8,2 L16,2 L16,4 L14.5,4 L14.5,9 L18,13 L18,14 L12.8,14 L12,22 L11.2,14 L6,14 L6,13 L9.5,9 L9.5,4 L8,4 Z"
+                      Stretch="Uniform"
+                      Height="16"
+                      StrokeThickness="1.3"
+                      StrokeJoin="Round">
+                    <!-- Tilted so the needle points down-left, matching the
+                         orientation the Windows pin glyph used. A render
+                         transform rather than rotated path data, so the
+                         geometry above stays readable as a thumbtack. -->
+                    <Path.RenderTransform>
+                        <RotateTransform Angle="45"/>
+                    </Path.RenderTransform>
+                </Path>
+            </ToggleButton>
         </Grid>
 
         <!-- Band buttons. A band change is a write to Slice.Freq, not an API
              verb, so the per-band memory behind these lives in BandMemory. -->
-        <Grid Grid.Row="4" ColumnDefinitions="Auto,*" ColumnSpacing="6" IsEnabled="{Binding HasSelectedSlice}">
-            <TextBlock Grid.Column="0" Text="Band" FontSize="11" Foreground="Gray" VerticalAlignment="Center" Width="34"/>
-            <ItemsControl Grid.Column="1" ItemsSource="{Binding Bands}">
+        <StackPanel Grid.Row="1" IsEnabled="{Binding HasSelectedSlice}">
+            <TextBlock Classes="group-label" Text="Band"/>
+            <ItemsControl ItemsSource="{Binding BandOptions}" Margin="-2">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
                         <UniformGrid Columns="5"/>
                     </ItemsPanelTemplate>
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="x:String">
+                    <DataTemplate x:DataType="local:DeckOption">
                         <Button Classes="deck-button"
-                                Content="{Binding}"
+                                Classes.lit="{Binding IsCurrent}"
+                                Content="{Binding Label}"
                                 Command="{Binding $parent[Window].((local:SmartDeckViewModel)DataContext).SelectBandCommand}"
-                                CommandParameter="{Binding}"/>
+                                CommandParameter="{Binding Label}"/>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
+        </StackPanel>
+
+        <StackPanel Grid.Row="2" IsEnabled="{Binding HasSelectedSlice}">
+            <TextBlock Classes="group-label" Text="Mode"/>
+            <ItemsControl ItemsSource="{Binding ModeOptions}" Margin="-2">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <UniformGrid Columns="4"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="local:ModeOption">
+                        <Button Classes="deck-button"
+                                Classes.lit="{Binding IsCurrent}"
+                                Content="{Binding Label}"
+                                Command="{Binding $parent[Window].((local:SmartDeckViewModel)DataContext).SetModeCommand}"
+                                CommandParameter="{Binding Mode}"/>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
+
+        <!-- Antenna options come from the radio, so the row sizes itself to
+             however many this model reports rather than to a fixed five. -->
+        <StackPanel Grid.Row="3" IsEnabled="{Binding HasSelectedSlice}">
+            <TextBlock Classes="group-label" Text="RX antenna"/>
+            <ItemsControl ItemsSource="{Binding RxAntennaButtons}" Margin="-2">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <UniformGrid Rows="1"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="local:DeckOption">
+                        <Button Classes="deck-button"
+                                Classes.lit="{Binding IsCurrent}"
+                                Content="{Binding Label}"
+                                Command="{Binding $parent[Window].((local:SmartDeckViewModel)DataContext).SelectRxAntennaCommand}"
+                                CommandParameter="{Binding Label}"/>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
+
+        <StackPanel Grid.Row="4" IsEnabled="{Binding HasSelectedSlice}">
+            <TextBlock Classes="group-label" Text="TX antenna"/>
+            <ItemsControl ItemsSource="{Binding TxAntennaButtons}" Margin="-2">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <UniformGrid Rows="1"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="local:DeckOption">
+                        <Button Classes="deck-button"
+                                Classes.lit="{Binding IsCurrent}"
+                                Content="{Binding Label}"
+                                Command="{Binding $parent[Window].((local:SmartDeckViewModel)DataContext).SelectTxAntennaCommand}"
+                                CommandParameter="{Binding Label}"/>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
+
+        <!-- RF gain is a panadapter property with a radio-reported range; AGC-T
+             is slice-scoped with a protocol-fixed one. They pair here because
+             both step an integer, and both carry their FRStack accelerator. -->
+        <Grid Grid.Row="5" ColumnDefinitions="*,*" ColumnSpacing="10">
+            <StackPanel Grid.Column="0" IsEnabled="{Binding CanAdjustRfGain}">
+                <TextBlock Classes="group-label" Text="RF gain"/>
+                <!-- Readout and its buttons pack together at the left edge under
+                     the group heading, and the readout carries a minimum width
+                     so the buttons hold still as the value changes width.
+                     Spreading them across the column put the number under the
+                     heading with its buttons at the far edge, which read as two
+                     unrelated controls (operator-reported, layout pass). -->
+                <Grid ColumnDefinitions="Auto,Auto,Auto,*" ColumnSpacing="4">
+                    <TextBlock Grid.Column="0"
+                               Text="{Binding RfGainText}"
+                               FontSize="13"
+                               FontWeight="SemiBold"
+                               VerticalAlignment="Center"
+                               MinWidth="44"
+                               Margin="2,0,0,0"/>
+                    <Button Grid.Column="1" Classes="deck-button" Content="&#x2212;" MinWidth="30"
+                            Command="{Binding RfGainDownCommand}"/>
+                    <Button Grid.Column="2" Classes="deck-button" Content="+" MinWidth="30"
+                            Command="{Binding RfGainUpCommand}"/>
+                </Grid>
+            </StackPanel>
+
+            <StackPanel Grid.Column="1" IsEnabled="{Binding HasSelectedSlice}">
+                <TextBlock Classes="group-label" Text="AGC-T"/>
+                <Grid ColumnDefinitions="Auto,Auto,Auto,*" ColumnSpacing="4">
+                    <TextBlock Grid.Column="0"
+                               Text="{Binding AgcThresholdText}"
+                               FontSize="13"
+                               FontWeight="SemiBold"
+                               VerticalAlignment="Center"
+                               MinWidth="44"
+                               Margin="2,0,0,0"/>
+                    <Button Grid.Column="1" Classes="deck-button" Content="&#x2212;" MinWidth="30"
+                            Command="{Binding AgcThresholdDownCommand}"/>
+                    <Button Grid.Column="2" Classes="deck-button" Content="+" MinWidth="30"
+                            Command="{Binding AgcThresholdUpCommand}"/>
+                </Grid>
+            </StackPanel>
         </Grid>
 
-        <Grid Grid.Row="2" ColumnDefinitions="Auto,*" ColumnSpacing="6" IsEnabled="{Binding HasSelectedSlice}">
-            <TextBlock Grid.Column="0" Text="RX ant" FontSize="11" Foreground="Gray" VerticalAlignment="Center" Width="34"/>
-            <ComboBox Grid.Column="1"
-                      ItemsSource="{Binding RxAntennaOptions}"
-                      SelectedItem="{Binding SelectedRxAntenna}"
-                      HorizontalAlignment="Stretch"
-                      FontSize="11"/>
-        </Grid>
-
-        <Grid Grid.Row="3" ColumnDefinitions="Auto,*" ColumnSpacing="6" IsEnabled="{Binding HasSelectedSlice}">
-            <TextBlock Grid.Column="0" Text="TX ant" FontSize="11" Foreground="Gray" VerticalAlignment="Center" Width="34"/>
-            <ComboBox Grid.Column="1"
-                      ItemsSource="{Binding TxAntennaOptions}"
-                      SelectedItem="{Binding SelectedTxAntenna}"
-                      HorizontalAlignment="Stretch"
-                      FontSize="11"/>
-        </Grid>
-
-        <!-- RF gain. A panadapter property, not a slice one, and its range is
-             radio-reported per panadapter rather than a per-model table. -->
-        <Grid Grid.Row="5" ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="6"
-              IsEnabled="{Binding CanAdjustRfGain}">
-            <TextBlock Grid.Column="0" Text="RF gain" FontSize="11" Foreground="Gray" VerticalAlignment="Center" Width="46"/>
-            <TextBlock Grid.Column="1"
-                       Text="{Binding RfGainText}"
-                       FontSize="11"
-                       FontWeight="SemiBold"
-                       VerticalAlignment="Center"/>
-            <Button Grid.Column="2" Classes="deck-button" Content="&#x2212;" MinWidth="34"
-                    Command="{Binding RfGainDownCommand}"/>
-            <Button Grid.Column="3" Classes="deck-button" Content="+" MinWidth="34"
-                    Command="{Binding RfGainUpCommand}"/>
-        </Grid>
-
-        <!-- AGC-T. Slice-scoped, unlike RF gain above, and its 0-100 range is
-             fixed by the protocol rather than radio-reported. -->
-        <Grid Grid.Row="6" ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="6"
-              IsEnabled="{Binding HasSelectedSlice}">
-            <TextBlock Grid.Column="0" Text="AGC-T" FontSize="11" Foreground="Gray" VerticalAlignment="Center" Width="46"/>
-            <TextBlock Grid.Column="1"
-                       Text="{Binding AgcThresholdText}"
-                       FontSize="11"
-                       FontWeight="SemiBold"
-                       VerticalAlignment="Center"/>
-            <Button Grid.Column="2" Classes="deck-button" Content="&#x2212;" MinWidth="34"
-                    Command="{Binding AgcThresholdDownCommand}"/>
-            <Button Grid.Column="3" Classes="deck-button" Content="+" MinWidth="34"
-                    Command="{Binding AgcThresholdUpCommand}"/>
-        </Grid>
-
-        <Grid Grid.Row="7" ColumnDefinitions="*,*,*,*" VerticalAlignment="Center">
-            <StackPanel Grid.Column="0">
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                    <TextBlock Classes="telemetry-value" Text="{Binding PowerText}"/>
-                    <TextBlock Classes="telemetry-unit" Text="W"/>
+        <Border Grid.Row="7" BorderBrush="#E6E6E6" BorderThickness="0,1,0,0" Padding="0,5,0,0">
+            <Grid ColumnDefinitions="*,*,*,*">
+                <StackPanel Grid.Column="0">
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                        <TextBlock Classes="telemetry-value" Text="{Binding PowerText}"/>
+                        <TextBlock Classes="telemetry-unit" Text="W"/>
+                    </StackPanel>
+                    <TextBlock Classes="telemetry-label" Text="Power"/>
                 </StackPanel>
-                <TextBlock Classes="telemetry-label" Text="Power"/>
-            </StackPanel>
 
-            <StackPanel Grid.Column="1">
-                <TextBlock Classes="telemetry-value" Text="{Binding SwrText}"/>
-                <TextBlock Classes="telemetry-label" Text="SWR"/>
-            </StackPanel>
-
-            <StackPanel Grid.Column="2">
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                    <TextBlock Classes="telemetry-value" Text="{Binding TempText}"/>
-                    <TextBlock Classes="telemetry-unit" Text="C"/>
+                <StackPanel Grid.Column="1">
+                    <TextBlock Classes="telemetry-value" Text="{Binding SwrText}"/>
+                    <TextBlock Classes="telemetry-label" Text="SWR"/>
                 </StackPanel>
-                <TextBlock Classes="telemetry-label" Text="Temp"/>
-            </StackPanel>
 
-            <StackPanel Grid.Column="3">
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                    <TextBlock Classes="telemetry-value" Text="{Binding VoltsText}"/>
-                    <TextBlock Classes="telemetry-unit" Text="V"/>
+                <StackPanel Grid.Column="2">
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                        <TextBlock Classes="telemetry-value" Text="{Binding TempText}"/>
+                        <TextBlock Classes="telemetry-unit" Text="C"/>
+                    </StackPanel>
+                    <TextBlock Classes="telemetry-label" Text="Temp"/>
                 </StackPanel>
-                <TextBlock Classes="telemetry-label" Text="Volts"/>
-            </StackPanel>
-        </Grid>
 
-        <!-- Top margin keeps this clear of the telemetry labels when the window
-             is dragged down to its minimum height and the telemetry row's star
-             sizing has no slack left to absorb. -->
-        <CheckBox Grid.Row="8"
-                  Name="AlwaysOnTopCheck"
-                  Content="Always on top"
-                  FontSize="10"
-                  Margin="0,10,0,0"
-                  HorizontalAlignment="Right"
-                  IsCheckedChanged="OnAlwaysOnTopChanged"/>
+                <StackPanel Grid.Column="3">
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                        <TextBlock Classes="telemetry-value" Text="{Binding VoltsText}"/>
+                        <TextBlock Classes="telemetry-unit" Text="V"/>
+                    </StackPanel>
+                    <TextBlock Classes="telemetry-label" Text="Volts"/>
+                </StackPanel>
+            </Grid>
+        </Border>
     </Grid>
 </Window>

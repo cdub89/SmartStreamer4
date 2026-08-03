@@ -219,10 +219,16 @@ pressure explicitly: four modes became six in discussion and went back to four.
 
 ### FlexLib version
 
-Build against **4.2.18.41174**, the version the repo project-references today.
-The 4.2.20.41343 drop is a separate change with its own smoke test. Bundling a
-library upgrade into a new subsystem means a misbehaving radio gives no signal
-about which one caused it.
+Originally: build against **4.2.18.41174**, the version the repo
+project-referenced when this plan was written, keeping the 4.2.20.41343 drop as
+a separate change with its own smoke test. Bundling a library upgrade into a
+new subsystem means a misbehaving radio gives no signal about which one caused
+it.
+
+That held, and the upgrade has since landed on its own: issue #61 migrated the
+repo to **4.2.20.41343** (commit `e402b5b`, live-tested and closed
+2026-08-03), so SmartDeck now builds against 4.2.20. The separation did its
+job, and the gating spike was captured against a 4.2.20 client and server.
 
 ## Phase 1 scope
 
@@ -340,21 +346,25 @@ operator cares about.
 
 Full capture recorded as a comment on issue #59. The temporary diagnostic that
 produced it (`FlexLibRadioConnection.TelemetrySpike.cs`, the
-`CaptureTelemetrySpike` command, the Logs-tab button) is deleted once the 4.1.5
-capture below is also taken.
+`CaptureTelemetrySpike` command, the Logs-tab button) was to be kept until a
+4.1.5 capture was also taken; with 4.1.5 support dropped on 2026-08-03 that
+capture will never happen, so the diagnostic can go.
 
 ## Open items requiring the Windows seat
 
 1. ~~The gating spike.~~ **Done 2026-08-02, passed.** See the result above.
-2. Meter names confirmed against the **SmartSDR server** versions in the field,
-   not against a client library version. **4.2.x done** (4.2.20 server, above).
-   **4.1.5 outstanding.** The radio reports these names, so only a live capture
-   confirms them, and a mismatch is silent: FlexLib never wires the event and
-   the value stays absent forever.
+2. ~~Meter names confirmed against the **SmartSDR server** versions in the
+   field, not against a client library version.~~ **Done.** Confirmed against a
+   4.2.20 server (above). A 4.1.5 capture was also outstanding until
+   **2026-08-03, when support for SmartSDR 4.1.5 and earlier was dropped**;
+   4.2.x is now the only target, so this item is closed.
 3. ~~Actual meter update rate, to fix the throttle interval.~~ **Done:** two
    distinct rates, 13.4 Hz and 0.4 Hz; throttle fixed at 250 ms. See Threading
    and rate above.
-4. Live-radio smoke against both SmartSDR 4.1.5 and 4.2.x servers.
+4. ~~Live-radio smoke against both SmartSDR 4.1.5 and 4.2.x servers.~~
+   **Done.** Phase 1, all of phase 2 and the layout pass all smoke-tested on a
+   FLEX-6400M running SmartSDR 4.2.20. The 4.1.5 half of this item went away
+   with 4.1.5 support on 2026-08-03.
 
 All C# in this plan is written on whichever seat, but no part of it is verified
 until the Windows-side gates and the live-radio smoke have passed.
@@ -404,6 +414,15 @@ RF gain and AGC-T both step an integer inside a bounded range, differing only
 in where the bounds come from, so the clamping arithmetic is shared in
 `SteppedRange.Next` rather than duplicated per control.
 
+All of phase 2 is **live-validated against a FLEX-6400M on SmartSDR 4.2.20**
+(2a/2b/2c and AGC-T built 2026-08-02, re-confirmed through the layout pass
+2026-08-03). One operator-reported defect was found and fixed during 2b: with
+two slices, selecting slice B and pressing a band button snapped the selector
+back to slice A, because the ComboBox wrote null through the two-way
+`SelectedItem` binding the moment `Slices` was cleared. Fixed by capturing the
+selection before the clear; the fix survives the layout pass, which replaced
+that ComboBox with chips.
+
 ### No GUI-client binding, and no "active slice"
 
 An earlier draft of this plan said phase 2 required binding via
@@ -438,6 +457,119 @@ One residual to watch in live testing: FlexLib's `RXAnt` / `TXAnt` setters
 update their local cache *before* sending the command (`Slice.cs:185-198`), so
 a radio-refused change could leave FlexLib's cached value briefly ahead of the
 radio until the next status update corrects it.
+
+## Layout pass (live-validated 2026-08-03)
+
+Every phase appended a row to the window, so what phase 2 left behind was nine
+labelled form rows with three ComboBoxes in it: a settings dialog rather than a
+control surface. The controls and the plumbing beneath them were right; the
+arrangement was not. This pass changed only the arrangement. No new radio
+verbs, no behaviour change, and the antenna write path deliberately untouched.
+
+### What the surface being replaced actually looks like
+
+FlexButtons is a 5x4 grid of identical buttons in a 349x223 window: one press
+per function, no dropdowns, and the current band outlined. Two things it does
+not do set the bar rather than the target. It is write-only apart from that
+outline, and its band buttons are hand-coded stacks of commands preset to fixed
+SKCC calling frequencies, which SmartDeck's departure-capture band memory
+already improves on.
+
+### Chosen: sectioned deck
+
+Three candidates were mocked and compared: a sectioned deck, a version keeping
+the existing label gutter, and a landscape two-column form. Sectioned deck won.
+
+- One small heading per group replaces the 40px label gutter on every row, and
+  the buttons get that width back.
+- The three ComboBoxes become button rows. Slice becomes letter chips, and both
+  antennas become buttons over the radio's own reported options, so each row
+  sizes itself to the three or five values the model actually reports rather
+  than to a fixed five.
+- Band, mode, both antennas and the slice light in the Windows accent when they
+  hold the radio's current value. This is the substantive fix: the surface was
+  write-only, so "what am I on" could only be answered by opening a dropdown.
+- A header carries the selected slice's frequency, grouped MHz.kHz.Hz as
+  SmartSDR groups it, plus its mode. That state previously existed only inside
+  the slice dropdown's label, which is the one place it could not be read at a
+  glance.
+- Always-on-top moved out of the body into a header pushpin.
+
+### Lit state is computed in the ViewModel, not compared in XAML
+
+`DeckOption` carries a label and an `IsCurrent` flag per button, and the
+ViewModel keeps the flags in step with the radio. Comparing each item against a
+current-value property in XAML instead would need a multi-value converter
+inside every item template. Keeping the comparison in the ViewModel leaves the
+view declarative and makes the lit state unit-testable, which is where the new
+button-state tests live.
+
+Antenna buttons assign the same two-way properties the ComboBoxes bound to
+rather than calling the connection directly, so `SetSliceRxAntennaAsync` still
+has exactly one call site and the existing echo-suppression guard still covers
+it.
+
+### Keyboard
+
+The phase-1 commitment to keyboard-first was unimplemented: no `KeyBinding`, no
+focus visual and no tab order anywhere in the XAML. This pass added the
+accelerators the operator already uses in FRStack. `F1`/`F2` step RF gain,
+`F3`/`F4` step AGC-T. Both, and sensible tab traversal, confirmed in the
+2026-08-03 live test.
+
+They are in-app only, per the phase-1 decision against `RegisterHotKey`. They
+fire while SmartDeck has focus and do nothing while SmartSDR has it. That is a
+real difference from FRStack's system-wide bindings and is the cost of that
+decision, not an oversight.
+
+### Decisions this pass settled
+
+- **RF gain stays an up/down pair.** FlexButtons offers named preset levels
+  (`RX -8` through `RX 24`) and the operator uses them, which briefly looked
+  like a reason to revisit the decision against named levels. It is not: those
+  presets are a FlexButtons limitation, and the shift to `-`/`+` was
+  deliberate.
+- **No icons.** The Stream Deck icon set attached to the issue is artwork for
+  the physical deck's buttons, not assets for this window. Text labels
+  throughout.
+- **The pushpin is a vector `Path`, not an icon-font glyph.** The Windows pin
+  codepoints (`E718`, `E840`) are outlines, so recolouring one only tints the
+  outline and the on state is hard to see. Drawing the shape gives `Fill` and
+  `Stroke` as separate properties: hollow grey when off, interior filled with
+  the lit blue when on. Filling the button box instead was tried first and read
+  as a sixth radio control.
+- **Skin deferred.** Whether SmartDeck keeps Windows Fluent light or adopts the
+  Stream Deck look (bright blue on near-black) is open, and deliberately
+  separated from the arrangement.
+
+## Next: per-band memory beyond frequency
+
+`BandMemory` stores a frequency per band. The operator's FlexButtons and Stream
+Deck buttons stack several commands behind one press, setting band, frequency,
+antenna and RF gain together, and the equivalent here is to widen what a band
+button restores.
+
+Why this cannot be left to the radio, which is the part that is easy to get
+wrong: a real band change on the radio tears the slice down and rebuilds it
+from the radio's own slice persistence, and that is how antenna and gain follow
+the band. SmartDeck never does that. It writes `Slice.Freq` on a live slice,
+deliberately, because CW Skimmer and WSJT-X are bound per slice and the slice
+surviving is the whole point. The cost of that choice is that nothing else
+follows the frequency, so the restore has to be ours.
+
+The per-band record therefore grows from a frequency to **frequency, mode, RX
+antenna, TX antenna, AGC-T**. All five are slice-scoped, so a restore is one
+write target.
+
+**RF gain is deliberately excluded.** It is a panadapter property reached
+through `SliceInfo.PanadapterStreamId`, so including it would make a restore
+two write targets against two different objects, and its range is
+radio-reported per panadapter rather than protocol-fixed. It stays a live
+`-`/`+` control that a band button does not touch.
+
+This change carries a settings migration: `AppSettings.SmartDeckBandMemoryMhz`
+is a `Dictionary<string, double>` today, and the widened record is not a
+double.
 
 ## Phase 3 outline (deferred)
 

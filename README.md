@@ -16,8 +16,8 @@ License: MIT (see [LICENSE](LICENSE)).
 ## Status
 
 - Generally available as of v0.2.1 (2026-07-24). Latest release: see [GitHub Releases](https://github.com/cdub89/SmartStreamer4/releases).
-- Requires SmartSDR 4.x and FlexRadio firmware ≥ 3.3.32.8203 (FlexLib 4.2.18 minimum).
-- Tested against SmartSDR 4.1.5 and 4.2.x server radios.
+- Requires SmartSDR 4.2.x. Built against FlexLib 4.2.20.
+- Tested against SmartSDR 4.2.x server radios. SmartSDR 4.1.5 and earlier are no longer supported.
 
 ## Install
 

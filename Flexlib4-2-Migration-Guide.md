@@ -33,7 +33,12 @@ The scope is narrower than it looks. Radio model support, the `RadioPlatform` en
 
 ### Required Firmware
 
-The minimum compatible firmware version is **3.3.32.8203**, unchanged from 4.1.5 (`FirmwareRequiredVersion.cs:18` in both trees). Upgrading FlexLib does not by itself require a firmware update.
+`FirmwareRequiredVersion.cs:18` reads **3.3.32.8203** in both the 4.1.5 and the 4.2.x trees. An earlier version of this guide called that "the minimum compatible firmware version". That was wrong twice over, corrected 2026-08-03:
+
+- **It is not a minimum.** `Radio.cs:542` compares `_version != _req_version`, an exact-equality test. Any firmware that is not that precise build sets `_updateRequired`.
+- **The constant is stale.** The file header says Jenkins populates it from the most recent firmware built, but it is byte-identical across the 4.1.5 and 4.2.20 drops, so a 4.2.20 library still asks for a 3.3.x build. FlexRadio evidently stopped bumping it.
+
+In practice it is inert for a non-GUI client. `_updateRequired` only feeds `UpdateConnectedState()`, which sets the `ConnectedState` display string to `Update`; nothing in FlexLib gates `Connect()` on it, and a `smoothlake_dev` marker file forces it false. A FlexRadio's firmware version tracks its SmartSDR version, so the requirement worth stating to operators is the SmartSDR version, not a firmware number. Upgrading FlexLib does not by itself require a firmware update.
 
 ---
 

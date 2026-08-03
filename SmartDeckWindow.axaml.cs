@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Interactivity;
 
 namespace SDRIQStreamer.App;
@@ -30,7 +31,7 @@ public partial class SmartDeckWindow : Window
         RestorePlacement();
 
         Topmost = settings.SmartDeckAlwaysOnTop;
-        if (this.FindControl<CheckBox>("AlwaysOnTopCheck") is { } check)
+        if (this.FindControl<ToggleButton>("AlwaysOnTopCheck") is { } check)
             check.IsChecked = settings.SmartDeckAlwaysOnTop;
 
         Opened += OnOpened;
@@ -67,7 +68,7 @@ public partial class SmartDeckWindow : Window
 
     private void OnAlwaysOnTopChanged(object? sender, RoutedEventArgs e)
     {
-        if (sender is not CheckBox check) return;
+        if (sender is not ToggleButton check) return;
 
         var onTop = check.IsChecked == true;
         Topmost = onTop;
