@@ -37,4 +37,58 @@ public sealed class AppSettingsRoundTripTests
 
         Assert.False(restored.DebugLoggingEnabled);
     }
+
+    // ── SmartDeck window placement (issue #59) ───────────────────────────────
+
+    [Fact]
+    public void SmartDeckPlacement_DefaultsToNeverPositioned()
+    {
+        var settings = new AppSettings();
+
+        // Null rather than 0: 0,0 is a real window position on a multi-monitor
+        // desktop, so "never positioned" needs its own state.
+        Assert.Null(settings.SmartDeckX);
+        Assert.Null(settings.SmartDeckY);
+        Assert.Null(settings.SmartDeckWidth);
+        Assert.Null(settings.SmartDeckHeight);
+        Assert.False(settings.SmartDeckAlwaysOnTop);
+    }
+
+    [Fact]
+    public void SmartDeckPlacement_RoundTrips()
+    {
+        var restored = RoundTrip(new AppSettings
+        {
+            SmartDeckX = 120,
+            SmartDeckY = 340,
+            SmartDeckWidth = 420,
+            SmartDeckHeight = 118,
+            SmartDeckAlwaysOnTop = true
+        });
+
+        Assert.Equal(120, restored.SmartDeckX);
+        Assert.Equal(340, restored.SmartDeckY);
+        Assert.Equal(420, restored.SmartDeckWidth);
+        Assert.Equal(118, restored.SmartDeckHeight);
+        Assert.True(restored.SmartDeckAlwaysOnTop);
+    }
+
+    [Fact]
+    public void SmartDeckPlacement_RoundTripsAZeroOriginAsZeroNotAbsent()
+    {
+        var restored = RoundTrip(new AppSettings { SmartDeckX = 0, SmartDeckY = 0 });
+
+        Assert.Equal(0, restored.SmartDeckX);
+        Assert.Equal(0, restored.SmartDeckY);
+    }
+
+    [Fact]
+    public void SmartDeckPlacement_MissingFromJson_LoadsAsNeverPositioned()
+    {
+        // Settings files written before issue #59 have no SmartDeck properties.
+        var restored = JsonSerializer.Deserialize<AppSettings>("{}")!;
+
+        Assert.Null(restored.SmartDeckX);
+        Assert.False(restored.SmartDeckAlwaysOnTop);
+    }
 }

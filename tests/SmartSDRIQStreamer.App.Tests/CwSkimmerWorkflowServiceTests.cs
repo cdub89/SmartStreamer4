@@ -236,6 +236,10 @@ public sealed class CwSkimmerWorkflowServiceTests
         public Task PublishSpotAsync(RadioSpotInfo spot)                             => Task.CompletedTask;
         public void ResetNetworkStatus() { }
 
+        public RadioTelemetryInfo Telemetry => RadioTelemetryInfo.Empty;
+        public void StartTelemetry() { }
+        public void StopTelemetry() { }
+
         public event Action<bool>? ConnectionStateChanged;
         public event Action<PanadapterInfo>? PanadapterAdded;
         public event Action<PanadapterInfo>? PanadapterRemoved;
@@ -250,6 +254,7 @@ public sealed class CwSkimmerWorkflowServiceTests
         public event Action<NetworkStatusInfo>? NetworkStatusChanged;
         public event Action<IReadOnlyList<GuiClientInfo>>? GuiClientsChanged;
         public event Action<string>? DiagnosticEvent;
+        public event Action<RadioTelemetryInfo>? TelemetryChanged;
 
         // Suppress unused-event warnings in tests.
         private void _Touch()
@@ -268,6 +273,7 @@ public sealed class CwSkimmerWorkflowServiceTests
             NetworkStatusChanged?.Invoke(default!);
             GuiClientsChanged?.Invoke([]);
             DiagnosticEvent?.Invoke(string.Empty);
+            TelemetryChanged?.Invoke(RadioTelemetryInfo.Empty);
         }
     }
 

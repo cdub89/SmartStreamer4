@@ -139,4 +139,14 @@ public sealed class AppSettings
     public int? LastSeenMmeDeviceIndexCh2 { get; set; }
     public int? LastSeenMmeDeviceIndexCh3 { get; set; }
     public int? LastSeenMmeDeviceIndexCh4 { get; set; }
+
+    // ── SmartDeck window (issue #59) ─────────────────────────────────────────
+    // Nullable: null means "never positioned", which is distinct from a real
+    // 0 coordinate on a multi-monitor desktop where 0,0 is a valid position.
+
+    public double? SmartDeckX { get; set; }
+    public double? SmartDeckY { get; set; }
+    public double? SmartDeckWidth { get; set; }
+    public double? SmartDeckHeight { get; set; }
+    public bool SmartDeckAlwaysOnTop { get; set; }
 }

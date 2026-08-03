@@ -1,0 +1,75 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:SDRIQStreamer.App"
+        mc:Ignorable="d" d:DesignWidth="420" d:DesignHeight="120"
+        x:Class="SDRIQStreamer.App.SmartDeckWindow"
+        x:DataType="local:SmartDeckViewModel"
+        Title="SmartDeck"
+        Width="420" Height="118"
+        MinWidth="360" MinHeight="100"
+        WindowStartupLocation="CenterOwner">
+
+    <Window.Styles>
+        <!-- Telemetry readouts are glanced at mid-QSO, so the value is large and
+             the label small. Tabular figures keep the numbers from shifting
+             sideways as digits change at 4 Hz. -->
+        <Style Selector="TextBlock.telemetry-value">
+            <Setter Property="FontSize" Value="20"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="TextBlock.telemetry-label">
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="Foreground" Value="Gray"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="TextBlock.telemetry-unit">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Foreground" Value="Gray"/>
+            <Setter Property="VerticalAlignment" Value="Bottom"/>
+            <Setter Property="Margin" Value="2,0,0,3"/>
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="*,Auto" Margin="10,8">
+        <Grid Grid.Row="0" ColumnDefinitions="*,*,*,*">
+            <StackPanel Grid.Column="0">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                    <TextBlock Classes="telemetry-value" Text="{Binding PowerText}"/>
+                    <TextBlock Classes="telemetry-unit" Text="W"/>
+                </StackPanel>
+                <TextBlock Classes="telemetry-label" Text="Power"/>
+            </StackPanel>
+
+            <StackPanel Grid.Column="1">
+                <TextBlock Classes="telemetry-value" Text="{Binding SwrText}"/>
+                <TextBlock Classes="telemetry-label" Text="SWR"/>
+            </StackPanel>
+
+            <StackPanel Grid.Column="2">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                    <TextBlock Classes="telemetry-value" Text="{Binding TempText}"/>
+                    <TextBlock Classes="telemetry-unit" Text="C"/>
+                </StackPanel>
+                <TextBlock Classes="telemetry-label" Text="Temp"/>
+            </StackPanel>
+
+            <StackPanel Grid.Column="3">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                    <TextBlock Classes="telemetry-value" Text="{Binding VoltsText}"/>
+                    <TextBlock Classes="telemetry-unit" Text="V"/>
+                </StackPanel>
+                <TextBlock Classes="telemetry-label" Text="Volts"/>
+            </StackPanel>
+        </Grid>
+
+        <CheckBox Grid.Row="1"
+                  Name="AlwaysOnTopCheck"
+                  Content="Always on top"
+                  FontSize="10"
+                  HorizontalAlignment="Right"
+                  IsCheckedChanged="OnAlwaysOnTopChanged"/>
+    </Grid>
+</Window>

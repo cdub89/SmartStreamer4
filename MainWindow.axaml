@@ -83,19 +83,29 @@
                                FontSize="12" Foreground="Gray"
                                IsVisible="{Binding StatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
-                    <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,2">
+                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6" Margin="0,0,0,2">
                         <TextBlock Grid.Column="0"
                                    Text="{Binding ConnectTargetHeaderText}"
                                    FontSize="11"
                                    FontWeight="Bold"
                                    Foreground="{Binding ConnectTargetHeaderColor}"/>
+                        <!-- SmartDeck (issue #59). Connected-only: its telemetry
+                             comes from radio-level meter events, so there is
+                             nothing to show while disconnected. -->
                         <Button Grid.Column="1"
+                                Classes="action-button"
+                                Content="SmartDeck"
+                                MinWidth="70"
+                                Click="OnOpenSmartDeck"
+                                IsVisible="{Binding IsConnected}"
+                                ToolTip.Tip="Opens the SmartDeck window: live power, SWR, PA temperature, and supply voltage from the radio."/>
+                        <Button Grid.Column="2"
                                 Classes="action-button"
                                 Content="Connect"
                                 MinWidth="56"
                                 Command="{Binding ConnectCommand}"
                                 IsVisible="{Binding !IsConnected}"/>
-                        <Button Grid.Column="1"
+                        <Button Grid.Column="2"
                                 Classes="action-button"
                                 Content="Disconnect"
                                 MinWidth="56"

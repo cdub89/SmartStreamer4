@@ -20,6 +20,7 @@ public partial class MainWindow : Window
     private readonly AppSettingsSession _settingsSession;
     private MainWindowViewModel? _subscribedVm;
     private bool _firstInstallWizardShownThisSession;
+    private SmartDeckWindow? _smartDeck;
 
     public MainWindow()
         : this(new AppSettingsSession(new AppSettingsStore()))
@@ -46,6 +47,12 @@ public partial class MainWindow : Window
             _subscribedVm.StopRunningAppsConfirmRequested -= OnStopRunningAppsConfirmRequested;
             _subscribedVm = null;
         }
+
+        // Close SmartDeck first: its Closing handler writes its own placement
+        // into the same settings object, and that has to happen before the save
+        // below rather than during owner-driven teardown afterwards.
+        _smartDeck?.Close();
+        _smartDeck = null;
 
         (DataContext as MainWindowViewModel)?.Shutdown();
         SaveWindowPlacement();
@@ -403,6 +410,24 @@ public partial class MainWindow : Window
         settings.MainWindowY = Position.Y;
         settings.MainWindowWidth = Bounds.Width;
         settings.MainWindowHeight = Bounds.Height;
+    }
+
+    // Issue #59: one SmartDeck window per session, reactivated rather than
+    // duplicated if the operator clicks the button again.
+    private void OnOpenSmartDeck(object? sender, RoutedEventArgs e)
+    {
+        if (_smartDeck is not null)
+        {
+            _smartDeck.Activate();
+            return;
+        }
+
+        if (DataContext is not MainWindowViewModel vm) return;
+
+        var deck = new SmartDeckWindow(vm.CreateSmartDeckViewModel(), _settingsSession.Settings);
+        deck.Closed += (_, _) => _smartDeck = null;
+        _smartDeck = deck;
+        deck.Show(this);
     }
 
     private void OnOpenSetupWizard(object? sender, RoutedEventArgs e)

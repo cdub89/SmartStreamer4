@@ -137,8 +137,27 @@ a typed event:
 |-------------|-------------|----------|-----------------------|-------|
 | Voltage | `VoltsDataReady` | 7107 | `+13.8A` (pre-fuse rail) | Volts |
 | Temp | `PATempDataReady` | 7100 | `PATEMP` | degrees C |
-| Power out | `ForwardPowerDataReady` | 7066 | `FWDPWR` | Watts |
+| Power out | `ForwardPowerDataReady` | 7066 | `FWDPWR` | **dBm** (converted, see below) |
 | SWR | `SWRDataReady` | 7088 | `SWR` | ratio |
+
+### Display units
+
+The operator-facing units, locked 2026-08-02:
+
+| Footer item | Displayed as | Wire units | Conversion |
+|-------------|--------------|------------|------------|
+| Power out | watts, 1-100 W range | dBm | `watts = 10^((dBm - 30) / 10)` |
+| SWR | ratio to 1 decimal (1.1, 1.5, 2.1) | ratio | none |
+| Temp | degrees C | degrees C | none |
+| Voltage | volts | volts | none |
+
+Only power needs converting. FlexLib documents `ForwardPowerDataReady` as dBm
+at `Radio.cs:7063-7066`, and the gating spike confirmed it: 49.69 dBm on a
+100 W radio, which is 93.1 W. An earlier draft of the table above wrongly
+listed this event as delivering watts.
+
+The conversion is a real element with logic, not formatting, so it gets its own
+unit test (see Test decisions).
 
 The delegate is `MeterDataReadyEventHandler(float data)`. Name matching happens
 in `Radio.AddMeter` (`Radio.cs:6949-6968`).
@@ -228,13 +247,51 @@ The meter events fire off the UI thread, once per meter per update. Four meters
 means four independent event streams that must be coalesced into one
 `RadioTelemetryInfo` and marshaled to the UI thread. Display updates get
 throttled following the `ThrottledStatusEmitter` precedent rather than a second
-throttle mechanism. Target display rate is a few Hz; the actual meter rate needs
-measuring on the Windows seat before the throttle interval is fixed.
+throttle mechanism.
+
+The gating spike measured the real rates, and they are not uniform: forward
+power and SWR arrive at **~13.4 Hz**, PA temperature and volts at **~0.4 Hz**
+(see the spike result below). Together that is roughly 28 events/sec.
+
+**Throttle interval: 250 ms (4 Hz).** It cuts UI marshals from ~28/sec to
+4/sec, sits well clear of the 0.4 Hz slow pair so temperature and volts never
+look stalled, and reads smoothly for a numeric display.
+
+**Forward power and SWR coalesce as peak-hold between emits; temperature and
+volts as last-sample.** A 250 ms window holds ~3.4 samples of a value that
+swings hard under CW keying, so last-sample would show whichever sample landed
+on the emit boundary and the reading would jitter. Peak-hold is one `Math.Max`
+in the coalescer and matches how an analog power meter behaves. The slow pair
+has at most one sample per window, so the distinction does not arise there.
 
 Note that FlexLib exposes these as *events*, not properties. There is no
 `Radio.Volts` or `Radio.SWR` to poll, so the value we hold is whatever the last
 event delivered, which is exactly what `RadioTelemetryInfo` is for: before the
 first event for a given meter, that value is `null` and the footer shows dashes.
+
+The spike confirmed this absent-vs-zero design is load-bearing rather than
+theoretical: on receive, forward power reports a real `0.00` dBm and SWR reports
+its `1.0` floor, at the full 13.4 Hz. Zero therefore cannot be overloaded to
+mean "no reading yet".
+
+The "power and SWR read zero on receive" decision above holds for power (a real
+`0.00` dBm, which converts to 0.0 W and reads correctly as TX-idle) but **not**
+for SWR. The SWR meter's floor is `1.0`, not zero, so at rest it reports
+`1.00`, which is indistinguishable from a real 1:1 match while transmitting.
+The phase-1 live test confirmed this reads wrong on the footer, and the
+operator called it: at rest SWR shows dashes.
+
+**SWR displays only while forward power is above 0.01 W.** Gated on power
+rather than on `Radio.Mox` because power is already in the snapshot and "no RF
+going out" is the condition that actually makes SWR meaningless; MOX would need
+new plumbing to reach the same answer. The threshold has an order of magnitude
+of clearance on both sides: the receive floor is 0.001 W and the lowest real
+transmit power is 1 W. Dashes rather than `0` because SWR is undefined below
+1.0, so a displayed `0` would be a value that cannot physically occur.
+
+This narrows the "dashes mean no telemetry" rule: dashes on **all four** values
+means no telemetry, while dashes on SWR alone, alongside live power, temp, and
+volts, means not transmitting.
 
 ### Test decisions
 
@@ -244,6 +301,7 @@ Per the Test Coverage Discipline table. Every phase-1 element is routed:
 |---------|----------|
 | `RadioTelemetryInfo` record | **Extend** existing record tests: absent-vs-zero construction, and that `null` and `0` stay distinguishable through the type. |
 | Meter coalescing (four streams to one snapshot) | **New** unit test against a fake meter source. Pure logic, no FlexLib. |
+| dBm to watts conversion for power out | **New** unit test: 49.69 dBm is 93.1 W (the spike's own reading), 50 dBm is 100 W, 0 dBm is 0.001 W. Pure math, no FlexLib. |
 | Telemetry throttle behavior | **New** test alongside the existing `ThrottledStatusEmitter` tests. |
 | Footer display formatting (dash vs zero) | **New** ViewModel test: `null` renders dashes, `0` renders `0`. |
 | `FlexLibRadioConnection` meter subscribe/unsubscribe | **Skip** with reason: FlexLib-facing, not unit-testable; covered by the live-radio smoke gate. |
@@ -253,22 +311,49 @@ Per the Test Coverage Discipline table. Every phase-1 element is routed:
 Tests land in `tests/SmartSDRIQStreamer.App.Tests/` for ViewModel and settings
 work, and alongside the FlexRadio module for the telemetry record.
 
-## Gating spike before phase 1 is committed
+## Gating spike: RESULT (passed 2026-08-02)
 
-**Does a non-GUI client receive meter data at all?** SmartStreamer sets
-`API.IsGUI = false`. If meters are not delivered to non-GUI clients, or require
-binding to a GUI client first, phase 1 changes shape entirely. This is a short
-Windows-seat spike (connect, enumerate `MeterList`, look for the four names,
-watch `DataReady` fire) and it must run before any of the surfaces above are
-built.
+The question was whether a non-GUI client receives meter data at all, given
+that SmartStreamer sets `API.IsGUI = false`. If meters were withheld from
+non-GUI clients, or required binding to a GUI client first, phase 1 changed
+shape entirely.
+
+**It does.** Captured on a FLEX-6400M running SmartSDR-MB 4.2.20, FlexLib
+client 4.2.20, over a 15 s window with TX power ramped up and down. All four
+radio-level events fired with `API.IsGUI = False` and no GUI binding step,
+which matches the source: `sub meter all` is sent unconditionally at
+`Radio.cs:2273`, outside the `if (API.IsGUI)` branch.
+
+| Meter | Rate | Observed over the window |
+|-------|------|--------------------------|
+| ForwardPower | 13.4 Hz | 0.00 to 49.69 dBm (about 93 W) |
+| SWR | 13.4 Hz | 1.00 to 1.48 |
+| PATemp | 0.4 Hz | 31.17 to 35.52 C |
+| Volts | 0.4 Hz | 14.09 to 13.64 V |
+
+Radio-side meter names all present and mapped: `FWDPWR` (idx 7, range
+0.0-53.0), `SWR` (idx 9, range 1.0-999.0), `PATEMP` (idx 10, range 0.0-120.0),
+`+13.8A` (idx 4, range 10.5-15.0, "Main radio input voltage at PA"). `+13.8B`
+("at CPU") exists but drives no radio-level event; `+13.8A` is the rail we
+want, since it sags 14.09 V to 13.64 V under key-down, which is the reading an
+operator cares about.
+
+Full capture recorded as a comment on issue #59. The temporary diagnostic that
+produced it (`FlexLibRadioConnection.TelemetrySpike.cs`, the
+`CaptureTelemetrySpike` command, the Logs-tab button) is deleted once the 4.1.5
+capture below is also taken.
 
 ## Open items requiring the Windows seat
 
-1. The gating spike above.
-2. Meter names confirmed on **4.2.18** specifically. They were read from 4.2.20
-   on the Linux seat. They are radio-side names so they almost certainly match,
-   but this is confirmed before phase 1 ships.
-3. Actual meter update rate, to fix the throttle interval.
+1. ~~The gating spike.~~ **Done 2026-08-02, passed.** See the result above.
+2. Meter names confirmed against the **SmartSDR server** versions in the field,
+   not against a client library version. **4.2.x done** (4.2.20 server, above).
+   **4.1.5 outstanding.** The radio reports these names, so only a live capture
+   confirms them, and a mismatch is silent: FlexLib never wires the event and
+   the value stays absent forever.
+3. ~~Actual meter update rate, to fix the throttle interval.~~ **Done:** two
+   distinct rates, 13.4 Hz and 0.4 Hz; throttle fixed at 250 ms. See Threading
+   and rate above.
 4. Live-radio smoke against both SmartSDR 4.1.5 and 4.2.x servers.
 
 All C# in this plan is written on whichever seat, but no part of it is verified

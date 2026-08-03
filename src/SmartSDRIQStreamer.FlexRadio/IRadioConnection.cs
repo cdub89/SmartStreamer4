@@ -116,4 +116,34 @@ public interface IRadioConnection
     /// Subsequent FlexLib updates repopulate current and max RTT values.
     /// </summary>
     void ResetNetworkStatus();
+
+    // ── Telemetry (issue #59, SmartDeck) ─────────────────────────────────────
+
+    /// <summary>
+    /// Latest coalesced telemetry snapshot, or <see cref="RadioTelemetryInfo.Empty"/>
+    /// before the first reading. Radio-level values only; nothing here is
+    /// slice-scoped.
+    /// </summary>
+    RadioTelemetryInfo Telemetry { get; }
+
+    /// <summary>
+    /// Fires off the UI thread when a new telemetry snapshot is available, at
+    /// most once per display interval. Subscribers must marshal to the UI
+    /// thread themselves.
+    /// </summary>
+    event Action<RadioTelemetryInfo> TelemetryChanged;
+
+    /// <summary>
+    /// Begin publishing telemetry. Idempotent, and a no-op while disconnected.
+    /// Subscription is started on demand rather than at connect so a session
+    /// that never opens SmartDeck does no coalescing work: the underlying meter
+    /// events stream at roughly 28 events/sec combined.
+    /// </summary>
+    void StartTelemetry();
+
+    /// <summary>
+    /// Stop publishing telemetry and drop accumulated readings, so the next
+    /// start begins from absent rather than from stale values. Idempotent.
+    /// </summary>
+    void StopTelemetry();
 }

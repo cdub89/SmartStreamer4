@@ -2203,6 +2203,12 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     private void AddSkimmerStatus(string message) => AddFooterStatus($"[SKIMMER] {message}");
     private void AddTelnetStatus(string message) => AddFooterStatus($"[TELNET] {message}");
 
+    // Issue #59: the SmartDeck window is constructed by the view, but its
+    // ViewModel needs the radio connection, which stays private here. Handing
+    // out a factory keeps _connection encapsulated instead of exposing the
+    // whole connection as a public property.
+    public SmartDeckViewModel CreateSmartDeckViewModel() => new(_connection);
+
     // Issue #28 (WSJT-X / JTDX setup-and-launch): dumps every Windows audio
     // endpoint (full DirectSound names + WinMM cross-reference) to
     // streamer-status.log so we can characterize how SmartSDR DAXv2 exposes

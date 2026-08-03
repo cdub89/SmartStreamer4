@@ -116,6 +116,7 @@ public sealed class FlexLibRadioConnection : IRadioConnection
     public void Disconnect()
     {
         if (_radio is null) return;
+        StopTelemetry();
         var radio = _radio;
         _radio = null;
         _disconnectInitiatedByUs = true;
@@ -167,7 +168,13 @@ public sealed class FlexLibRadioConnection : IRadioConnection
                 {
                     var nowConnected = _radio?.Connected ?? false;
                     if (!nowConnected && !_disconnectInitiatedByUs)
+                    {
                         EmitDiag("Disconnect: trigger=flexlib.");
+                        // A radio-side drop leaves the meter subscription and
+                        // pump running against a dead Radio; tear them down on
+                        // this path too, not just the operator Disconnect path.
+                        StopTelemetry();
+                    }
                     ConnectionStateChanged?.Invoke(nowConnected);
                 }
                 break;
@@ -542,6 +549,119 @@ public sealed class FlexLibRadioConnection : IRadioConnection
         NetworkStatus = NetworkStatusInfo.Empty;
         NetworkStatusChanged?.Invoke(NetworkStatus);
     }
+
+    // ── Telemetry (issue #59, SmartDeck) ─────────────────────────────────────
+
+    // Display cadence. The four meter streams deliver roughly 28 events/sec
+    // combined: forward power and SWR at ~13.4 Hz, PA temperature and volts at
+    // ~0.4 Hz, both measured by the issue #59 gating spike against a live
+    // FLEX-6400M. 250 ms cuts UI marshals to 4/sec while staying well clear of
+    // the slow pair, so temperature and volts never look stalled.
+    private static readonly TimeSpan TelemetryEmitInterval = TimeSpan.FromMilliseconds(250);
+
+    private readonly TelemetrySnapshotAccumulator _telemetry = new();
+    private readonly object _telemetrySync = new();
+    private CancellationTokenSource? _telemetryCts;
+
+    // The radio the meter handlers were attached to. Held separately from
+    // _radio so a disconnect that clears _radio first can still detach cleanly.
+    private Radio? _telemetryRadio;
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Written on the pump thread, read on the UI thread. Reference assignment
+    /// is atomic and the record is immutable, so a reader sees either the old
+    /// or the new snapshot, never a torn one.
+    /// </remarks>
+    public RadioTelemetryInfo Telemetry { get; private set; } = RadioTelemetryInfo.Empty;
+
+    public event Action<RadioTelemetryInfo>? TelemetryChanged;
+
+    public void StartTelemetry()
+    {
+        lock (_telemetrySync)
+        {
+            if (_telemetryCts is not null) return;
+
+            var radio = _radio;
+            if (radio is null || !radio.Connected) return;
+
+            // Radio-level meter events only. These are radio-scoped values, not
+            // slice-scoped, so no GUI-client binding is involved: the spike
+            // confirmed they arrive with API.IsGUI = false.
+            radio.ForwardPowerDataReady += OnForwardPowerData;
+            radio.SWRDataReady          += OnSwrData;
+            radio.PATempDataReady       += OnPaTempData;
+            radio.VoltsDataReady        += OnVoltsData;
+            _telemetryRadio = radio;
+
+            var cts = new CancellationTokenSource();
+            _telemetryCts = cts;
+            _ = PumpTelemetryAsync(cts.Token);
+        }
+
+        EmitDiag("Telemetry: started.");
+    }
+
+    public void StopTelemetry()
+    {
+        CancellationTokenSource? cts;
+        Radio? radio;
+
+        lock (_telemetrySync)
+        {
+            if (_telemetryCts is null) return;
+            cts = _telemetryCts;
+            radio = _telemetryRadio;
+            _telemetryCts = null;
+            _telemetryRadio = null;
+        }
+
+        try { cts.Cancel(); } catch (ObjectDisposedException) { }
+        cts.Dispose();
+
+        if (radio is not null)
+        {
+            radio.ForwardPowerDataReady -= OnForwardPowerData;
+            radio.SWRDataReady          -= OnSwrData;
+            radio.PATempDataReady       -= OnPaTempData;
+            radio.VoltsDataReady        -= OnVoltsData;
+        }
+
+        // Drop accumulated readings so a later start shows dashes rather than
+        // values from the previous session.
+        _telemetry.Reset();
+        Telemetry = RadioTelemetryInfo.Empty;
+        TelemetryChanged?.Invoke(Telemetry);
+        EmitDiag("Telemetry: stopped.");
+    }
+
+    private async Task PumpTelemetryAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TelemetryEmitInterval);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                // Skips the tick entirely when no sample arrived, rather than
+                // republishing an identical snapshot four times a second.
+                if (!_telemetry.TryTakeSnapshot(TimeProvider.System.GetUtcNow(), out var snapshot))
+                    continue;
+
+                Telemetry = snapshot;
+                TelemetryChanged?.Invoke(snapshot);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected on StopTelemetry.
+        }
+    }
+
+    private void OnForwardPowerData(float data) => _telemetry.Add(TelemetryChannel.ForwardPowerDbm, data);
+    private void OnSwrData(float data)          => _telemetry.Add(TelemetryChannel.Swr, data);
+    private void OnPaTempData(float data)       => _telemetry.Add(TelemetryChannel.PaTempCelsius, data);
+    private void OnVoltsData(float data)        => _telemetry.Add(TelemetryChannel.VoltsDc, data);
 
     // ── Own client handle ────────────────────────────────────────────────────
 
