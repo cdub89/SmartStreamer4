@@ -24,6 +24,11 @@ class Program
         // IniDir field initializer calls RuntimePathResolver.
         RuntimePathResolver.AppDataRootOverride = AppDataPaths.Root;
 
+        // Issue #58: bound log growth. Must run after the root override above
+        // (so it rotates the real logs folder) and before any writer appends,
+        // while no file handles are open.
+        LogFiles.RotateAllAtStartup();
+
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 

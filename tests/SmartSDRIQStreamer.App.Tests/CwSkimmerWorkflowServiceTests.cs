@@ -226,6 +226,7 @@ public sealed class CwSkimmerWorkflowServiceTests
         public string OwnClientStation => MaestroStation;
         public int AvgDAXKbps          => 0;
         public NetworkStatusInfo NetworkStatus => NetworkStatusInfo.Empty;
+        public bool VerboseDiagnostics { get; set; }
 
         public Task<bool> ConnectAsync(DiscoveredRadio radio) => Task.FromResult(true);
         public void Disconnect() { }

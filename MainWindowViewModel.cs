@@ -369,6 +369,11 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     [ObservableProperty]
     private bool _spotForwardingEnabled = true;
 
+    // Issue #58: debug-logging gate, default off. See AppSettings for the full
+    // rationale; propagation to the log writers is in OnDebugLoggingEnabledChanged.
+    [ObservableProperty]
+    private bool _debugLoggingEnabled;
+
     [ObservableProperty]
     private int _spotLifetimeSeconds = 300;
 
@@ -608,6 +613,8 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
             TelnetClusterEnabled = _settings.TelnetClusterEnabled;
             UpdateTelnetIniSummary();
             SpotForwardingEnabled = _settings.SpotForwardingEnabled;
+            DebugLoggingEnabled = _settings.DebugLoggingEnabled;
+            ApplyDebugLogging(_settings.DebugLoggingEnabled);
             SpotLifetimeSeconds = _settings.SpotLifetimeSeconds;
             SpotColor = _settings.SpotColor;
             SpotBackgroundColor = _settings.SpotBackgroundColor;
@@ -1859,9 +1866,14 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
 
         try
         {
-            AppendSpotPayloadLog($"publish-attempt {payloadSummary}");
+            // Issue #58: attempt/success payload lines are debug-only (686k
+            // lines / 95 MB in one field capture, with zero failures);
+            // publish-failed below always logs. Rationale in AppSettings.
+            if (DebugLoggingEnabled)
+                AppendSpotPayloadLog($"publish-attempt {payloadSummary}");
             await _connection.PublishSpotAsync(radioSpot);
-            AppendSpotPayloadLog($"publish-success {payloadSummary}");
+            if (DebugLoggingEnabled)
+                AppendSpotPayloadLog($"publish-success {payloadSummary}");
             UIPost(() => AddSkimmerStatus(
                 $"Spot sent: {spot.Callsign} @ {(spot.FrequencyKhz / 1000.0):F6} MHz"));
         }
@@ -2082,6 +2094,22 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         _settings.SpotForwardingEnabled = value;
     }
 
+    partial void OnDebugLoggingEnabledChanged(bool value)
+    {
+        _settings.DebugLoggingEnabled = value;
+        ApplyDebugLogging(value);
+    }
+
+    // Called from the setter above AND unconditionally after settings load:
+    // the generated setter only fires on a value change, so a same-process
+    // ViewModel recreation could otherwise leave the static telnet flag stale
+    // (Codex audit finding, issue #58).
+    private void ApplyDebugLogging(bool value)
+    {
+        CwSkimmerTelnetClient.VerboseDiagnostics = value;
+        _connection.VerboseDiagnostics = value;
+    }
+
     partial void OnSpotLifetimeSecondsChanged(int value)
     {
         var normalized = Math.Max(30, value);
@@ -2221,10 +2249,10 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     // ViewModel code runs (see Program.cs). Resolution stays at call time so
     // that invariant is the only ordering dependency.
     private static string ResolveStreamerLogPath()
-        => Path.Combine(RuntimePathResolver.ResolveLogsDir(), "streamer-status.log");
+        => Path.Combine(RuntimePathResolver.ResolveLogsDir(), LogFiles.StreamerStatus);
 
     private static string ResolveSpotPayloadLogPath()
-        => Path.Combine(RuntimePathResolver.ResolveLogsDir(), "spot-publish.log");
+        => Path.Combine(RuntimePathResolver.ResolveLogsDir(), LogFiles.SpotPublish);
 
     private static string ResolveLogsFolderPath()
         => RuntimePathResolver.ResolveLogsDir();

@@ -670,9 +670,16 @@
                 <TextBlock Text="Logs" FontSize="11" FontWeight="Bold"/>
             </TabItem.Header>
             <Grid Margin="8" RowDefinitions="Auto,Auto,*" RowSpacing="6">
-                <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
+                <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto">
                     <TextBlock Grid.Column="0" Text="Streamer status" FontSize="11" FontWeight="SemiBold" Foreground="Gray" VerticalAlignment="Center"/>
-                    <Button Grid.Column="1"
+                    <CheckBox Grid.Column="1"
+                              IsChecked="{Binding DebugLoggingEnabled}"
+                              Content="Debug logging"
+                              FontSize="11"
+                              Margin="0,0,8,0"
+                              VerticalAlignment="Center"
+                              ToolTip.Tip="Logs per-spot publish payloads, CW Skimmer telnet spot echoes, and DAX-IQ stream churn. Leave off for normal operation to keep the logs small (issue #58)."/>
+                    <Button Grid.Column="2"
                             Classes="action-button"
                             Content="Dump Audio Devices"
                             Command="{Binding DumpAudioDevicesCommand}"

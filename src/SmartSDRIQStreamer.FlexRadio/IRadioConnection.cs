@@ -90,6 +90,16 @@ public interface IRadioConnection
     event Action<string> DiagnosticEvent;
 
     /// <summary>
+    /// When true, high-churn object-lifecycle diagnostics (DAX-IQ stream
+    /// add/remove, which fires for every station's DAX activity on the radio)
+    /// are emitted via <see cref="DiagnosticEvent"/>. Lifecycle diagnostics
+    /// (connect, disconnect, GUI clients, pan/slice add/remove) always fire.
+    /// Default false; toggled by the operator's debug-logging setting
+    /// (issue #58).
+    /// </summary>
+    bool VerboseDiagnostics { get; set; }
+
+    /// <summary>
     /// Tune the given slice to <paramref name="freqMHz"/>.
     /// No-op if the slice is not found or the radio is not connected.
     /// </summary>

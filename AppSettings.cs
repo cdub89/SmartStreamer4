@@ -67,6 +67,17 @@ public sealed class AppSettings
     public string SpotColor { get; set; } = "#FF00FFFF";
     public string SpotBackgroundColor { get; set; } = "#00000000";
 
+    // ── Logging (issue #58) ───────────────────────────────────────────────────
+    // Symptom (reported 2026-07): logs grew unbounded in the field (~133 MB
+    // over 104 days), 97% of it per-spot chatter logged three times. Root
+    // cause: every log writer was unconditional. Fix: per-spot payload lines,
+    // telnet spot/QSY echoes, and DAX-IQ stream churn log only when this is
+    // true; lifecycle and error lines always log. One bool chosen over log
+    // levels as the smallest surface. Startup rotation (LogFiles) is separate
+    // and unconditional.
+
+    public bool DebugLoggingEnabled { get; set; }
+
     // ── Update checks ──────────────────────────────────────────────────────────
 
     public bool UpdateAutoCheckEnabled { get; set; } = true;

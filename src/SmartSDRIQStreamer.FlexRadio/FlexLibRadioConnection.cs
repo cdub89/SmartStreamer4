@@ -31,6 +31,16 @@ public sealed class FlexLibRadioConnection : IRadioConnection
 
     private void EmitDiag(string line) => DiagnosticEvent?.Invoke(line);
 
+    /// <inheritdoc />
+    /// <remarks>Volatile: written on the UI thread, read on FlexLib event threads.</remarks>
+    public bool VerboseDiagnostics
+    {
+        get => _verboseDiagnostics;
+        set => _verboseDiagnostics = value;
+    }
+
+    private volatile bool _verboseDiagnostics;
+
     // ── Connection ───────────────────────────────────────────────────────────
 
     public bool IsConnected        => _radio?.Connected ?? false;
@@ -203,6 +213,13 @@ public sealed class FlexLibRadioConnection : IRadioConnection
     /// </summary>
     private void LogMoxTransition(bool mox)
     {
+        // Issue #58 (2026-08-02): debug-only. Even throttled, CW operation
+        // logs a MOX line per keying burst, dirtying the support log during
+        // every QSO. Issue #51 captures now require the operator to enable
+        // Debug logging on the Logs tab first.
+        if (!VerboseDiagnostics)
+            return;
+
         if (_lastSeenMox == mox)
             return;
         _lastSeenMox = mox;
@@ -398,9 +415,16 @@ public sealed class FlexLibRadioConnection : IRadioConnection
         // the stream (typically DAX-the-app), not the GUI client that owns the
         // panadapter. It's expected to be a non-GUI handle, so suppress the
         // fallback warning for this resolve.
-        EmitDiag(
-            $"DAX-IQ stream added: ch={info.DAXIQChannel}, ClientHandle=0x{info.ClientHandle:X}, "
-            + $"station={ResolveStation(info.ClientHandle, logFallback: false)}, sampleRate={info.SampleRate}.");
+        // Issue #58: add/remove fires for every station's DAX churn on the
+        // radio and was 78% of streamer-status.log in a field capture, so it is
+        // verbose-only. The pan-to-channel mapping stays visible at default
+        // verbosity via the "Panadapter added ... DAX-IQ ch=" lines.
+        if (VerboseDiagnostics)
+        {
+            EmitDiag(
+                $"DAX-IQ stream added: ch={info.DAXIQChannel}, ClientHandle=0x{info.ClientHandle:X}, "
+                + $"station={ResolveStation(info.ClientHandle, logFallback: false)}, sampleRate={info.SampleRate}.");
+        }
         DaxIQStreamAdded?.Invoke(info);
     }
 
@@ -411,7 +435,9 @@ public sealed class FlexLibRadioConnection : IRadioConnection
 
         if (_daxIQStreams.TryRemove(iq.DAXIQChannel, out var info))
         {
-            EmitDiag($"DAX-IQ stream removed: ch={info.DAXIQChannel}.");
+            // Issue #58: verbose-only, see the stream-added comment above.
+            if (VerboseDiagnostics)
+                EmitDiag($"DAX-IQ stream removed: ch={info.DAXIQChannel}.");
             DaxIQStreamRemoved?.Invoke(info);
         }
     }

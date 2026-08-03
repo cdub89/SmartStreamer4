@@ -117,7 +117,8 @@ public sealed class CwSkimmerTelnetClient : ICwSkimmerTelnetClient
         {
             var command = $"SKIMMER/LO_FREQ {freqHz}";
             await _writer.WriteLineAsync(command);
-            LogDiag($"TX {command}");
+            if (VerboseDiagnostics)
+                LogDiag($"TX {command}");
             EmitThrottledSyncStatus(
                 ref _lastLoSyncStatusUtc,
                 TimeSpan.FromSeconds(2),
@@ -153,7 +154,8 @@ public sealed class CwSkimmerTelnetClient : ICwSkimmerTelnetClient
             // Outbound coalescing and idempotence are handled by CwSkimmerSyncTracker.
             var command = $"SKIMMER/QSY {normalizedKhz.ToString("F3", CultureInfo.InvariantCulture)}";
             await _writer.WriteLineAsync(command);
-            LogDiag($"TX {command}");
+            if (VerboseDiagnostics)
+                LogDiag($"TX {command}");
             var freqMHz = freqKhz / 1000.0;
             EmitQsySyncStatus(freqMHz);
         }
@@ -356,11 +358,16 @@ public sealed class CwSkimmerTelnetClient : ICwSkimmerTelnetClient
             return;
         }
 
+        // Issue #58: click echoes are rare operator actions and always log;
+        // spot ("DX de") and SKIMMER/ echoes arrive per spot (343k lines in
+        // one field capture) and log only in debug mode.
         var isEmptyClickEcho = line.Contains("Clicked on \"\"", StringComparison.OrdinalIgnoreCase);
-        if (!isEmptyClickEcho &&
-            (line.Contains("Clicked on", StringComparison.OrdinalIgnoreCase) ||
-             line.Contains("SKIMMER/", StringComparison.OrdinalIgnoreCase) ||
-             line.TrimStart().StartsWith("DX de ", StringComparison.OrdinalIgnoreCase)))
+        var isClickEcho = !isEmptyClickEcho &&
+                          line.Contains("Clicked on", StringComparison.OrdinalIgnoreCase);
+        if (isClickEcho ||
+            (VerboseDiagnostics &&
+             (line.Contains("SKIMMER/", StringComparison.OrdinalIgnoreCase) ||
+              line.TrimStart().StartsWith("DX de ", StringComparison.OrdinalIgnoreCase))))
         {
             LogDiag($"RX {line}");
         }
@@ -470,6 +477,22 @@ public sealed class CwSkimmerTelnetClient : ICwSkimmerTelnetClient
         return sb.ToString();
     }
 
+    /// <summary>
+    /// Issue #58: gates the per-spot RX echoes and per-QSY/LO TX echoes out of
+    /// cwskimmer-telnet-client.log by default (one field capture held 343k
+    /// spot echo lines in 37 MB). Lifecycle (CONNECT/LOGIN/DISCONNECT), click
+    /// echoes, and error lines always log. Set from the operator's
+    /// debug-logging toggle at startup and on change. Volatile: written on the
+    /// UI thread, read on the telnet RX/TX worker threads.
+    /// </summary>
+    public static bool VerboseDiagnostics
+    {
+        get => s_verboseDiagnostics;
+        set => s_verboseDiagnostics = value;
+    }
+
+    private static volatile bool s_verboseDiagnostics;
+
     private static void LogDiag(string message)
     {
         try
@@ -515,7 +538,7 @@ public sealed class CwSkimmerTelnetClient : ICwSkimmerTelnetClient
 
     private static string ResolveDiagPath()
     {
-        return Path.Combine(RuntimePathResolver.ResolveLogsDir(), "cwskimmer-telnet-client.log");
+        return Path.Combine(RuntimePathResolver.ResolveLogsDir(), LogFiles.TelnetClient);
     }
 
     private void EmitStatus(string message)
