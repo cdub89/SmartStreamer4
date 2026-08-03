@@ -21,11 +21,13 @@ public class SmartDeckViewModelTests
         string mode = "CW",
         string rxAnt = "ANT1",
         string txAnt = "ANT1",
-        double freqMhz = 14.050) =>
+        double freqMhz = 14.050,
+        int agcThreshold = 50) =>
         new(letter, mode, freqMhz, false, 0, 0, PanadapterStreamId: 100, ClientStation: station)
         {
             RxAntenna = rxAnt,
             TxAntenna = txAnt,
+            AgcThreshold = agcThreshold,
             RxAntennaOptions = ["ANT1", "ANT2", "RX_A"],
             TxAntennaOptions = ["ANT1", "ANT2"]
         };
@@ -424,6 +426,215 @@ public class SmartDeckViewModelTests
         connection.RaiseSliceUpdated(Slice("A"));
 
         Assert.Equal("B", viewModel.SelectedSlice?.Letter);
+    }
+
+    // ── RF gain (phase 2c) ───────────────────────────────────────────────────
+
+    private static PanadapterInfo Pan(int rfGain = 0, bool withRange = true) =>
+        new(StreamId: 100, CenterFreqMHz: 14.05, DAXIQChannel: 1, ClientStation: TestStation)
+        {
+            RfGain = rfGain,
+            RfGainLow = withRange ? -8 : 0,
+            RfGainHigh = withRange ? 32 : 0,
+            RfGainStep = withRange ? 4 : 0
+        };
+
+    [Fact]
+    public void Rf_gain_reads_from_the_panadapter_behind_the_selected_slice()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A"));
+        connection.SetPanadapters(Pan(rfGain: 12));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+
+        viewModel.Start();
+
+        Assert.Equal("12 dB", viewModel.RfGainText);
+        Assert.True(viewModel.CanAdjustRfGain);
+    }
+
+    [Fact]
+    public void Rf_gain_is_unavailable_until_the_radio_reports_a_range()
+    {
+        // GetRFGainInfo() is an explicit request whose reply arrives after the
+        // panadapter is first tracked, so there is a window with no range.
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A"));
+        connection.SetPanadapters(Pan(withRange: false));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+
+        viewModel.Start();
+
+        Assert.False(viewModel.CanAdjustRfGain);
+        Assert.Equal("---", viewModel.RfGainText);
+    }
+
+    [Fact]
+    public void Rf_gain_becomes_available_when_the_range_reply_arrives()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A"));
+        connection.SetPanadapters(Pan(withRange: false));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+        viewModel.Start();
+
+        connection.SetPanadapters(Pan(rfGain: 8));
+        connection.RaisePanadapterUpdated(Pan(rfGain: 8));
+
+        Assert.True(viewModel.CanAdjustRfGain);
+        Assert.Equal("8 dB", viewModel.RfGainText);
+    }
+
+    [Fact]
+    public async Task Rf_gain_up_writes_one_step_higher()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A"));
+        connection.SetPanadapters(Pan(rfGain: 12));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+        viewModel.Start();
+
+        await viewModel.RfGainUpCommand.ExecuteAsync(null);
+
+        var (pan, gain) = Assert.Single(connection.RfGainWrites);
+        Assert.Equal(100u, pan.StreamId);
+        Assert.Equal(16, gain);
+        Assert.Equal("16 dB", viewModel.RfGainText);
+    }
+
+    [Fact]
+    public async Task Rf_gain_down_writes_one_step_lower()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A"));
+        connection.SetPanadapters(Pan(rfGain: 12));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+        viewModel.Start();
+
+        await viewModel.RfGainDownCommand.ExecuteAsync(null);
+
+        Assert.Equal(8, Assert.Single(connection.RfGainWrites).RfGain);
+    }
+
+    [Fact]
+    public async Task Rf_gain_at_the_ceiling_writes_nothing()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A"));
+        connection.SetPanadapters(Pan(rfGain: 32));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+        viewModel.Start();
+
+        await viewModel.RfGainUpCommand.ExecuteAsync(null);
+
+        Assert.Empty(connection.RfGainWrites);
+    }
+
+    [Fact]
+    public async Task Rf_gain_with_no_panadapter_behind_the_slice_writes_nothing()
+    {
+        // A slice whose panadapter is not in the list, e.g. mid-teardown.
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A"));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+        viewModel.Start();
+
+        await viewModel.RfGainUpCommand.ExecuteAsync(null);
+
+        Assert.Empty(connection.RfGainWrites);
+        Assert.False(viewModel.CanAdjustRfGain);
+    }
+
+    // ── AGC-T ────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Agc_threshold_reads_from_the_selected_slice()
+    {
+        // Slice-scoped, unlike RF gain, and always known: the 0-100 range is
+        // fixed by the protocol so there is no "not yet reported" state.
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", agcThreshold: 65));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+
+        viewModel.Start();
+
+        Assert.Equal("65", viewModel.AgcThresholdText);
+    }
+
+    [Fact]
+    public async Task Agc_threshold_up_writes_one_step_higher()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", agcThreshold: 50));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+        viewModel.Start();
+
+        await viewModel.AgcThresholdUpCommand.ExecuteAsync(null);
+
+        var (slice, threshold) = Assert.Single(connection.AgcThresholdWrites);
+        Assert.Equal("A", slice.Letter);
+        Assert.Equal(55, threshold);
+        Assert.Equal("55", viewModel.AgcThresholdText);
+    }
+
+    [Fact]
+    public async Task Agc_threshold_down_writes_one_step_lower()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", agcThreshold: 50));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+        viewModel.Start();
+
+        await viewModel.AgcThresholdDownCommand.ExecuteAsync(null);
+
+        Assert.Equal(45, Assert.Single(connection.AgcThresholdWrites).Threshold);
+    }
+
+    [Theory]
+    // The protocol range is 0-100 and the step is 5, so both ends are reachable
+    // exactly and stepping past them writes nothing.
+    [InlineData(98, 1, 100)]
+    [InlineData(2, -1, 0)]
+    public async Task Agc_threshold_clamps_to_the_protocol_range(int start, int direction, int expected)
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", agcThreshold: start));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+        viewModel.Start();
+
+        var command = direction > 0 ? viewModel.AgcThresholdUpCommand : viewModel.AgcThresholdDownCommand;
+        await command.ExecuteAsync(null);
+
+        Assert.Equal(expected, Assert.Single(connection.AgcThresholdWrites).Threshold);
+    }
+
+    [Theory]
+    [InlineData(100, 1)]
+    [InlineData(0, -1)]
+    public async Task Agc_threshold_at_a_limit_writes_nothing(int start, int direction)
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", agcThreshold: start));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+        viewModel.Start();
+
+        var command = direction > 0 ? viewModel.AgcThresholdUpCommand : viewModel.AgcThresholdDownCommand;
+        await command.ExecuteAsync(null);
+
+        Assert.Empty(connection.AgcThresholdWrites);
+    }
+
+    [Fact]
+    public async Task Agc_threshold_with_no_slice_selected_writes_nothing()
+    {
+        var connection = new FakeTelemetryConnection();
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+        viewModel.Start();
+
+        await viewModel.AgcThresholdUpCommand.ExecuteAsync(null);
+
+        Assert.Empty(connection.AgcThresholdWrites);
+        Assert.Equal("---", viewModel.AgcThresholdText);
     }
 
     // ── Band buttons (phase 2b) ──────────────────────────────────────────────

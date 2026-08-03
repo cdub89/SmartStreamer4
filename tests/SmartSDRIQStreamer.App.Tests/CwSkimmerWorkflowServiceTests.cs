@@ -243,6 +243,8 @@ public sealed class CwSkimmerWorkflowServiceTests
         public Task SetSliceModeAsync(SliceInfo slice, SliceMode mode)             => Task.CompletedTask;
         public Task SetSliceRxAntennaAsync(SliceInfo slice, string antenna)        => Task.CompletedTask;
         public Task SetSliceTxAntennaAsync(SliceInfo slice, string antenna)        => Task.CompletedTask;
+        public Task SetPanadapterRfGainAsync(PanadapterInfo pan, int rfGain)      => Task.CompletedTask;
+        public Task SetSliceAgcThresholdAsync(SliceInfo slice, int threshold)     => Task.CompletedTask;
 
         public event Action<bool>? ConnectionStateChanged;
         public event Action<PanadapterInfo>? PanadapterAdded;

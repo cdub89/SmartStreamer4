@@ -15,6 +15,22 @@ public sealed record PanadapterInfo(
     string ClientStation,
     uint   ClientHandle = 0)
 {
+    // Issue #59 phase 2c: RF gain for the SmartDeck control surface. The range
+    // is radio-reported per panadapter rather than a per-model table we would
+    // have to maintain, so it is correct on any model. All four are zero until
+    // the radio answers GetRFGainInfo().
+    public int RfGain { get; init; }
+    public int RfGainLow { get; init; }
+    public int RfGainHigh { get; init; }
+    public int RfGainStep { get; init; }
+
+    /// <summary>
+    /// True once the radio has reported a usable RF gain range. Until then the
+    /// control has no limits to clamp against and stays disabled, rather than
+    /// stepping against a 0-to-0 range.
+    /// </summary>
+    public bool HasRfGainRange => RfGainHigh > RfGainLow && RfGainStep > 0;
+
     private long CenterFreqHz => (long)Math.Round(CenterFreqMHz * 1_000_000d);
 
     public string DisplayLabel =>
@@ -34,6 +50,38 @@ public enum SliceMode
     Usb,
     Lsb,
     Am
+}
+
+/// <summary>
+/// Stepping arithmetic for the SmartDeck up/down controls: RF gain (issue #59
+/// phase 2c) and AGC-T. Separated from the connection so the clamping rules are
+/// unit-testable without a radio, and shared because both controls step an
+/// integer within a bounded range; only where the bounds come from differs.
+/// </summary>
+public static class SteppedRange
+{
+    /// <summary>
+    /// The value one step up (<paramref name="direction"/> +1) or down (-1)
+    /// from <paramref name="current"/>, clamped to [low, high].
+    /// </summary>
+    /// <returns>
+    /// The new value, or <c>null</c> when the range is unusable or the value
+    /// would not change, so the caller can skip the radio write entirely
+    /// rather than re-sending the value the radio already holds.
+    /// </returns>
+    public static int? Next(int current, int direction, int low, int high, int step)
+    {
+        if (step <= 0 || high <= low) return null;
+
+        var next = current + (direction * step);
+
+        // Clamp rather than refuse: stepping up from one step below the ceiling
+        // should land on the ceiling, not do nothing because the full step
+        // would overshoot.
+        next = Math.Clamp(next, low, high);
+
+        return next == current ? null : next;
+    }
 }
 
 public static class SliceModes
@@ -87,6 +135,15 @@ public sealed record SliceInfo(
 
     /// <summary>The slice's mode when SmartDeck offers it, otherwise null.</summary>
     public SliceMode? OfferedMode => SliceModes.FromRadioValue(Mode);
+
+    /// <summary>
+    /// AGC threshold (AGC-T), 0-100. Slice-scoped, unlike RF gain which belongs
+    /// to the panadapter. The range is fixed by the protocol rather than
+    /// radio-reported: FlexLib clamps to 0-100 on write and rejects anything
+    /// above 100 on read (Slice.cs:1361-1380, 2074-2085), so there is no
+    /// range-request round trip and no "not yet known" state.
+    /// </summary>
+    public int AgcThreshold { get; init; }
 
     public string DisplayLabel
     {

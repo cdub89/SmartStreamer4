@@ -119,6 +119,20 @@ public interface IRadioConnection
     Task SetSliceModeAsync(SliceInfo slice, SliceMode mode);
 
     /// <summary>
+    /// Set the slice's AGC threshold (AGC-T), 0-100. FlexLib clamps the value
+    /// itself, so callers need not. No-op if the slice is not found or already
+    /// holds the value.
+    /// </summary>
+    Task SetSliceAgcThresholdAsync(SliceInfo slice, int threshold);
+
+    /// <summary>
+    /// Set the panadapter's RF gain, in dB. Callers clamp to the panadapter's
+    /// radio-reported range first (see <see cref="SteppedRange.Next"/>); this
+    /// no-ops if the panadapter is not found or already holds the value.
+    /// </summary>
+    Task SetPanadapterRfGainAsync(PanadapterInfo panadapter, int rfGain);
+
+    /// <summary>
     /// Set the slice's receive antenna to one of its radio-reported
     /// <see cref="SliceInfo.RxAntennaOptions"/>. The radio refuses antenna
     /// changes while transmitting, so no app-side transmit guard is applied.

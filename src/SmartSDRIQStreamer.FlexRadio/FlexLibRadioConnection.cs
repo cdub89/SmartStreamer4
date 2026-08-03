@@ -284,6 +284,14 @@ public sealed class FlexLibRadioConnection : IRadioConnection
     {
         pan.PropertyChanged += OnPanadapterPropertyChanged;
         _flexPanadapters[pan.StreamID] = pan;
+
+        // Issue #59 phase 2c: the RF gain range is not part of a panadapter's
+        // normal status; it only arrives in reply to this explicit request
+        // (Panadapter.cs:39-65). Asked once per panadapter here rather than
+        // lazily when SmartDeck opens: it is a single command per panadapter,
+        // and the reply then flows through the usual property-changed path.
+        pan.GetRFGainInfo();
+
         var info = ToPanadapterInfo(pan);
         _panadapters[pan.StreamID] = info;
         return info;
@@ -292,7 +300,8 @@ public sealed class FlexLibRadioConnection : IRadioConnection
     private void OnPanadapterPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (sender is not Panadapter pan) return;
-        if (e.PropertyName is not ("CenterFreq" or "DAXIQChannel")) return;
+        if (e.PropertyName is not ("CenterFreq" or "DAXIQChannel"
+            or "RFGain" or "RFGainLow" or "RFGainHigh" or "RFGainStep")) return;
 
         var info = ToPanadapterInfo(pan);
         _panadapters[pan.StreamID] = info;
@@ -372,6 +381,27 @@ public sealed class FlexLibRadioConnection : IRadioConnection
     }
 
     // ── Slice control surface (issue #59 phase 2a) ───────────────────────────
+
+    public Task SetSliceAgcThresholdAsync(SliceInfo slice, int threshold)
+    {
+        if (FindFlexSlice(slice) is { } target && target.AGCThreshold != threshold)
+        {
+            // FlexLib clamps to 0-100 in the setter itself, so no clamp here.
+            target.AGCThreshold = threshold;
+            EmitDiag($"Slice {slice.Letter}: AGC-T set to {threshold}.");
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task SetPanadapterRfGainAsync(PanadapterInfo panadapter, int rfGain)
+    {
+        if (_flexPanadapters.TryGetValue(panadapter.StreamId, out var target) && target.RFGain != rfGain)
+        {
+            target.RFGain = rfGain;
+            EmitDiag($"Panadapter 0x{panadapter.StreamId:X}: RF gain set to {rfGain} dB.");
+        }
+        return Task.CompletedTask;
+    }
 
     public Task SetSliceModeAsync(SliceInfo slice, SliceMode mode)
     {
@@ -775,7 +805,15 @@ public sealed class FlexLibRadioConnection : IRadioConnection
     // ── Mapping helpers ──────────────────────────────────────────────────────
 
     private PanadapterInfo ToPanadapterInfo(Panadapter pan) =>
-        new(pan.StreamID, pan.CenterFreq, pan.DAXIQChannel, ResolveStation(pan.ClientHandle), pan.ClientHandle);
+        new(pan.StreamID, pan.CenterFreq, pan.DAXIQChannel, ResolveStation(pan.ClientHandle), pan.ClientHandle)
+        {
+            // Issue #59 phase 2c. Low/High/Step stay zero until the radio
+            // answers GetRFGainInfo(), which TrackPanadapter requests.
+            RfGain     = pan.RFGain,
+            RfGainLow  = pan.RFGainLow,
+            RfGainHigh = pan.RFGainHigh,
+            RfGainStep = pan.RFGainStep
+        };
 
     private SliceInfo ToSliceInfo(Slice slc) =>
         new(slc.Letter    ?? string.Empty,
@@ -794,7 +832,8 @@ public sealed class FlexLibRadioConnection : IRadioConnection
             RxAntenna = slc.RXAnt ?? string.Empty,
             TxAntenna = slc.TXAnt ?? string.Empty,
             RxAntennaOptions = slc.RXAntList ?? [],
-            TxAntennaOptions = slc.TXAntList ?? []
+            TxAntennaOptions = slc.TXAntList ?? [],
+            AgcThreshold = slc.AGCThreshold
         };
 
     private static bool ShouldPublishSliceUpdate(string? propertyName)
@@ -810,6 +849,10 @@ public sealed class FlexLibRadioConnection : IRadioConnection
         // reach the UI. Without this the selectors would never populate,
         // because the lists arrive after the slice is first tracked.
         if (propertyName is "RXAnt" or "TXAnt" or "RXAntList" or "TXAntList")
+            return true;
+
+        // AGC-T drives its own SmartDeck readout.
+        if (propertyName is "AGCThreshold")
             return true;
 
         // FlexLib variants expose RIT state/offset and tune-step with different names.

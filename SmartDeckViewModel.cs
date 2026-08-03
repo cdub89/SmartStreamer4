@@ -122,6 +122,95 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
         CurrentBand = band;
     }
 
+    // ── RF gain (phase 2c) ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// The panadapter behind the selected slice. RF gain is a panadapter
+    /// property, not a slice one, so every gain read and write hops through
+    /// <see cref="SliceInfo.PanadapterStreamId"/>.
+    /// </summary>
+    private PanadapterInfo? SelectedPanadapter =>
+        SelectedSlice is { } slice
+            ? _connection.Panadapters.FirstOrDefault(p => p.StreamId == slice.PanadapterStreamId)
+            : null;
+
+    [ObservableProperty]
+    private string _rfGainText = Absent;
+
+    /// <summary>
+    /// False until the radio has answered with a usable RF gain range, so the
+    /// buttons cannot step against a 0-to-0 range.
+    /// </summary>
+    [ObservableProperty]
+    private bool _canAdjustRfGain;
+
+    [RelayCommand]
+    private Task RfGainUpAsync() => StepRfGainAsync(direction: 1);
+
+    [RelayCommand]
+    private Task RfGainDownAsync() => StepRfGainAsync(direction: -1);
+
+    private async Task StepRfGainAsync(int direction)
+    {
+        if (SelectedPanadapter is not { } pan) return;
+
+        var next = SteppedRange.Next(pan.RfGain, direction, pan.RfGainLow, pan.RfGainHigh, pan.RfGainStep);
+        if (next is not { } gain) return;
+
+        await _connection.SetPanadapterRfGainAsync(pan, gain);
+
+        // Shown immediately rather than waiting for the radio's echo, so a
+        // button press does not feel laggy; the echo re-applies the same value.
+        RfGainText = FormatRfGain(gain);
+    }
+
+    private void ApplyRfGainState()
+    {
+        var pan = SelectedPanadapter;
+        CanAdjustRfGain = pan?.HasRfGainRange ?? false;
+        RfGainText = pan is { HasRfGainRange: true } ready ? FormatRfGain(ready.RfGain) : Absent;
+    }
+
+    internal static string FormatRfGain(int gain) => $"{gain} dB";
+
+    // ── AGC-T (AGC threshold) ────────────────────────────────────────────────
+
+    // AGC-T is slice-scoped and its 0-100 range is fixed by the protocol rather
+    // than radio-reported, so unlike RF gain there is no range request and no
+    // "not yet known" state. The step is ours to choose: 5 gives 20 presses
+    // end to end, which is coarse enough to be quick and fine enough to tune by.
+    private const int AgcThresholdLow = 0;
+    private const int AgcThresholdHigh = 100;
+    private const int AgcThresholdStep = 5;
+
+    [ObservableProperty]
+    private string _agcThresholdText = Absent;
+
+    [RelayCommand]
+    private Task AgcThresholdUpAsync() => StepAgcThresholdAsync(direction: 1);
+
+    [RelayCommand]
+    private Task AgcThresholdDownAsync() => StepAgcThresholdAsync(direction: -1);
+
+    private async Task StepAgcThresholdAsync(int direction)
+    {
+        if (SelectedSlice is not { } slice) return;
+
+        var next = SteppedRange.Next(
+            slice.AgcThreshold, direction, AgcThresholdLow, AgcThresholdHigh, AgcThresholdStep);
+        if (next is not { } threshold) return;
+
+        await _connection.SetSliceAgcThresholdAsync(slice, threshold);
+
+        // Shown immediately rather than waiting for the radio's echo, so a
+        // button press does not feel laggy; the echo re-applies the same value.
+        AgcThresholdText = FormatAgcThreshold(threshold);
+    }
+
+    internal static string FormatAgcThreshold(int threshold) => threshold.ToString(CultureInfo.InvariantCulture);
+
+    private void OnPanadapterListChanged(PanadapterInfo panadapter) => _postToUi(ApplyRfGainState);
+
     partial void OnSelectedSliceChanged(SliceInfo? value) => ApplySliceState(value);
 
     // No transmit guard on either antenna change: the radio refuses them while
@@ -149,6 +238,8 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
             SelectedTxAntenna = string.IsNullOrEmpty(slice?.TxAntenna) ? null : slice.TxAntenna;
             CurrentMode = slice?.OfferedMode;
             CurrentBand = slice is null ? string.Empty : HamBands.Label(slice.FreqMHz);
+            AgcThresholdText = slice is null ? Absent : FormatAgcThreshold(slice.AgcThreshold);
+            ApplyRfGainState();
         }
         finally
         {
@@ -212,6 +303,9 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
         _connection.SliceAdded += OnSliceListChanged;
         _connection.SliceRemoved += OnSliceListChanged;
         _connection.SliceUpdated += OnSliceListChanged;
+        _connection.PanadapterAdded += OnPanadapterListChanged;
+        _connection.PanadapterRemoved += OnPanadapterListChanged;
+        _connection.PanadapterUpdated += OnPanadapterListChanged;
         _connection.StartTelemetry();
 
         RefreshSlices();
@@ -232,6 +326,9 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
         _connection.SliceAdded -= OnSliceListChanged;
         _connection.SliceRemoved -= OnSliceListChanged;
         _connection.SliceUpdated -= OnSliceListChanged;
+        _connection.PanadapterAdded -= OnPanadapterListChanged;
+        _connection.PanadapterRemoved -= OnPanadapterListChanged;
+        _connection.PanadapterUpdated -= OnPanadapterListChanged;
         _connection.StopTelemetry();
         Apply(RadioTelemetryInfo.Empty);
     }

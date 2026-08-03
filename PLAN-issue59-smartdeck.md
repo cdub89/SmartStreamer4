@@ -380,8 +380,29 @@ memory, four mode buttons. Roughly seventeen controls, split by risk profile:
   each is overwritten the first time that band is left, so a default only ever
   matters once. 60m is included in the ten; it is channelized and has no SKCC
   calling frequency, so its default is a US channel centre.
-- **2c**: RF gain up/down with readout. Needs the panadapter hop plus
-  `GetRFGainInfo()` for radio-reported min/max/step.
+- **2c (built 2026-08-02)**: RF gain up/down with readout. Writes
+  `Panadapter.RFGain` on the panadapter behind the selected slice, reached via
+  `SliceInfo.PanadapterStreamId`. The range is radio-reported, so there is no
+  per-model table: `RFGainLow` / `RFGainHigh` / `RFGainStep` arrive only in
+  reply to `GetRFGainInfo()` (`Panadapter.cs:39-65`), which is **not** part of
+  a panadapter's normal status. `TrackPanadapter` issues that request once per
+  panadapter; until the reply lands, all three read zero, so the control stays
+  disabled rather than stepping against a 0-to-0 range. Stepping clamps to the
+  range (so one step below the ceiling reaches the ceiling) and returns absent
+  when the value would not change, letting the caller skip the radio write
+  rather than re-send a value the radio already holds.
+- **AGC-T (built 2026-08-02)**, added at the operator's request and not in the
+  original phase 2 inventory. `Slice.AGCThreshold`, sent as
+  `slice set N agc_threshold=X`. **Slice-scoped, unlike RF gain**, so it sits
+  with mode and antenna rather than with the panadapter controls. Its 0-100
+  range is fixed by the protocol rather than radio-reported: FlexLib clamps on
+  write and rejects out-of-range reads (`Slice.cs:1361-1380`, `2074-2085`), so
+  there is no range request and no "not yet known" state. Step is 5, which is
+  ours to choose rather than the radio's, giving 20 presses end to end.
+
+RF gain and AGC-T both step an integer inside a bounded range, differing only
+in where the bounds come from, so the clamping arithmetic is shared in
+`SteppedRange.Next` rather than duplicated per control.
 
 ### No GUI-client binding, and no "active slice"
 

@@ -44,7 +44,7 @@ internal sealed class FakeTelemetryConnection : IRadioConnection
     public NetworkStatusInfo NetworkStatus => NetworkStatusInfo.Empty;
     public bool VerboseDiagnostics { get; set; }
 
-    public IReadOnlyList<PanadapterInfo> Panadapters => [];
+    public IReadOnlyList<PanadapterInfo> Panadapters => _panadapters;
     public IReadOnlyList<SliceInfo> Slices => _slices;
     public IReadOnlyList<DaxIQStreamInfo> DaxIQStreams => [];
     public IReadOnlyList<GuiClientInfo> GuiClients => [];
@@ -91,6 +91,29 @@ internal sealed class FakeTelemetryConnection : IRadioConnection
     /// <summary>Sets the slice list the ViewModel reads on refresh.</summary>
     public void SetSlices(params SliceInfo[] slices) => _slices = slices;
 
+    public List<(SliceInfo Slice, int Threshold)> AgcThresholdWrites { get; } = [];
+
+    public Task SetSliceAgcThresholdAsync(SliceInfo slice, int threshold)
+    {
+        AgcThresholdWrites.Add((slice, threshold));
+        return Task.CompletedTask;
+    }
+
+    public List<(PanadapterInfo Panadapter, int RfGain)> RfGainWrites { get; } = [];
+
+    public Task SetPanadapterRfGainAsync(PanadapterInfo panadapter, int rfGain)
+    {
+        RfGainWrites.Add((panadapter, rfGain));
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Sets the panadapter list the ViewModel reads for RF gain.</summary>
+    public void SetPanadapters(params PanadapterInfo[] panadapters) => _panadapters = panadapters;
+
+    public void RaisePanadapterUpdated(PanadapterInfo panadapter) => PanadapterUpdated?.Invoke(panadapter);
+
+    private PanadapterInfo[] _panadapters = [];
+
     public void RaiseSliceUpdated(SliceInfo slice) => SliceUpdated?.Invoke(slice);
     public void RaiseSliceRemoved(SliceInfo slice) => SliceRemoved?.Invoke(slice);
     public void RaiseSliceAdded(SliceInfo slice) => SliceAdded?.Invoke(slice);
@@ -116,7 +139,6 @@ internal sealed class FakeTelemetryConnection : IRadioConnection
     {
         PanadapterAdded?.Invoke(default!);
         PanadapterRemoved?.Invoke(default!);
-        PanadapterUpdated?.Invoke(default!);
         DaxIQStreamAdded?.Invoke(default!);
         DaxIQStreamRemoved?.Invoke(default!);
         DaxIQStreamUpdated?.Invoke(default!);
