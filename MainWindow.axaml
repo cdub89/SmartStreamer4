@@ -47,6 +47,21 @@
                 <Setter Property="Background" Value="#1B5E20"/>
                 <Setter Property="TextBlock.Foreground" Value="White"/>
             </Style>
+            <!-- Debug logging on: orange so the non-default logging mode reads at
+                 a glance without hovering for the tooltip. Same normal/hover/pressed
+                 treatment as .streaming above (issue #58). -->
+            <Style Selector="Button.debug-on">
+                <Setter Property="Background" Value="#E65100"/>
+                <Setter Property="Foreground" Value="White"/>
+            </Style>
+            <Style Selector="Button.debug-on:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+                <Setter Property="Background" Value="#EF6C00"/>
+                <Setter Property="TextBlock.Foreground" Value="White"/>
+            </Style>
+            <Style Selector="Button.debug-on:pressed /template/ ContentPresenter#PART_ContentPresenter">
+                <Setter Property="Background" Value="#BF360C"/>
+                <Setter Property="TextBlock.Foreground" Value="White"/>
+            </Style>
         </TabControl.Styles>
         <TabItem>
             <TabItem.Header>
@@ -669,17 +684,10 @@
             <TabItem.Header>
                 <TextBlock Text="Logs" FontSize="11" FontWeight="Bold"/>
             </TabItem.Header>
-            <Grid Margin="8" RowDefinitions="Auto,Auto,*" RowSpacing="6">
-                <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto">
+            <Grid Margin="8" RowDefinitions="Auto,Auto,Auto,*" RowSpacing="6">
+                <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
                     <TextBlock Grid.Column="0" Text="Streamer status" FontSize="11" FontWeight="SemiBold" Foreground="Gray" VerticalAlignment="Center"/>
-                    <CheckBox Grid.Column="1"
-                              IsChecked="{Binding DebugLoggingEnabled}"
-                              Content="Debug logging"
-                              FontSize="11"
-                              Margin="0,0,8,0"
-                              VerticalAlignment="Center"
-                              ToolTip.Tip="Logs per-spot publish payloads, CW Skimmer telnet spot echoes, and DAX-IQ stream churn. Leave off for normal operation to keep the logs small (issue #58)."/>
-                    <Button Grid.Column="2"
+                    <Button Grid.Column="1"
                             Classes="action-button"
                             Content="Dump Audio Devices"
                             Command="{Binding DumpAudioDevicesCommand}"
@@ -710,7 +718,28 @@
                             Command="{Binding OpenLogsFolderCommand}"
                             IsEnabled="{Binding HasLogsFolder}"/>
                 </Grid>
-                <Border Grid.Row="2" BorderBrush="#E3E6EA" BorderThickness="1" CornerRadius="4" Padding="4">
+                <Grid Grid.Row="2" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                    <TextBlock Grid.Column="0"
+                               Text="Logging Mode:"
+                               FontSize="10"
+                               Foreground="Gray"
+                               VerticalAlignment="Center"/>
+                    <Button Grid.Column="2"
+                            Classes="action-button"
+                            Content="Debug Disabled"
+                            MinWidth="100"
+                            Command="{Binding ToggleDebugLoggingCommand}"
+                            IsVisible="{Binding !DebugLoggingEnabled}"
+                            ToolTip.Tip="Debug logging is off. Click to log per-spot publish payloads, CW Skimmer telnet spot echoes, DAX-IQ stream churn, and MOX transitions. Leave off for normal operation to keep the logs small (issue #58)."/>
+                    <Button Grid.Column="2"
+                            Classes="action-button debug-on"
+                            Content="Debug Enabled"
+                            MinWidth="100"
+                            Command="{Binding ToggleDebugLoggingCommand}"
+                            IsVisible="{Binding DebugLoggingEnabled}"
+                            ToolTip.Tip="Debug logging is on: per-spot publish payloads, telnet spot echoes, DAX-IQ stream churn, and MOX transitions are being logged. Click to turn it off and keep the logs small (issue #58)."/>
+                </Grid>
+                <Border Grid.Row="3" BorderBrush="#E3E6EA" BorderThickness="1" CornerRadius="4" Padding="4">
                     <TextBox Text="{Binding FooterStatusText}"
                              IsReadOnly="True"
                              AcceptsReturn="True"

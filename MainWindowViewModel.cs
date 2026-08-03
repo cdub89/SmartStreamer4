@@ -1874,8 +1874,19 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
             await _connection.PublishSpotAsync(radioSpot);
             if (DebugLoggingEnabled)
                 AppendSpotPayloadLog($"publish-success {payloadSummary}");
-            UIPost(() => AddSkimmerStatus(
-                $"Spot sent: {spot.Callsign} @ {(spot.FrequencyKhz / 1000.0):F6} MHz"));
+            // Issue #58 follow-up (live test 2026-08-02): per-spot lines also
+            // flooded the Logs tab status pane via the footer buffer. Keep the
+            // transient one-line footer event as live feedback, but only add
+            // to the rolling buffer in debug mode. Failures below always take
+            // the full path.
+            UIPost(() =>
+            {
+                var sent = $"Spot sent: {spot.Callsign} @ {(spot.FrequencyKhz / 1000.0):F6} MHz";
+                if (DebugLoggingEnabled)
+                    AddSkimmerStatus(sent);
+                else
+                    LatestFooterEvent = $"[SKIMMER] {sent}";
+            });
         }
         catch (Exception ex)
         {
@@ -2099,6 +2110,13 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         _settings.DebugLoggingEnabled = value;
         ApplyDebugLogging(value);
     }
+
+    // Logs tab "Logging Mode" row: one command behind the visibility-swapped
+    // Debug Disabled / Debug Enabled button pair. The labels report current
+    // state (clicking flips it), which the operator found more readable than
+    // action labels on a row titled "Logging Mode".
+    [RelayCommand]
+    private void ToggleDebugLogging() => DebugLoggingEnabled = !DebugLoggingEnabled;
 
     // Called from the setter above AND unconditionally after settings load:
     // the generated setter only fires on a value change, so a same-process
