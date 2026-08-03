@@ -85,17 +85,18 @@ list before reporting completion.
   Root project (`SmartSDRIQStreamer.csproj`) hosts the App, MainWindow,
   SetupWizard, ResetSkimmerWizard, ViewModels, and workflow services.
 - **FlexRadio module**: `src/SmartSDRIQStreamer.FlexRadio/` wraps FlexLib
-  4.2.18 (discovery, connection, slice/spot model). Project-references
-  `..\..\FlexLib_API_v4.2.18.41174\FlexLib\FlexLib.csproj`.
+  4.2.20 (discovery, connection, slice/spot model). Project-references
+  `..\..\FlexLib_API_v4.2.20.41343\FlexLib\FlexLib.csproj`.
 - **CW Skimmer module**: `src/SmartSDRIQStreamer.CWSkimmer/` owns INI
   generation, telnet client, launcher, sync tracker, frequency math, and
   WDM audio device discovery.
 - **Tests**: `tests/SmartSDRIQStreamer.CWSkimmer.Tests/` (xUnit-style
   tests in the CWSkimmer module).
 - **FlexLib source folders** (`FlexLib_API_v4.1.5.39794/`,
-  `FlexLib_API_v4.2.18.41174/`) are gitignored and live outside the
-  compiled tree. Only 4.2.18 is project-referenced; 4.1.5 is kept on
-  disk for historical reference only.
+  `FlexLib_API_v4.2.18.41174/`, `FlexLib_API_v4.2.20.41343/`) are
+  gitignored and live outside the compiled tree. Only 4.2.20 is
+  project-referenced (issue #61); 4.1.5 and 4.2.18 are kept on disk for
+  historical reference only.
 - **Release**: `publish-release.ps1` is a two-phase script. Phase 1
   (default) builds, verifies the embedded version, zips
   `SmartStreamer4-<tag>-win-x64.zip`, and writes a `SHA256SUMS.txt`
@@ -208,11 +209,11 @@ Unwrap with pattern checks (`is { } value`) at the boundary, never with
 is a blocking gate. Zero errors and zero first-party warnings allowed.
 
 Third-party transitive warnings are exempt: the
-`FlexLib_API_v4.2.18.41174/` csprojs (UiWpfFramework, Util, Vita,
+`FlexLib_API_v4.2.20.41343/` csprojs (UiWpfFramework, Util, Vita,
 FlexLib) emit ~40 MSB3245 / MSB3243 / MSB3277 warnings about WPF
 assembly resolution on every build, including `main`. They are out of
 our control. When counting warnings against the gate, exclude any
-whose source path contains `FlexLib_API_v4.2.18.41174/`.
+whose source path contains `FlexLib_API_v4.2.20.41343/`.
 
 If a new warning seems unavoidable in first-party code, raise it before
 suppressing.
@@ -615,7 +616,7 @@ Where to look first for common tasks:
 - **FlexLib radio bug**:
   [src/SmartSDRIQStreamer.FlexRadio/FlexLibRadioConnection.cs](src/SmartSDRIQStreamer.FlexRadio/FlexLibRadioConnection.cs) +
   [FlexLibRadioDiscovery.cs](src/SmartSDRIQStreamer.FlexRadio/FlexLibRadioDiscovery.cs).
-  FlexLib 4.2.18 client must keep working against both SmartSDR 4.1.5
+  FlexLib 4.2.20 client must keep working against both SmartSDR 4.1.5
   and 4.2.x server radios in the field.
 - **Audio device discovery (WDM/MME)**:
   [src/SmartSDRIQStreamer.CWSkimmer/WdmAudioDeviceFinder.cs](src/SmartSDRIQStreamer.CWSkimmer/WdmAudioDeviceFinder.cs).
@@ -652,7 +653,7 @@ Where to look first for common tasks:
   reflection-based `Path=` bindings.
 - Nullable reference types are enabled. No `!` suppressions without
   justification — fix the type, don't paper over it.
-- FlexLib runtime compatibility: code targeting FlexLib 4.2.18 must
+- FlexLib runtime compatibility: code targeting FlexLib 4.2.20 must
   remain compatible at runtime with SmartSDR servers 4.1.5 and 4.2.x.
   Verify on both before declaring a FlexLib-touching change done.
 - Release versioning: the csproj `<Version>` stays at a clean numeric
@@ -669,7 +670,8 @@ Where to look first for common tasks:
 - [CONTRIBUTING.md](CONTRIBUTING.md) — direct-commit workflow (owner);
   branches park incomplete work; PRs for outside contributors.
 - [Flexlib4-2-Migration-Guide.md](Flexlib4-2-Migration-Guide.md) —
-  the 4.1.5 → 4.2.18 migration record.
+  the 4.1.5 → 4.2.x migration record (corrected per issue #60; the app
+  builds against 4.2.20 as of issue #61).
 - [PLAN-skimmer-resync-and-refactor.md](PLAN-skimmer-resync-and-refactor.md) —
   current CW Skimmer sync redesign plan.
 - [README.md](README.md) — user-facing project description, install,

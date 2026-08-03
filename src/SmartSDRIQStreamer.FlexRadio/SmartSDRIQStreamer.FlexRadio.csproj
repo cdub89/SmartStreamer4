@@ -7,6 +7,6 @@
     <RootNamespace>SDRIQStreamer.FlexRadio</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\FlexLib_API_v4.2.18.41174\FlexLib\FlexLib.csproj" />
+    <ProjectReference Include="..\..\FlexLib_API_v4.2.20.41343\FlexLib\FlexLib.csproj" />
   </ItemGroup>
 </Project>
