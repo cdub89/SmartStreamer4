@@ -128,20 +128,14 @@
         <Style Selector="ToggleButton.pin /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderBrush" Value="Transparent"/>
-            <Setter Property="TextElement.Foreground" Value="#8A8A8A"/>
         </Style>
         <Style Selector="ToggleButton.pin:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="#F0F0F0"/>
             <Setter Property="BorderBrush" Value="Transparent"/>
-            <Setter Property="TextElement.Foreground" Value="#5D5D5D"/>
         </Style>
-        <Style Selector="ToggleButton.pin:checked">
-            <Setter Property="Content" Value="&#xE840;"/>
-        </Style>
-        <!-- The pin itself lights, not the box behind it: E840 is the solid
-             pushpin against E718's outline, so "on" reads as a filled accent
-             glyph on bare chrome. A filled box was tried first and read as a
-             sixth radio control (operator-reported, layout pass). -->
+        <!-- The pin itself lights, not the box behind it. A filled box was
+             tried first and read as a sixth radio control (operator-reported,
+             layout pass). -->
         <Style Selector="ToggleButton.pin:checked /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderBrush" Value="Transparent"/>
