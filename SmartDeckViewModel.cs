@@ -382,30 +382,70 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
     private bool _canAdjustRfGain;
 
     [RelayCommand]
-    private Task RfGainUpAsync() => StepRfGainAsync(direction: 1);
+    private Task RfGainUpAsync() => StepRfGainAsync(steps: 1);
 
     [RelayCommand]
-    private Task RfGainDownAsync() => StepRfGainAsync(direction: -1);
+    private Task RfGainDownAsync() => StepRfGainAsync(steps: -1);
 
-    private async Task StepRfGainAsync(int direction)
+    /// <summary>
+    /// Wheel accelerator for the buttons above (issue #65). Written per notch
+    /// rather than gathered like frequency and TX power: the radio-reported
+    /// range is about ten steps end to end, so a spin clamps almost immediately
+    /// and there is nothing downstream of the write.
+    /// </summary>
+    public void NudgeRfGain(int notches)
     {
-        if (SelectedPanadapter is not { } pan) return;
+        if (!_started || notches == 0 || !CanAdjustRfGain) return;
+        _ = StepRfGainAsync(notches);
+    }
 
-        var next = SteppedRange.Next(pan.RfGain, direction, pan.RfGainLow, pan.RfGainHigh, pan.RfGainStep);
-        if (next is not { } gain) return;
+    // Steps, not a direction: one wheel event can carry several notches, and
+    // SteppedRange multiplies the step by whatever it is given, clamping the
+    // result the same way either way.
+    //
+    // The buttons and the wheel share this one path deliberately. They were
+    // briefly separate, the buttons stepping from the radio's last echo and the
+    // wheel from its local target, which meant a click straight after a spin
+    // stepped backwards from where the readout already was.
+    private Task StepRfGainAsync(int steps)
+    {
+        if (SelectedPanadapter is not { } pan) return Task.CompletedTask;
 
-        await _connection.SetPanadapterRfGainAsync(pan, gain);
+        var from = _wheelTargetRfGain ?? pan.RfGain;
+        if (SteppedRange.Next(from, steps, pan.RfGainLow, pan.RfGainHigh, pan.RfGainStep) is not { } gain)
+            return Task.CompletedTask;
 
-        // Shown immediately rather than waiting for the radio's echo, so a
-        // button press does not feel laggy; the echo re-applies the same value.
+        // Held locally until the radio catches up, so the next step computes
+        // from where this one left off rather than from an echo still in
+        // flight. Shown immediately for the same reason a button press is: the
+        // number is what the operator is steering by.
+        _wheelTargetRfGain = gain;
         RfGainText = FormatRfGain(gain);
+        return _connection.SetPanadapterRfGainAsync(pan, gain);
     }
 
     private void ApplyRfGainState()
     {
         var pan = SelectedPanadapter;
         CanAdjustRfGain = pan?.HasRfGainRange ?? false;
-        RfGainText = pan is { HasRfGainRange: true } ready ? FormatRfGain(ready.RfGain) : Absent;
+
+        if (pan is not { HasRfGainRange: true } ready)
+        {
+            _wheelTargetRfGain = null;
+            RfGainText = Absent;
+            return;
+        }
+
+        // The wheel's local target stands down once the radio has caught up to
+        // it, so the next gesture starts from the radio again rather than from
+        // a number carried over from the last one. Until it does, the readout
+        // shows where the wheel is steering rather than the radio's last echo,
+        // which mid-spin is always a notch or more behind and would otherwise
+        // make the number jump backwards under the operator's finger.
+        if (_wheelTargetRfGain == ready.RfGain)
+            _wheelTargetRfGain = null;
+
+        RfGainText = FormatRfGain(_wheelTargetRfGain ?? ready.RfGain);
     }
 
     internal static string FormatRfGain(int gain) => $"{gain} dB";
@@ -424,24 +464,33 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
     private string _agcThresholdText = Absent;
 
     [RelayCommand]
-    private Task AgcThresholdUpAsync() => StepAgcThresholdAsync(direction: 1);
+    private Task AgcThresholdUpAsync() => StepAgcThresholdAsync(steps: 1);
 
     [RelayCommand]
-    private Task AgcThresholdDownAsync() => StepAgcThresholdAsync(direction: -1);
+    private Task AgcThresholdDownAsync() => StepAgcThresholdAsync(steps: -1);
 
-    private async Task StepAgcThresholdAsync(int direction)
+    /// <summary>Wheel accelerator for the buttons above; see <see cref="NudgeRfGain"/>.</summary>
+    public void NudgeAgcThreshold(int notches)
     {
-        if (SelectedSlice is not { } slice) return;
+        if (!_started || notches == 0) return;
+        _ = StepAgcThresholdAsync(notches);
+    }
 
-        var next = SteppedRange.Next(
-            slice.AgcThreshold, direction, AgcThresholdLow, AgcThresholdHigh, AgcThresholdStep);
-        if (next is not { } threshold) return;
+    // Shared by the buttons and the wheel; see StepRfGainAsync for why.
+    private Task StepAgcThresholdAsync(int steps)
+    {
+        if (SelectedSlice is not { } slice) return Task.CompletedTask;
 
-        await _connection.SetSliceAgcThresholdAsync(slice, threshold);
+        var from = _wheelTargetAgcThreshold ?? slice.AgcThreshold;
+        if (SteppedRange.Next(from, steps, AgcThresholdLow, AgcThresholdHigh, AgcThresholdStep)
+            is not { } threshold)
+        {
+            return Task.CompletedTask;
+        }
 
-        // Shown immediately rather than waiting for the radio's echo, so a
-        // button press does not feel laggy; the echo re-applies the same value.
+        _wheelTargetAgcThreshold = threshold;
         AgcThresholdText = FormatAgcThreshold(threshold);
+        return _connection.SetSliceAgcThresholdAsync(slice, threshold);
     }
 
     internal static string FormatAgcThreshold(int threshold) => threshold.ToString(CultureInfo.InvariantCulture);
@@ -527,6 +576,11 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
         // it costs one press to re-engage; keeping it would silently overwrite
         // their choice the next time the button was released.
         //
+        // This deliberately includes SmartDeck's own TX power wheel (issue #65).
+        // Wheeling off 5 W is a manual power change like any other and loses the
+        // cached pre-QRP power, confirmed by the operator 2026-08-05 when the
+        // wheel was added. Do not special-case the wheel to preserve it.
+        //
         // Accepted limitation (Codex deep audit, 2026-08-04): another client
         // deliberately setting 5 W while QRP is engaged is indistinguishable
         // from the echo of our own write, so the toggle keeps its saved power
@@ -545,6 +599,189 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
     }
 
     internal static string FormatTxPower(int watts) => $"{watts} W";
+
+    // ── Mouse wheel over the readouts (issue #65) ────────────────────────────
+
+    // The wheel is an accelerator for controls that already exist, with one
+    // exception: TX power had a readout and the QRP button but no stepper, so
+    // the wheel is its only fine adjustment. That is deliberate (operator
+    // request, 2026-08-05): QRP operators work 5 W down to 1 W and wanted single
+    // watts without spending a row on a stepper the rest of the time.
+    //
+    // Frequency and TX power gather their notches before writing; RF gain and
+    // AGC-T do not. The split is about range and blast radius, not consistency:
+    // RF gain reaches its rails in about ten notches and AGC-T in twenty, and
+    // neither write goes anywhere but the radio. A frequency write is answered
+    // by CwSkimmerSyncTracker with SKIMMER/LO_FREQ plus SKIMMER/QSY, so an
+    // unthrottled spin would put dozens of telnet lines into Skimmer in a
+    // second, and TX power spans 100 single-watt notches end to end.
+
+    /// <summary>How long wheel notches are gathered before the radio write.</summary>
+    private static readonly TimeSpan WheelWriteWindow = TimeSpan.FromMilliseconds(75);
+
+    /// <summary>
+    /// Tune step used when the radio has not reported one for the slice.
+    /// <see cref="SliceInfo.TuneStepHz"/> is resolved reflectively and lands at
+    /// zero if this FlexLib build exposes neither property, the same case
+    /// MainWindowViewModel.ResolveClickSnapStepHz covers with the same 50 Hz.
+    /// </summary>
+    private const int FallbackTuneStepHz = 50;
+
+    // FlexLib clamps RF power to 0-100 in its own setter (Radio.cs:8377-8379),
+    // and on a 100 W radio one unit is one watt. Sub-watt output is not
+    // expressible through this API at all: below 1 W the only value is 0.
+    private const int TxPowerLow = 0;
+    private const int TxPowerHigh = 100;
+    private const int TxPowerStep = 1;
+
+    // The value the wheel is steering towards, held locally while a write is in
+    // flight. Every control needs one: the radio's echo of notch N has not
+    // landed when notch N+1 arrives, so computing from the radio-reported value
+    // would make consecutive notches all compute the same target and a fast
+    // spin would move one step (Codex deep audit, 2026-08-05, which caught this
+    // on RF gain and AGC-T after they were first written without a target).
+    // Null between gestures, so the next notch re-seeds from what the radio
+    // actually holds.
+    private double? _wheelTargetFreqMHz;
+    private int? _wheelTargetWatts;
+    private int? _wheelTargetRfGain;
+    private int? _wheelTargetAgcThreshold;
+
+    // Which slice the pending frequency target belongs to. Without it, wheeling
+    // slice A and then selecting slice B inside the gather window writes A's
+    // target frequency to B (Codex deep audit, 2026-08-05).
+    private string? _wheelTargetSliceLetter;
+
+    private bool _freqWriteScheduled;
+    private bool _powerWriteScheduled;
+
+    /// <summary>
+    /// Steps the selected slice by <paramref name="notches"/> of the radio's own
+    /// tune step. Called from the window's wheel handler; hover is enough, so
+    /// this can arrive with no click having selected anything.
+    /// </summary>
+    public void NudgeFrequency(int notches)
+    {
+        if (!_started || notches == 0 || SelectedSlice is not { } slice) return;
+
+        // A target belonging to a different slice is another slice's gesture,
+        // not this one's starting point.
+        var from = _wheelTargetSliceLetter == slice.Letter && _wheelTargetFreqMHz is { } pending
+            ? pending
+            : slice.FreqMHz;
+
+        var stepHz = slice.TuneStepHz > 0 ? slice.TuneStepHz : FallbackTuneStepHz;
+        if (NextFrequencyMHz(from, notches, stepHz) is not { } target) return;
+
+        _wheelTargetFreqMHz = target;
+        _wheelTargetSliceLetter = slice.Letter;
+        ScheduleFrequencyWrite();
+    }
+
+    private void ScheduleFrequencyWrite()
+    {
+        if (_freqWriteScheduled) return;
+        _freqWriteScheduled = true;
+        _ = FlushFrequencyAsync();
+    }
+
+    private async Task FlushFrequencyAsync()
+    {
+        await _settle(WheelWriteWindow);
+        _freqWriteScheduled = false;
+
+        if (_wheelTargetFreqMHz is not { } target) return;
+
+        // Dropped rather than written if the slice the gesture belonged to is
+        // gone or is no longer the selected one. Left set it would seed the next
+        // gesture from another slice's frequency; written blindly it would
+        // retune whichever slice happens to be selected now to a frequency the
+        // operator dialled for a different one.
+        if (SelectedSlice is not { } slice || slice.Letter != _wheelTargetSliceLetter)
+        {
+            _wheelTargetFreqMHz = null;
+            _wheelTargetSliceLetter = null;
+            return;
+        }
+
+        await _connection.SetSliceFrequencyAsync(slice, target);
+
+        // Cleared only if no further notch arrived while the write was in
+        // flight; if one did, it already scheduled the next flush and owns the
+        // target. Unlike the other readouts nothing is echoed locally here:
+        // FrequencyText is computed from SelectedSlice, so the header follows
+        // the radio's own report, exactly as a click-tune does today.
+        if (_wheelTargetFreqMHz == target)
+        {
+            _wheelTargetFreqMHz = null;
+            _wheelTargetSliceLetter = null;
+        }
+    }
+
+    /// <summary>
+    /// Steps transmit power by <paramref name="notches"/> watts, clamped to the
+    /// radio's 0-100 range.
+    /// </summary>
+    public void NudgeTxPower(int notches)
+    {
+        if (!_started || notches == 0 || !CanToggleQrp) return;
+
+        var from = _wheelTargetWatts ?? _connection.RfPowerWatts;
+        if (from is not { } current) return;
+        if (SteppedRange.Next(current, notches, TxPowerLow, TxPowerHigh, TxPowerStep) is not { } target) return;
+
+        _wheelTargetWatts = target;
+
+        // Shown immediately rather than waiting for the radio's echo, matching
+        // every other control on the deck.
+        TxPowerText = FormatTxPower(target);
+        ScheduleTxPowerWrite();
+    }
+
+    private void ScheduleTxPowerWrite()
+    {
+        if (_powerWriteScheduled) return;
+        _powerWriteScheduled = true;
+        _ = FlushTxPowerAsync();
+    }
+
+    private async Task FlushTxPowerAsync()
+    {
+        await _settle(WheelWriteWindow);
+        _powerWriteScheduled = false;
+
+        if (_wheelTargetWatts is not { } target) return;
+
+        await _connection.SetRfPowerAsync(target);
+
+        if (_wheelTargetWatts == target)
+            _wheelTargetWatts = null;
+    }
+
+    /// <summary>
+    /// The frequency <paramref name="notches"/> tune steps from
+    /// <paramref name="currentMHz"/>, or <c>null</c> when the step is unusable
+    /// or the result would leave the spectrum.
+    /// </summary>
+    /// <remarks>
+    /// Arithmetic runs in whole Hz rather than MHz: a double accumulating
+    /// fractional MHz drifts off the tune grid over a long spin, and the header
+    /// groups down to single Hz, so the drift would be visible.
+    /// </remarks>
+    internal static double? NextFrequencyMHz(double currentMHz, int notches, int stepHz)
+    {
+        if (stepHz <= 0 || notches == 0) return null;
+
+        var currentHz = (long)Math.Round(currentMHz * 1_000_000d);
+        var nextHz = currentHz + ((long)notches * stepHz);
+
+        // No radio-reported tuning range to clamp against, so the only guard is
+        // against wheeling off the bottom; the radio refuses anything else it
+        // cannot tune.
+        if (nextHz <= 0) return null;
+
+        return nextHz / 1_000_000d;
+    }
 
     private void OnPanadapterListChanged(PanadapterInfo panadapter) => _postToUi(ApplyRfGainState);
 
@@ -590,7 +827,15 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
             SelectedTxAntenna = string.IsNullOrEmpty(slice?.TxAntenna) ? null : slice.TxAntenna;
             CurrentMode = slice?.OfferedMode;
             CurrentBand = slice is null ? string.Empty : HamBands.Label(slice.FreqMHz);
-            AgcThresholdText = slice is null ? Absent : FormatAgcThreshold(slice.AgcThreshold);
+            // Same wheel-target rule as RF gain: the local target stands down
+            // once the radio has caught up, and until then the readout shows
+            // where the wheel is steering rather than an echo a notch behind.
+            if (slice is null || _wheelTargetAgcThreshold == slice.AgcThreshold)
+                _wheelTargetAgcThreshold = null;
+
+            AgcThresholdText = slice is null
+                ? Absent
+                : FormatAgcThreshold(_wheelTargetAgcThreshold ?? slice.AgcThreshold);
 
             // Switching slices can rebuild the buttons without changing the
             // selected antenna, and the property hooks only fire on a change.
@@ -697,6 +942,15 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
         // else. The radio keeps whatever power it holds; nothing is restored
         // behind the operator's back on reopen.
         ApplyRfPower(null);
+
+        // Same for anything the wheel was still steering towards. A flush
+        // already in flight finds these null and writes nothing, and a reopened
+        // window re-seeds from whatever the radio actually holds by then.
+        _wheelTargetFreqMHz = null;
+        _wheelTargetSliceLetter = null;
+        _wheelTargetWatts = null;
+        _wheelTargetRfGain = null;
+        _wheelTargetAgcThreshold = null;
     }
 
     // TelemetryChanged fires on the pump thread, not the UI thread.

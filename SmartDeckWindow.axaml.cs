@@ -1,5 +1,7 @@
+using System;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 
 namespace SDRIQStreamer.App;
@@ -75,5 +77,44 @@ public partial class SmartDeckWindow : Window
         var onTop = check.IsChecked == true;
         Topmost = onTop;
         _settings.SmartDeckAlwaysOnTop = onTop;
+    }
+
+    // ── Mouse wheel over the readouts (issue #65) ────────────────────────────
+    //
+    // Hover is the whole gesture: no click, no focus, per the operator's
+    // request. The window does nothing but turn a wheel event into a notch
+    // count; every rule about steps, clamping and write throttling lives in the
+    // ViewModel where it is testable without a radio.
+
+    private readonly WheelNotchCounter _notches = new();
+
+    private void OnFrequencyWheel(object? sender, PointerWheelEventArgs e) =>
+        Nudge(sender, e, _viewModel.NudgeFrequency);
+
+    private void OnRfGainWheel(object? sender, PointerWheelEventArgs e) =>
+        Nudge(sender, e, _viewModel.NudgeRfGain);
+
+    private void OnAgcThresholdWheel(object? sender, PointerWheelEventArgs e) =>
+        Nudge(sender, e, _viewModel.NudgeAgcThreshold);
+
+    private void OnTxPowerWheel(object? sender, PointerWheelEventArgs e) =>
+        Nudge(sender, e, _viewModel.NudgeTxPower);
+
+    /// <summary>
+    /// Marks the event handled whenever a step was delivered, so a wheel over a
+    /// control never also scrolls something behind it.
+    /// </summary>
+    /// <remarks>
+    /// The delta is not the step count. See <see cref="WheelNotchCounter"/>:
+    /// this shipped taking Math.Round(Delta.Y) as the count, and on the
+    /// operator's seat that made every control move two steps per detent.
+    /// </remarks>
+    private void Nudge(object? sender, PointerWheelEventArgs e, Action<int> nudge)
+    {
+        var steps = _notches.Add(e.Delta.Y, sender);
+        if (steps == 0) return;
+
+        nudge(steps);
+        e.Handled = true;
     }
 }

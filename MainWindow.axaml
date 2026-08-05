@@ -26,11 +26,15 @@
              far enough to risk landing on the Help tab. Fluent's 32px button
              minimum and its border both go, or the button would stand taller
              than the strip it sits in. -->
-        <!-- Tab clothing for a button: the same 11px Bold as a TabItem header,
-             muted at rest like an unselected tab, full ink on hover. Padding
-             matches the TabItem padding so it sits on the same rhythm as the
-             tabs to its left. Deliberately no selected state, since it never
-             becomes the current page. -->
+        <!-- Tab clothing for a button: the same 11px Bold as a TabItem header.
+             Padding matches the TabItem padding so it sits on the same rhythm
+             as the tabs to its left. Deliberately no selected state, since it
+             never becomes the current page.
+             Full ink at rest, not muted: muted matched an unselected tab and
+             read as a smaller or disabled label next to the selected one, even
+             though the metrics are identical (operator-reported 2026-08-05).
+             Hover keeps its affordance through the background wash rather than
+             a foreground shift. -->
         <Style Selector="Button.strip-button">
             <Setter Property="FontSize" Value="11"/>
             <Setter Property="FontWeight" Value="Bold"/>
@@ -50,12 +54,12 @@
                  tuned separately instead of dragging each other around. -->
             <Setter Property="VerticalAlignment" Value="Top"/>
             <Setter Property="Margin" Value="0,1,0,0"/>
-            <Setter Property="Foreground" Value="{DynamicResource AppMutedBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource AppInkBrush}"/>
         </Style>
         <Style Selector="Button.strip-button /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderBrush" Value="Transparent"/>
-            <Setter Property="TextElement.Foreground" Value="{DynamicResource AppMutedBrush}"/>
+            <Setter Property="TextElement.Foreground" Value="{DynamicResource AppInkBrush}"/>
         </Style>
         <Style Selector="Button.strip-button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="{DynamicResource AppHoverWashBrush}"/>
@@ -964,13 +968,16 @@
     </TabControl>
 
         <!-- Both strip controls share one panel so they hold a single vertical
-             alignment: the 10px top margin lives here, and each child centres
-             against the 26px icon button that sets the panel's height. -->
+             alignment: the 13px top margin lives here, and each child centres
+             against the 26px icon button that sets the panel's height. Was 10px
+             through v0.3.0b5; both controls read as riding high in the strip on
+             several test PCs, so the pair moved down 3px together rather than
+             each being nudged separately (operator-reported 2026-08-05). -->
         <StackPanel Orientation="Horizontal"
                     Spacing="2"
                     HorizontalAlignment="Right"
                     VerticalAlignment="Top"
-                    Margin="0,10,8,0">
+                    Margin="0,13,8,0">
             <!-- SmartDeck opens a window rather than selecting a page, so it is
                  a Button wearing tab clothing rather than a real TabItem. A real
                  tab would be the closer match visually and the wrong thing

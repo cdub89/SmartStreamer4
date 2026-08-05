@@ -22,8 +22,9 @@ public class SmartDeckViewModelTests
         string rxAnt = "ANT1",
         string txAnt = "ANT1",
         double freqMhz = 14.050,
-        int agcThreshold = 50) =>
-        new(letter, mode, freqMhz, false, 0, 0, PanadapterStreamId: 100, ClientStation: station)
+        int agcThreshold = 50,
+        int tuneStepHz = 0) =>
+        new(letter, mode, freqMhz, false, 0, tuneStepHz, PanadapterStreamId: 100, ClientStation: station)
         {
             RxAntenna = rxAnt,
             TxAntenna = txAnt,
@@ -1254,5 +1255,532 @@ public class SmartDeckViewModelTests
         connection.RaiseSliceUpdated(Slice("A", freqMhz: 21.050));
 
         Assert.Equal(before, viewModel.RxAntennaButtons);
+    }
+
+    // ── Mouse wheel over the readouts (issue #65) ────────────────────────────
+    //
+    // The window turns a wheel event into a notch count and nothing else, so
+    // everything worth testing is here: step size, clamping, and the gathering
+    // of a spin into one radio write. The handlers themselves are UI wiring
+    // covered by the live-radio smoke gate.
+
+    /// <summary>
+    /// A settle the test controls, standing in for the gather window. Releasing
+    /// it runs the waiting flush inline, so no test needs a real delay.
+    /// </summary>
+    private static (Func<TimeSpan, Task> Settle, TaskCompletionSource Gate) HeldSettle()
+    {
+        var gate = new TaskCompletionSource();
+        return (_ => gate.Task, gate);
+    }
+
+    private static readonly Func<TimeSpan, Task> ImmediateSettle = _ => Task.CompletedTask;
+
+    // ── Frequency stepping arithmetic ────────────────────────────────────────
+
+    [Theory]
+    [InlineData(14.050, 1, 100, 14.0501)]
+    [InlineData(14.050, -1, 100, 14.0499)]
+    [InlineData(14.050, 5, 1_000, 14.055)]
+    [InlineData(14.050, -5, 1_000, 14.045)]
+    [InlineData(7.0, 1, 10, 7.00001)]
+    public void Wheel_steps_the_frequency_by_notches_of_the_tune_step(
+        double from, int notches, int stepHz, double expected)
+    {
+        var next = SmartDeckViewModel.NextFrequencyMHz(from, notches, stepHz);
+
+        Assert.NotNull(next);
+        Assert.Equal(expected, next.Value, precision: 9);
+    }
+
+    [Fact]
+    public void Wheel_stepping_does_not_drift_off_the_tune_grid()
+    {
+        // The reason the arithmetic runs in whole Hz. Accumulating 500 steps of
+        // 10 Hz in MHz leaves a fractional-Hz residue that the header, which
+        // groups down to single Hz, would show.
+        var freq = 14.050;
+        for (var i = 0; i < 500; i++)
+            freq = SmartDeckViewModel.NextFrequencyMHz(freq, 1, 10) ?? freq;
+
+        Assert.Equal(14.055, freq, precision: 9);
+        Assert.Equal("14.055.000", SmartDeckViewModel.FormatFrequency(freq));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Wheel_stepping_refuses_an_unusable_tune_step(int stepHz)
+    {
+        Assert.Null(SmartDeckViewModel.NextFrequencyMHz(14.050, 1, stepHz));
+    }
+
+    [Fact]
+    public void Wheel_stepping_refuses_to_leave_the_bottom_of_the_spectrum()
+    {
+        // No radio-reported tuning range to clamp against, so the only guard is
+        // against wheeling through zero into a negative frequency.
+        Assert.Null(SmartDeckViewModel.NextFrequencyMHz(0.000_050, -1, 100));
+    }
+
+    // ── Frequency wheel against the radio ────────────────────────────────────
+
+    [Fact]
+    public void Frequency_wheel_uses_the_tune_step_the_radio_reports()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", freqMhz: 14.050, tuneStepHz: 250));
+        var viewModel = new SmartDeckViewModel(
+            connection, TestStation, postToUi: action => action(), settle: ImmediateSettle);
+        viewModel.Start();
+
+        viewModel.NudgeFrequency(1);
+
+        var (slice, freq) = Assert.Single(connection.FrequencyWrites);
+        Assert.Equal("A", slice.Letter);
+        Assert.Equal(14.05025, freq, precision: 9);
+    }
+
+    [Fact]
+    public void Frequency_wheel_falls_back_to_fifty_hertz_when_the_radio_reports_no_step()
+    {
+        // TuneStepHz is resolved reflectively and lands at zero if this FlexLib
+        // build exposes neither property; the same 50 Hz the click-tune path
+        // falls back to keeps the wheel usable rather than dead.
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", freqMhz: 14.050, tuneStepHz: 0));
+        var viewModel = new SmartDeckViewModel(
+            connection, TestStation, postToUi: action => action(), settle: ImmediateSettle);
+        viewModel.Start();
+
+        viewModel.NudgeFrequency(1);
+
+        var (_, freq) = Assert.Single(connection.FrequencyWrites);
+        Assert.Equal(14.05005, freq, precision: 9);
+    }
+
+    [Fact]
+    public void A_frequency_spin_becomes_one_write_at_the_final_target()
+    {
+        // The whole reason the write is gathered: CwSkimmerSyncTracker answers
+        // every slice QSY with SKIMMER/LO_FREQ plus SKIMMER/QSY, so one write
+        // per notch would put dozens of telnet lines into Skimmer in a second.
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", freqMhz: 14.050, tuneStepHz: 100));
+        var (settle, gate) = HeldSettle();
+        var viewModel = new SmartDeckViewModel(
+            connection, TestStation, postToUi: action => action(), settle: settle);
+        viewModel.Start();
+
+        viewModel.NudgeFrequency(1);
+        viewModel.NudgeFrequency(1);
+        viewModel.NudgeFrequency(2);
+        Assert.Empty(connection.FrequencyWrites);
+
+        gate.SetResult();
+
+        // Four notches of 100 Hz, written once. Each notch advanced a local
+        // target rather than re-reading the slice, so none of the spin is lost
+        // to an echo that has not arrived yet.
+        var (_, freq) = Assert.Single(connection.FrequencyWrites);
+        Assert.Equal(14.0504, freq, precision: 9);
+    }
+
+    [Fact]
+    public void The_frequency_wheel_does_nothing_without_a_slice()
+    {
+        var connection = new FakeTelemetryConnection();
+        var viewModel = new SmartDeckViewModel(
+            connection, TestStation, postToUi: action => action(), settle: ImmediateSettle);
+        viewModel.Start();
+
+        viewModel.NudgeFrequency(1);
+
+        Assert.Empty(connection.FrequencyWrites);
+    }
+
+    [Fact]
+    public void The_frequency_wheel_does_nothing_before_the_window_opens()
+    {
+        // Start() is the window's Opened hook. A nudge outside that lifetime
+        // would write to a radio the deck is no longer watching.
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", tuneStepHz: 100));
+        var viewModel = new SmartDeckViewModel(
+            connection, TestStation, postToUi: action => action(), settle: ImmediateSettle);
+
+        viewModel.NudgeFrequency(1);
+
+        Assert.Empty(connection.FrequencyWrites);
+    }
+
+    // ── TX power wheel ───────────────────────────────────────────────────────
+
+    [Fact]
+    public void Tx_power_wheel_steps_one_watt_a_notch()
+    {
+        // One watt, not five: QRP operators work 5 W down to 1 W and need the
+        // single-watt granularity (operator request, issue #65).
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A"));
+        connection.ReportRfPower(5);
+        var viewModel = new SmartDeckViewModel(
+            connection, TestStation, postToUi: action => action(), settle: ImmediateSettle);
+        viewModel.Start();
+
+        viewModel.NudgeTxPower(-1);
+
+        Assert.Equal(4, Assert.Single(connection.RfPowerWrites));
+        Assert.Equal("4 W", viewModel.TxPowerText);
+    }
+
+    [Fact]
+    public void Tx_power_wheel_clamps_at_the_bottom_of_the_radios_range()
+    {
+        // FlexLib clamps to 0-100 in its own setter, and sub-watt output is not
+        // expressible through this API: below 1 W the only value is 0.
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A"));
+        connection.ReportRfPower(2);
+        var (settle, gate) = HeldSettle();
+        var viewModel = new SmartDeckViewModel(
+            connection, TestStation, postToUi: action => action(), settle: settle);
+        viewModel.Start();
+
+        viewModel.NudgeTxPower(-10);
+        gate.SetResult();
+
+        Assert.Equal(0, Assert.Single(connection.RfPowerWrites));
+    }
+
+    [Fact]
+    public void Tx_power_wheel_clamps_at_the_top_of_the_radios_range()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A"));
+        connection.ReportRfPower(95);
+        var (settle, gate) = HeldSettle();
+        var viewModel = new SmartDeckViewModel(
+            connection, TestStation, postToUi: action => action(), settle: settle);
+        viewModel.Start();
+
+        viewModel.NudgeTxPower(20);
+        gate.SetResult();
+
+        Assert.Equal(100, Assert.Single(connection.RfPowerWrites));
+    }
+
+    [Fact]
+    public void A_tx_power_spin_becomes_one_write_at_the_final_target()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A"));
+        connection.ReportRfPower(50);
+        var (settle, gate) = HeldSettle();
+        var viewModel = new SmartDeckViewModel(
+            connection, TestStation, postToUi: action => action(), settle: settle);
+        viewModel.Start();
+
+        viewModel.NudgeTxPower(-1);
+        viewModel.NudgeTxPower(-1);
+        viewModel.NudgeTxPower(-3);
+
+        // The readout follows every notch even though the write has not gone
+        // out: the number is what the operator is steering by.
+        Assert.Equal("45 W", viewModel.TxPowerText);
+        Assert.Empty(connection.RfPowerWrites);
+
+        gate.SetResult();
+
+        Assert.Equal(45, Assert.Single(connection.RfPowerWrites));
+    }
+
+    [Fact]
+    public void The_tx_power_wheel_does_nothing_until_the_radio_reports_a_power()
+    {
+        // Same gate as the QRP button: without a reported power there is
+        // nothing to step from, and stepping from a guess would write over
+        // whatever the operator actually has set.
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A"));
+        var viewModel = new SmartDeckViewModel(
+            connection, TestStation, postToUi: action => action(), settle: ImmediateSettle);
+        viewModel.Start();
+
+        viewModel.NudgeTxPower(-1);
+
+        Assert.Empty(connection.RfPowerWrites);
+    }
+
+    // ── RF gain and AGC-T wheel ──────────────────────────────────────────────
+
+    [Fact]
+    public void Rf_gain_wheel_steps_once_per_notch()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A"));
+        connection.SetPanadapters(Pan(rfGain: 12));
+        var viewModel = new SmartDeckViewModel(
+            connection, TestStation, postToUi: action => action(), settle: ImmediateSettle);
+        viewModel.Start();
+
+        // Three notches of the radio-reported 4 dB step, in one wheel event.
+        viewModel.NudgeRfGain(3);
+
+        var (_, gain) = Assert.Single(connection.RfGainWrites);
+        Assert.Equal(24, gain);
+        Assert.Equal("24 dB", viewModel.RfGainText);
+    }
+
+    [Fact]
+    public void Rf_gain_wheel_clamps_to_the_radios_range()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A"));
+        connection.SetPanadapters(Pan(rfGain: 28));
+        var viewModel = new SmartDeckViewModel(
+            connection, TestStation, postToUi: action => action(), settle: ImmediateSettle);
+        viewModel.Start();
+
+        viewModel.NudgeRfGain(10);
+
+        Assert.Equal(32, Assert.Single(connection.RfGainWrites).RfGain);
+    }
+
+    [Fact]
+    public void The_rf_gain_wheel_does_nothing_until_the_radio_reports_a_range()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A"));
+        connection.SetPanadapters(Pan(withRange: false));
+        var viewModel = new SmartDeckViewModel(
+            connection, TestStation, postToUi: action => action(), settle: ImmediateSettle);
+        viewModel.Start();
+
+        viewModel.NudgeRfGain(1);
+
+        Assert.Empty(connection.RfGainWrites);
+    }
+
+    [Fact]
+    public void Agc_threshold_wheel_steps_once_per_notch()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", agcThreshold: 50));
+        var viewModel = new SmartDeckViewModel(
+            connection, TestStation, postToUi: action => action(), settle: ImmediateSettle);
+        viewModel.Start();
+
+        viewModel.NudgeAgcThreshold(-2);
+
+        var (_, threshold) = Assert.Single(connection.AgcThresholdWrites);
+        Assert.Equal(40, threshold);
+        Assert.Equal("40", viewModel.AgcThresholdText);
+    }
+
+    [Fact]
+    public void Agc_threshold_wheel_clamps_to_the_protocol_range()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", agcThreshold: 10));
+        var viewModel = new SmartDeckViewModel(
+            connection, TestStation, postToUi: action => action(), settle: ImmediateSettle);
+        viewModel.Start();
+
+        viewModel.NudgeAgcThreshold(-5);
+
+        Assert.Equal(0, Assert.Single(connection.AgcThresholdWrites).Threshold);
+    }
+
+    // ── Regressions found by the Codex deep audit, 2026-08-05 ────────────────
+
+    [Fact]
+    public void A_pending_frequency_write_never_lands_on_a_slice_selected_since()
+    {
+        // Wheel slice A, switch to slice B inside the gather window. Writing
+        // the pending target now would retune B to a frequency the operator
+        // dialled for A, which on a live radio means a slice jumping bands
+        // under someone who only clicked a chip.
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(
+            Slice("A", freqMhz: 14.050, tuneStepHz: 100),
+            Slice("B", freqMhz: 7.030, tuneStepHz: 100));
+        var (settle, gate) = HeldSettle();
+        var viewModel = new SmartDeckViewModel(
+            connection, TestStation, postToUi: action => action(), settle: settle);
+        viewModel.Start();
+        viewModel.SelectSliceCommand.Execute("A");
+
+        viewModel.NudgeFrequency(5);
+        viewModel.SelectSliceCommand.Execute("B");
+        gate.SetResult();
+
+        Assert.Empty(connection.FrequencyWrites);
+    }
+
+    [Fact]
+    public void A_new_gesture_on_another_slice_starts_from_that_slices_frequency()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(
+            Slice("A", freqMhz: 14.050, tuneStepHz: 100),
+            Slice("B", freqMhz: 7.030, tuneStepHz: 100));
+        var viewModel = new SmartDeckViewModel(
+            connection, TestStation, postToUi: action => action(), settle: ImmediateSettle);
+        viewModel.Start();
+        viewModel.SelectSliceCommand.Execute("A");
+        viewModel.NudgeFrequency(1);
+
+        viewModel.SelectSliceCommand.Execute("B");
+        viewModel.NudgeFrequency(1);
+
+        // B steps from B's own 7.030, not from the 14.0501 A was left at.
+        Assert.Equal(2, connection.FrequencyWrites.Count);
+        Assert.Equal(7.0301, connection.FrequencyWrites[1].FreqMHz, precision: 9);
+    }
+
+    [Fact]
+    public void Consecutive_rf_gain_notches_do_not_collapse_before_the_radio_echoes()
+    {
+        // A mouse delivers one event per notch. Each one used to recompute from
+        // the panadapter's last radio-reported gain, so three notches arriving
+        // before the first echo all wrote the same one-step target and a spin
+        // moved 4 dB instead of 12.
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A"));
+        connection.SetPanadapters(Pan(rfGain: 12));
+        var viewModel = new SmartDeckViewModel(
+            connection, TestStation, postToUi: action => action(), settle: ImmediateSettle);
+        viewModel.Start();
+
+        viewModel.NudgeRfGain(1);
+        viewModel.NudgeRfGain(1);
+        viewModel.NudgeRfGain(1);
+
+        Assert.Equal([16, 20, 24], connection.RfGainWrites.Select(write => write.RfGain));
+        Assert.Equal("24 dB", viewModel.RfGainText);
+    }
+
+    [Fact]
+    public void Consecutive_agc_threshold_notches_do_not_collapse_before_the_radio_echoes()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", agcThreshold: 50));
+        var viewModel = new SmartDeckViewModel(
+            connection, TestStation, postToUi: action => action(), settle: ImmediateSettle);
+        viewModel.Start();
+
+        viewModel.NudgeAgcThreshold(1);
+        viewModel.NudgeAgcThreshold(1);
+
+        Assert.Equal([55, 60], connection.AgcThresholdWrites.Select(write => write.Threshold));
+        Assert.Equal("60", viewModel.AgcThresholdText);
+    }
+
+    [Fact]
+    public void An_rf_gain_echo_that_catches_up_hands_the_readout_back_to_the_radio()
+    {
+        // The local target is a bridge across the echo delay, not a second
+        // source of truth: once the radio reports the value the wheel asked
+        // for, the readout follows the radio again.
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A"));
+        connection.SetPanadapters(Pan(rfGain: 12));
+        var viewModel = new SmartDeckViewModel(
+            connection, TestStation, postToUi: action => action(), settle: ImmediateSettle);
+        viewModel.Start();
+        viewModel.NudgeRfGain(1);
+
+        connection.SetPanadapters(Pan(rfGain: 16));
+        connection.RaisePanadapterUpdated(Pan(rfGain: 16));
+        Assert.Equal("16 dB", viewModel.RfGainText);
+
+        // Another client dropped it to 0 while nobody was wheeling; the deck
+        // shows the radio rather than the number it last steered to.
+        connection.SetPanadapters(Pan(rfGain: 0));
+        connection.RaisePanadapterUpdated(Pan(rfGain: 0));
+
+        Assert.Equal("0 dB", viewModel.RfGainText);
+    }
+
+    [Fact]
+    public async Task Wheeling_off_qrp_stands_the_toggle_down_and_drops_the_saved_power()
+    {
+        // Operator decision, 2026-08-05: wheeling away from 5 W is a manual
+        // power change like any other, so it loses the cached pre-QRP power
+        // exactly as changing power in SmartSDR does. The wheel is deliberately
+        // not special-cased to preserve it.
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A"));
+        connection.ReportRfPower(75);
+        var viewModel = new SmartDeckViewModel(
+            connection, TestStation, postToUi: action => action(), settle: ImmediateSettle);
+        viewModel.Start();
+
+        await viewModel.ToggleQrpCommand.ExecuteAsync(null);
+        Assert.True(viewModel.IsQrp);
+
+        viewModel.NudgeTxPower(-1);
+
+        Assert.False(viewModel.IsQrp);
+        Assert.Equal("4 W", viewModel.TxPowerText);
+        Assert.Equal([5, 4], connection.RfPowerWrites);
+
+        // The 75 W is gone, so re-engaging QRP saves the 4 W the radio now
+        // holds rather than climbing back to a stale number.
+        await viewModel.ToggleQrpCommand.ExecuteAsync(null);
+        await viewModel.ToggleQrpCommand.ExecuteAsync(null);
+
+        Assert.Equal([5, 4, 5, 4], connection.RfPowerWrites);
+    }
+
+    [Fact]
+    public async Task Wheeling_back_up_to_five_watts_does_not_relight_the_qrp_toggle()
+    {
+        // Engage QRP, wheel down one watt and back up. The radio ends exactly
+        // where QRP put it, but the stand-down already fired on the way down,
+        // so the toggle stays dark and the saved 75 W stays gone. Pinned
+        // because it reads like a bug and is the documented consequence of the
+        // rule above: the toggle tracks the saved power, not the number 5.
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A"));
+        connection.ReportRfPower(75);
+        var viewModel = new SmartDeckViewModel(
+            connection, TestStation, postToUi: action => action(), settle: ImmediateSettle);
+        viewModel.Start();
+        await viewModel.ToggleQrpCommand.ExecuteAsync(null);
+
+        viewModel.NudgeTxPower(-1);
+        viewModel.NudgeTxPower(1);
+
+        Assert.False(viewModel.IsQrp);
+        Assert.Equal("5 W", viewModel.TxPowerText);
+
+        // And pressing QRP now saves 5 W rather than restoring the lost 75 W.
+        await viewModel.ToggleQrpCommand.ExecuteAsync(null);
+
+        Assert.Equal([5, 4, 5, 5], connection.RfPowerWrites);
+    }
+
+    [Fact]
+    public void A_wheel_event_carrying_no_notches_writes_nothing()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", tuneStepHz: 100));
+        connection.SetPanadapters(Pan(rfGain: 12));
+        connection.ReportRfPower(50);
+        var viewModel = new SmartDeckViewModel(
+            connection, TestStation, postToUi: action => action(), settle: ImmediateSettle);
+        viewModel.Start();
+
+        viewModel.NudgeFrequency(0);
+        viewModel.NudgeTxPower(0);
+        viewModel.NudgeRfGain(0);
+        viewModel.NudgeAgcThreshold(0);
+
+        Assert.Empty(connection.FrequencyWrites);
+        Assert.Empty(connection.RfPowerWrites);
+        Assert.Empty(connection.RfGainWrites);
+        Assert.Empty(connection.AgcThresholdWrites);
     }
 }

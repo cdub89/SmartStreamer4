@@ -229,8 +229,23 @@
                      issue #59 live feedback). Every item on this row is
                      bottom-aligned now, which is what puts the two on a common
                      baseline; do not drop this back to the default. -->
-                <TextBlock Text="{Binding FrequencyText}" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Bottom"/>
-                <TextBlock Text="MHz" FontSize="10" Foreground="{DynamicResource AppMutedBrush}" VerticalAlignment="Bottom" Margin="3,0,0,2"/>
+                <!-- Wheel tunes the slice by the radio's own tune step (issue
+                     #65). The handler hangs off the two readout TextBlocks
+                     rather than a wrapper panel deliberately: this row's
+                     baseline alignment took three passes to get right, and an
+                     extra panel around these two is exactly the kind of change
+                     that quietly moves it. Background="Transparent" is what
+                     makes a TextBlock hit-testable in Avalonia; without it the
+                     wheel event never reaches them. It is not a visual change.
+                     The mode button beside them keeps its own hit area, so
+                     wheeling over "CW" does not retune. -->
+                <TextBlock Text="{Binding FrequencyText}" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Bottom"
+                           Background="Transparent"
+                           PointerWheelChanged="OnFrequencyWheel"
+                           ToolTip.Tip="Mouse wheel tunes the slice by the tune step set on the radio."/>
+                <TextBlock Text="MHz" FontSize="10" Foreground="{DynamicResource AppMutedBrush}" VerticalAlignment="Bottom" Margin="3,0,0,2"
+                           Background="Transparent"
+                           PointerWheelChanged="OnFrequencyWheel"/>
                 <!-- Mode is the frequency's value-then-unit shape repeated at
                      the same size, not a size down: the pair reads as two equal
                      answers to "what am I on". Built smaller first, and a
@@ -393,7 +408,15 @@
              the gap this fixed. The min is a floor, not a cap: a wider value
              grows its Auto column instead of clipping. -->
         <Grid Grid.Row="3" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-            <StackPanel Grid.Column="0" IsEnabled="{Binding CanAdjustRfGain}">
+            <!-- Wheel handlers sit on the whole group, caption and buttons
+                 included, so the target is the largest sane one: the operator
+                 puts the pointer near the number, not on a 30px button. The
+                 buttons ignore the wheel themselves, so it bubbles up to here.
+                 IsEnabled already gates each group, and a disabled control
+                 receives no pointer input, so the wheel is gated with it. -->
+            <StackPanel Grid.Column="0" IsEnabled="{Binding CanAdjustRfGain}"
+                        Background="Transparent"
+                        PointerWheelChanged="OnRfGainWheel">
                 <TextBlock Classes="group-label control-caption" Text="RF gain"/>
                 <Grid ColumnDefinitions="Auto,Auto,Auto">
                     <Button Grid.Column="0" Classes="deck-button" Content="&#x2212;" MinWidth="30"
@@ -414,7 +437,9 @@
             <!-- Centred in the slack column so the two gutters either side of it
                  come out even, rather than piling all the leftover width on one
                  side of the row. -->
-            <StackPanel Grid.Column="1" HorizontalAlignment="Center" IsEnabled="{Binding HasSelectedSlice}">
+            <StackPanel Grid.Column="1" HorizontalAlignment="Center" IsEnabled="{Binding HasSelectedSlice}"
+                        Background="Transparent"
+                        PointerWheelChanged="OnAgcThresholdWheel">
                 <TextBlock Classes="group-label control-caption" Text="AGC-T"/>
                 <Grid ColumnDefinitions="Auto,Auto,Auto">
                     <Button Grid.Column="0" Classes="deck-button" Content="&#x2212;" MinWidth="30"
@@ -439,10 +464,17 @@
                  to return to, and stands down on its own if the power changes
                  elsewhere. One labelled button rather than a stepper, so there
                  is no bracketing to do here. -->
-            <StackPanel Grid.Column="2" IsEnabled="{Binding CanToggleQrp}">
+            <!-- The only group whose wheel is not an accelerator for a button:
+                 TX power has no stepper, so the wheel is its fine adjustment,
+                 one watt a notch (operator request, issue #65). Wheel-only
+                 means undiscoverable, hence the tooltip on the readout. -->
+            <StackPanel Grid.Column="2" IsEnabled="{Binding CanToggleQrp}"
+                        Background="Transparent"
+                        PointerWheelChanged="OnTxPowerWheel">
                 <TextBlock Classes="group-label control-caption" Text="TX power"/>
                 <Grid ColumnDefinitions="Auto,Auto">
                     <TextBlock Grid.Column="0"
+                               ToolTip.Tip="Mouse wheel adjusts transmit power one watt at a time."
                                Text="{Binding TxPowerText}"
                                FontSize="13"
                                FontWeight="SemiBold"
