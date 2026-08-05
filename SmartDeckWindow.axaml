@@ -101,6 +101,20 @@
             <Setter Property="Margin" Value="1,0,0,1"/>
         </Style>
 
+        <!-- Centred variant, for a heading captioning one compact control rather
+             than naming a wide grid of them (operator-reported, issue #59 live
+             feedback). The section headings (Band, RX and TX antenna) stay left:
+             over a full-width button grid a centred heading floats away from the
+             edge the grid starts at. Left margin drops to zero, since the 1px
+             inset that keeps a left-aligned heading off the edge would otherwise
+             bias the centring. Must stay declared after the base style above:
+             Avalonia resolves competing setters by declaration order, not by
+             selector specificity, so the base Margin would win from up there. -->
+        <Style Selector="TextBlock.group-label.control-caption">
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,0,0,1"/>
+        </Style>
+
         <!-- Uniform margin rather than a trailing one, so a row of buttons ends
              flush with the group above it instead of 4px short. The host panel
              cancels the outer edge with a matching negative margin. -->
@@ -217,18 +231,26 @@
                      baseline; do not drop this back to the default. -->
                 <TextBlock Text="{Binding FrequencyText}" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Bottom"/>
                 <TextBlock Text="MHz" FontSize="10" Foreground="{DynamicResource AppMutedBrush}" VerticalAlignment="Bottom" Margin="3,0,0,2"/>
-                <!-- Mode repeats the frequency's value-then-unit shape one size
-                     down, so the pair reads as two answers to "what am I on"
-                     rather than a number with a suffix. Hidden rather than blank
-                     with no slice, so the bare word "Mode" never sits alone. -->
+                <!-- Mode is the frequency's value-then-unit shape repeated at
+                     the same size, not a size down: the pair reads as two equal
+                     answers to "what am I on". Built smaller first, and a
+                     smaller value bottom-aligned beside a larger one reads as
+                     sitting low even on a shared baseline, because its cap
+                     height starts further down (operator-reported twice, issue
+                     #59 live feedback). Matching sizes is also what makes the
+                     baselines exactly equal rather than nearly so, since the
+                     two runs now have identical descent. Keep these four
+                     attributes in step with the frequency and MHz above.
+                     Hidden rather than blank with no slice, so the bare word
+                     "Mode" never sits alone. -->
                 <Button Classes="mode-toggle"
                         IsVisible="{Binding HasSelectedSlice}"
                         Command="{Binding CycleModeCommand}"
                         ToolTip.Tip="Click to step the slice mode: CW, LSB, USB, AM"
-                        Margin="4,0,0,0">
+                        Margin="10,0,0,0">
                     <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="{Binding ModeText}" FontSize="14" FontWeight="SemiBold"/>
-                        <TextBlock Text="Mode" FontSize="10" Foreground="{DynamicResource AppMutedBrush}" VerticalAlignment="Bottom" Margin="3,0,0,1"/>
+                        <TextBlock Text="{Binding ModeText}" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Bottom"/>
+                        <TextBlock Text="Mode" FontSize="10" Foreground="{DynamicResource AppMutedBrush}" VerticalAlignment="Bottom" Margin="3,0,0,2"/>
                     </StackPanel>
                 </Button>
             </StackPanel>
@@ -372,7 +394,7 @@
              grows its Auto column instead of clipping. -->
         <Grid Grid.Row="3" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
             <StackPanel Grid.Column="0" IsEnabled="{Binding CanAdjustRfGain}">
-                <TextBlock Classes="group-label" Text="RF gain"/>
+                <TextBlock Classes="group-label control-caption" Text="RF gain"/>
                 <Grid ColumnDefinitions="Auto,Auto,Auto">
                     <Button Grid.Column="0" Classes="deck-button" Content="&#x2212;" MinWidth="30"
                             Command="{Binding RfGainDownCommand}"/>
@@ -393,7 +415,7 @@
                  come out even, rather than piling all the leftover width on one
                  side of the row. -->
             <StackPanel Grid.Column="1" HorizontalAlignment="Center" IsEnabled="{Binding HasSelectedSlice}">
-                <TextBlock Classes="group-label" Text="AGC-T"/>
+                <TextBlock Classes="group-label control-caption" Text="AGC-T"/>
                 <Grid ColumnDefinitions="Auto,Auto,Auto">
                     <Button Grid.Column="0" Classes="deck-button" Content="&#x2212;" MinWidth="30"
                             Command="{Binding AgcThresholdDownCommand}"/>
@@ -418,7 +440,7 @@
                  elsewhere. One labelled button rather than a stepper, so there
                  is no bracketing to do here. -->
             <StackPanel Grid.Column="2" IsEnabled="{Binding CanToggleQrp}">
-                <TextBlock Classes="group-label" Text="TX power"/>
+                <TextBlock Classes="group-label control-caption" Text="TX power"/>
                 <Grid ColumnDefinitions="Auto,Auto">
                     <TextBlock Grid.Column="0"
                                Text="{Binding TxPowerText}"

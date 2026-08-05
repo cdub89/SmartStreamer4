@@ -189,21 +189,27 @@ if (Test-Path $dllConfigPath) {
 }
 
 Write-Host "`n[5/6] Creating release zip..." -ForegroundColor Yellow
-# The zip must carry the license and third-party notices alongside the exe;
-# wx7v.net will not host an artifact whose notices do not ship inside it.
-$licensePath = Join-Path $PSScriptRoot "LICENSE"
+# The zip must carry the third-party notices alongside the exe; wx7v.net will
+# not host an artifact whose notices do not ship inside it, and the MIT and BSD
+# dependencies require their notice text to travel with any redistribution.
+# THIRD-PARTY-NOTICES.txt keeps its extension so Windows can open it from the
+# extracted folder on a double click.
+#
+# The project's own LICENSE is deliberately NOT packaged (operator-reported
+# 2026-08-05): extensionless, Windows would not open it without a rename, and
+# it is the one file here whose omission carries no external obligation since
+# we hold the copyright. It stays in the repo for GitHub and for the README and
+# CONTRIBUTING links; only the shipped zip drops it.
 $noticesPath = Join-Path $PSScriptRoot "THIRD-PARTY-NOTICES.txt"
-foreach ($required in @($licensePath, $noticesPath)) {
-    if (-not (Test-Path $required)) {
-        Write-Host "`nERROR: '$required' not found. Refusing to package without it." -ForegroundColor Red
-        exit 1
-    }
+if (-not (Test-Path $noticesPath)) {
+    Write-Host "`nERROR: '$noticesPath' not found. Refusing to package without it." -ForegroundColor Red
+    exit 1
 }
 if (Select-String -Path $noticesPath -Pattern 'TODO' -Quiet) {
     Write-Host "`nERROR: THIRD-PARTY-NOTICES.txt still contains a TODO placeholder. Refusing to package." -ForegroundColor Red
     exit 1
 }
-Compress-Archive -Path $exePath, $licensePath, $noticesPath -DestinationPath $zipPath -Force
+Compress-Archive -Path $exePath, $noticesPath -DestinationPath $zipPath -Force
 $hash = (Get-FileHash $zipPath -Algorithm SHA256).Hash.ToLower()
 Write-Host "  $zipLabel" -ForegroundColor Green
 Write-Host "  SHA256: $hash" -ForegroundColor Green
