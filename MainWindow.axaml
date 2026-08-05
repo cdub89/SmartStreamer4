@@ -17,12 +17,119 @@
             <Setter Property="MaxWidth" Value="106"/>
             <Setter Property="Padding" Value="2"/>
         </Style>
+
+        <!-- Theme toggle, parked in the empty right end of the tab strip. Lives
+             in Window.Styles rather than TabControl.Styles because the button
+             sits outside the TabControl, overlaid on it. Icon only: the strip
+             has about 126px spare in Digital mode at the default 420px width
+             and about 66px at MinWidth, which the word "Theme" would eat into
+             far enough to risk landing on the Help tab. Fluent's 32px button
+             minimum and its border both go, or the button would stand taller
+             than the strip it sits in. -->
+        <!-- Tab clothing for a button: the same 11px Bold as a TabItem header,
+             muted at rest like an unselected tab, full ink on hover. Padding
+             matches the TabItem padding so it sits on the same rhythm as the
+             tabs to its left. Deliberately no selected state, since it never
+             becomes the current page. -->
+        <Style Selector="Button.strip-button">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Padding" Value="8,4"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="MinWidth" Value="0"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <!-- Top plus 1px, not Center. Centred, it aligns against the 26px
+                 icon button that sets the panel height and sat ~2px below the
+                 tab labels; flush Top overshot ~1px high. The 1px puts its cap
+                 centre ~22.3px below the TabControl top, which is where the tab
+                 labels sit (both operator-reported, then agreed with the
+                 measurement). Independent of the icon now, so the two can be
+                 tuned separately instead of dragging each other around. -->
+            <Setter Property="VerticalAlignment" Value="Top"/>
+            <Setter Property="Margin" Value="0,1,0,0"/>
+            <Setter Property="Foreground" Value="{DynamicResource AppMutedBrush}"/>
+        </Style>
+        <Style Selector="Button.strip-button /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="TextElement.Foreground" Value="{DynamicResource AppMutedBrush}"/>
+        </Style>
+        <Style Selector="Button.strip-button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AppHoverWashBrush}"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="TextElement.Foreground" Value="{DynamicResource AppInkBrush}"/>
+        </Style>
+        <Style Selector="Button.strip-button:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AppHoverWashBrush}"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="TextElement.Foreground" Value="{DynamicResource AppInkBrush}"/>
+        </Style>
+
+        <Style Selector="Button.theme-toggle">
+            <Setter Property="Width" Value="26"/>
+            <Setter Property="Height" Value="26"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="MinWidth" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+        <Style Selector="Button.theme-toggle /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+        </Style>
+        <Style Selector="Button.theme-toggle:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AppHoverWashBrush}"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+        </Style>
+        <Style Selector="Button.theme-toggle:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AppHoverWashBrush}"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+        </Style>
+        <!-- Muted at rest so it sits at the weight of an unselected tab label
+             rather than competing with the selected one; full ink on hover. -->
+        <Style Selector="Button.theme-toggle Path">
+            <Setter Property="Fill" Value="{DynamicResource AppMutedBrush}"/>
+        </Style>
+        <Style Selector="Button.theme-toggle:pointerover Path">
+            <Setter Property="Fill" Value="{DynamicResource AppInkBrush}"/>
+        </Style>
     </Window.Styles>
 
+    <!-- The TabControl and the theme toggle share one cell: Avalonia's
+         TabControl offers no slot in its header strip, so the button is
+         overlaid on the strip's empty right end and declared second to draw on
+         top.
+
+         The 10px top margin centres the 26px button on the tab LABEL, not in
+         the strip box: the label's cap-height centre sits about 22.5px below
+         the TabControl top, while the box runs on past it to the selected-tab
+         underline. Centring on the box was tried first and read as sitting
+         high, because the eye aligns the icon with the words beside it rather
+         than with an invisible rectangle (operator-reported). All three
+         numbers here are operator-set from live runs and agree with that
+         anchor; treat them as one set, since changing the button size without
+         the margin moves the icon off the labels. If TabItem padding (10,4
+         below) or the header font ever changes, they all move. Retemplating
+         TabControl would remove the constants, at the cost of vendoring and
+         maintaining a copy of Fluent's template. -->
+    <Grid>
     <TabControl Margin="0" SelectedIndex="{Binding SelectedTabIndex, Mode=TwoWay}">
         <TabControl.Styles>
+            <!-- 8,4 rather than 10,4: the strip has to carry five tabs plus the
+                 SmartDeck button and the theme icon, and in Digital mode at
+                 MinWidth that did not fit. Trimming 2px a side recovers ~20px
+                 across the five and is invisible at a glance. The theme icon's
+                 top margin is tuned against this padding (see the overlay note
+                 above); change one and check the other. -->
             <Style Selector="TabItem">
-                <Setter Property="Padding" Value="10,4"/>
+                <Setter Property="Padding" Value="8,4"/>
             </Style>
             <Style Selector="Button">
                 <Setter Property="HorizontalContentAlignment" Value="Center"/>
@@ -91,40 +198,26 @@
                                FontSize="12" Foreground="{DynamicResource AppMutedBrush}"
                                IsVisible="{Binding StatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
-                    <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="6" Margin="0,0,0,2">
+                    <!-- Theme and SmartDeck both used to sit in this row and no
+                         longer do: Theme because it is app-global, SmartDeck
+                         because it reads as a destination rather than an action
+                         on the connection (issue #59). Both are in the tab strip
+                         now, and this row is back to naming one thing and
+                         offering one verb, like the Mode row below it. -->
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6" Margin="0,0,0,2">
                         <TextBlock Grid.Column="0"
                                    Text="{Binding ConnectTargetHeaderText}"
                                    FontSize="11"
                                    FontWeight="Bold"
                                    Classes="connect-header"
                                    Classes.connected="{Binding IsConnected}"/>
-                        <!-- Theme (issue #63). Light / Dark, app-wide, applied
-                             live. Sits here because the Launch tab is the only
-                             tab that is not mode-specific: both Config tabs
-                             belong to CW or Digital. -->
                         <Button Grid.Column="1"
-                                Classes="action-button"
-                                Content="Theme"
-                                MinWidth="52"
-                                Click="OnToggleTheme"
-                                ToolTip.Tip="Switches the whole app, SmartDeck included, between Light and Dark."/>
-                        <!-- SmartDeck (issue #59). Connected-only: its telemetry
-                             comes from radio-level meter events, so there is
-                             nothing to show while disconnected. -->
-                        <Button Grid.Column="2"
-                                Classes="action-button"
-                                Content="SmartDeck"
-                                MinWidth="70"
-                                Click="OnOpenSmartDeck"
-                                IsVisible="{Binding IsConnected}"
-                                ToolTip.Tip="Opens the SmartDeck window: live power, SWR, PA temperature, and supply voltage from the radio."/>
-                        <Button Grid.Column="3"
                                 Classes="action-button"
                                 Content="Connect"
                                 MinWidth="56"
                                 Command="{Binding ConnectCommand}"
                                 IsVisible="{Binding !IsConnected}"/>
-                        <Button Grid.Column="3"
+                        <Button Grid.Column="2"
                                 Classes="action-button"
                                 Content="Disconnect"
                                 MinWidth="56"
@@ -862,11 +955,51 @@
                     <Border BorderBrush="{DynamicResource AppPanelBorderBrush}" BorderThickness="1" CornerRadius="4" Padding="8">
                         <StackPanel Spacing="4">
                             <TextBlock Text="{Binding AboutLicenseReference}" FontSize="11" TextWrapping="Wrap"/>
-                            <TextBlock Text="{Binding AboutDevelopedBy}" FontSize="11" TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding AboutCopyright}" FontSize="11" TextWrapping="Wrap"/>
                         </StackPanel>
                     </Border>
                 </StackPanel>
             </ScrollViewer>
         </TabItem>
     </TabControl>
+
+        <!-- Both strip controls share one panel so they hold a single vertical
+             alignment: the 10px top margin lives here, and each child centres
+             against the 26px icon button that sets the panel's height. -->
+        <StackPanel Orientation="Horizontal"
+                    Spacing="2"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Top"
+                    Margin="0,10,8,0">
+            <!-- SmartDeck opens a window rather than selecting a page, so it is
+                 a Button wearing tab clothing rather than a real TabItem. A real
+                 tab would be the closer match visually and the wrong thing
+                 structurally: MainWindowViewModel navigates by hard-coded
+                 position (CwHomeTabIndex, DigitalHomeTabIndex), so a new tab is
+                 a trap for whoever adds the next one, and a tab that must never
+                 be selected still catches keyboard arrow navigation. As a
+                 Button, Space and Enter do the right thing for free.
+                 Connected-only, like the CW and Digital tabs are mode-only:
+                 its telemetry comes from radio meter events, so there is
+                 nothing to open while disconnected. -->
+            <Button Classes="strip-button"
+                    Content="SmartDeck"
+                    IsVisible="{Binding IsConnected}"
+                    Click="OnOpenSmartDeck"
+                    ToolTip.Tip="Opens the SmartDeck window: live power, SWR, PA temperature, and supply voltage from the radio."/>
+
+            <Button Classes="theme-toggle"
+                    Click="OnToggleTheme"
+                    ToolTip.Tip="Switches the whole app, SmartDeck included, between Light and Dark.">
+                <!-- Geometry comes from the theme dictionaries, so the icon swaps
+                     itself with the variant: a sun while Light, a moon while Dark.
+                     It names the mode you are in, not the one a click would give
+                     you (operator-reported; the other reading was built first). -->
+                <Path Data="{DynamicResource AppThemeToggleIcon}"
+                      Stretch="Uniform"
+                      Width="16"
+                      Height="16"/>
+            </Button>
+        </StackPanel>
+    </Grid>
 </Window>

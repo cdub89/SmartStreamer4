@@ -482,8 +482,13 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         }
     }
 
-    public string AboutDevelopedBy => "Developed by Chris L White, WX7V";
-    public string AboutLicenseReference => "Licensed under the MIT License. See LICENSE for full terms.";
+    public string AboutCopyright => "Copyright 2026, Chris L White, WX7V";
+
+    // No "see LICENSE for full terms": the release zip stopped carrying that
+    // file on 2026-08-05 (extensionless, so Windows would not open it without a
+    // rename), and pointing an operator at a file they do not have is worse
+    // than naming the licence and stopping there.
+    public string AboutLicenseReference => "Licensed under the MIT License.";
 
     // ── Constructor ───────────────────────────────────────────────────────────
 

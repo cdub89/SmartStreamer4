@@ -57,6 +57,21 @@
                     <SolidColorBrush x:Key="AppCalloutBackgroundBrush" Color="#FFF4E0"/>
                     <SolidColorBrush x:Key="AppCalloutInkBrush"        Color="#3A2A00"/>
                     <SolidColorBrush x:Key="AppCodeBackgroundBrush"    Color="#F7F7F7"/>
+
+                    <!-- Theme toggle icon. Keyed per theme rather than bound to
+                         a ViewModel flag, so it swaps itself when ApplyTheme
+                         changes the variant and no theme state has to be
+                         mirrored into MVVM. Names the mode you are IN, not the
+                         one a click would give you: a sun while Light, a moon
+                         while Dark (operator-reported, the destination reading
+                         was built first and read backwards). Vector geometry,
+                         not an icon-font glyph, for the reason the SmartDeck
+                         pin records: the font codepoints are outlines, so
+                         recolouring tints only the stroke.
+
+                         Sun: disc plus eight rays, one geometry so a single
+                         Fill covers both. -->
+                    <StreamGeometry x:Key="AppThemeToggleIcon">M 12,7 A 5,5 0 1,1 12,17 A 5,5 0 1,1 12,7 Z M 11,1 H 13 V 4 H 11 Z M 11,20 H 13 V 23 H 11 Z M 1,11 H 4 V 13 H 1 Z M 20,11 H 23 V 13 H 20 Z M 4.2,5.6 L 5.6,4.2 L 7.8,6.4 L 6.4,7.8 Z M 16.2,17.6 L 17.6,16.2 L 19.8,18.4 L 18.4,19.8 Z M 17.6,7.8 L 16.2,6.4 L 18.4,4.2 L 19.8,5.6 Z M 5.6,19.8 L 4.2,18.4 L 6.4,16.2 L 7.8,17.6 Z</StreamGeometry>
                 </ResourceDictionary>
 
                 <ResourceDictionary x:Key="Dark">
@@ -83,6 +98,13 @@
                     <SolidColorBrush x:Key="AppCalloutBackgroundBrush" Color="#3A2E1C"/>
                     <SolidColorBrush x:Key="AppCalloutInkBrush"        Color="#F0DFC0"/>
                     <SolidColorBrush x:Key="AppCodeBackgroundBrush"    Color="#2C333C"/>
+
+                    <!-- Moon, the counterpart to the Light dictionary's sun; see
+                         the note there for why the icon names the current mode.
+                         Crescent drawn as one filled path (outer circle with a
+                         second circle bitten out of it) rather than a stroked
+                         outline, which turns to mush at 15px. -->
+                    <StreamGeometry x:Key="AppThemeToggleIcon">M 12,2 A 10,10 0 1,0 22,12 A 7.5,7.5 0 1,1 12,2 Z</StreamGeometry>
                 </ResourceDictionary>
 
             </ResourceDictionary.ThemeDictionaries>
