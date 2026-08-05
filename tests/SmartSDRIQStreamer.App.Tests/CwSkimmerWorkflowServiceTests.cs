@@ -245,7 +245,11 @@ public sealed class CwSkimmerWorkflowServiceTests
         public Task SetSliceTxAntennaAsync(SliceInfo slice, string antenna)        => Task.CompletedTask;
         public Task SetPanadapterRfGainAsync(PanadapterInfo pan, int rfGain)      => Task.CompletedTask;
         public Task SetSliceAgcThresholdAsync(SliceInfo slice, int threshold)     => Task.CompletedTask;
+        public string ControlStation { get; set; } = string.Empty;
+        public int? RfPowerWatts => null;
+        public Task SetRfPowerAsync(int watts)                                    => Task.CompletedTask;
 
+        public event Action<int?>? RfPowerChanged;
         public event Action<bool>? ConnectionStateChanged;
         public event Action<PanadapterInfo>? PanadapterAdded;
         public event Action<PanadapterInfo>? PanadapterRemoved;
@@ -265,6 +269,7 @@ public sealed class CwSkimmerWorkflowServiceTests
         // Suppress unused-event warnings in tests.
         private void _Touch()
         {
+            RfPowerChanged?.Invoke(null);
             ConnectionStateChanged?.Invoke(false);
             PanadapterAdded?.Invoke(default!);
             PanadapterRemoved?.Invoke(default!);

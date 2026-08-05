@@ -3054,6 +3054,12 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         // Issue #45: the new station has not yet been confirmed present in a
         // GUI-client snapshot, so re-arm the seen gate before disconnect detection.
         _controlStationSeen = false;
+        // Issue #64: the connection binds our non-GUI client to this station's
+        // GUI client, which is what makes client-scoped radio state (TX power)
+        // readable. Kept in step here rather than at the connect site so a
+        // station change re-binds too, and set after the seen gate is re-armed
+        // so nothing observing the connection can act on a half-changed station.
+        _connection.ControlStation = station;
         OnPropertyChanged(nameof(SelectedControlStation));
         OnPropertyChanged(nameof(VisibleClientGroups));
         OnPropertyChanged(nameof(ConnectTargetHeaderText));

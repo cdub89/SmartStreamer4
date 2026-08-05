@@ -196,6 +196,35 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
             buttons.Add(new DeckOption(option));
     }
 
+    /// <summary>
+    /// Prefix of the transverter ports the radio offers on every slice. Covers
+    /// every spelling in play (<c>XVTA</c> and <c>XVTB</c> per
+    /// <c>APD.cs:29-31</c>, and the older <c>XVTR</c>) deliberately: the rule is
+    /// "no transverter ports", not a list of port names to keep in step with
+    /// FlexLib.
+    /// </summary>
+    private const string TransverterPortPrefix = "XVT";
+
+    /// <summary>
+    /// Drops transverter ports from a radio-reported antenna list. The radio
+    /// offers XVTA and XVTB on every slice and the operator base does not run
+    /// transverters, so they cost a button each in a window whose height is the
+    /// scarce resource (issue #64, operator-reported).
+    /// </summary>
+    /// <remarks>
+    /// A port the radio currently holds survives the filter: hiding the
+    /// selected antenna would leave the group with no lit button and no way to
+    /// move off the transverter from here. The list is re-derived on every
+    /// slice update, so the port disappears again once the radio moves off it.
+    /// </remarks>
+    private static IReadOnlyList<string> WithoutUnusedTransverterPorts(
+        IReadOnlyList<string> options,
+        string? selected) =>
+        options.Where(option =>
+                !option.StartsWith(TransverterPortPrefix, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(option, selected, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
     private void ApplyAntennaButtonState()
     {
         foreach (var button in RxAntennaButtons)
@@ -399,6 +428,106 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
 
     internal static string FormatAgcThreshold(int threshold) => threshold.ToString(CultureInfo.InvariantCulture);
 
+    // ── TX power and the QRP toggle (issue #64) ──────────────────────────────
+
+    // The operator runs at whatever power the band and the amplifier want, then
+    // drops to QRP for a contact that qualifies and comes back up afterwards.
+    // Doing that in SmartSDR means finding the slider and remembering the number
+    // to return to, which is the whole reason this button exists.
+
+    /// <summary>The power a QRP contact runs at, in watts.</summary>
+    private const int QrpWatts = 5;
+
+    /// <summary>
+    /// The power the radio held when QRP was engaged, restored when it is
+    /// released. Held in memory only, and deliberately not persisted: across a
+    /// restart the radio's own power is the only truth, and a saved number
+    /// would be a guess about a value another client may have changed since.
+    /// </summary>
+    private int? _powerBeforeQrp;
+
+    /// <summary>The radio's transmit power setting, or dashes until it reports one.</summary>
+    [ObservableProperty]
+    private string _txPowerText = Absent;
+
+    /// <summary>
+    /// True while the deck is holding a power to return to, which is also the
+    /// only state in which pressing the button restores anything. The radio is
+    /// necessarily at <see cref="QrpWatts"/> whenever this is true, because
+    /// <see cref="ApplyRfPower"/> stands the toggle down the moment the radio
+    /// reports anything else.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isQrp;
+
+    /// <summary>False until the radio has reported a power, so the toggle cannot save an unknown one.</summary>
+    [ObservableProperty]
+    private bool _canToggleQrp;
+
+    [RelayCommand]
+    private async Task ToggleQrpAsync()
+    {
+        if (_powerBeforeQrp is { } restore)
+        {
+            // Cleared before the write, so the radio's echo of the restored
+            // power is not read as the operator changing power elsewhere.
+            _powerBeforeQrp = null;
+            IsQrp = false;
+            _logStatus($"QRP released: restoring {restore} W.");
+            await _connection.SetRfPowerAsync(restore);
+            TxPowerText = FormatTxPower(restore);
+            return;
+        }
+
+        if (_connection.RfPowerWatts is not { } current)
+        {
+            _logStatus("QRP press ignored: the radio has not reported a power.");
+            return;
+        }
+
+        _powerBeforeQrp = current;
+        IsQrp = true;
+        _logStatus($"QRP engaged: saved {current} W, setting {QrpWatts} W.");
+        await _connection.SetRfPowerAsync(QrpWatts);
+
+        // Shown immediately rather than waiting for the radio's echo, so a
+        // button press does not feel laggy; the echo re-applies the same value.
+        TxPowerText = FormatTxPower(QrpWatts);
+    }
+
+    // RfPowerChanged can fire on a FlexLib event thread.
+    private void OnRfPowerChanged(int? watts) => _postToUi(() => ApplyRfPower(watts));
+
+    private void ApplyRfPower(int? watts)
+    {
+        CanToggleQrp = watts is not null;
+        TxPowerText = watts is { } value ? FormatTxPower(value) : Absent;
+
+        // The radio wins. Anything other than QRP while we are holding a power
+        // to return to means the operator changed power somewhere else, in
+        // SmartSDR or on another client, so the saved value is stale. Dropping
+        // it costs one press to re-engage; keeping it would silently overwrite
+        // their choice the next time the button was released.
+        //
+        // Accepted limitation (Codex deep audit, 2026-08-04): another client
+        // deliberately setting 5 W while QRP is engaged is indistinguishable
+        // from the echo of our own write, so the toggle keeps its saved power
+        // and releasing it climbs back out. That is the same thing the operator
+        // gets from a QRP contact either way, and telling the two apart would
+        // mean tracking write provenance for no change in outcome.
+        if (IsQrp && watts != QrpWatts)
+        {
+            // Worth a line: the button going dark on its own is otherwise
+            // unexplained from the operator's side.
+            _logStatus($"QRP stood down: radio reported {watts?.ToString() ?? "(absent)"} W, "
+                       + $"discarding the saved {_powerBeforeQrp?.ToString() ?? "(none)"} W.");
+            _powerBeforeQrp = null;
+            IsQrp = false;
+        }
+    }
+
+    internal static string FormatTxPower(int watts) => $"{watts} W";
+
     private void OnPanadapterListChanged(PanadapterInfo panadapter) => _postToUi(ApplyRfGainState);
 
     partial void OnSelectedSliceChanged(SliceInfo? value)
@@ -436,8 +565,8 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
         {
             // Buttons first: the antenna setters below light whichever button
             // matches, so the list has to hold this slice's options by then.
-            SyncOptions(RxAntennaButtons, slice?.RxAntennaOptions ?? []);
-            SyncOptions(TxAntennaButtons, slice?.TxAntennaOptions ?? []);
+            SyncOptions(RxAntennaButtons, WithoutUnusedTransverterPorts(slice?.RxAntennaOptions ?? [], slice?.RxAntenna));
+            SyncOptions(TxAntennaButtons, WithoutUnusedTransverterPorts(slice?.TxAntennaOptions ?? [], slice?.TxAntenna));
 
             SelectedRxAntenna = string.IsNullOrEmpty(slice?.RxAntenna) ? null : slice.RxAntenna;
             SelectedTxAntenna = string.IsNullOrEmpty(slice?.TxAntenna) ? null : slice.TxAntenna;
@@ -517,6 +646,7 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
         _connection.PanadapterAdded += OnPanadapterListChanged;
         _connection.PanadapterRemoved += OnPanadapterListChanged;
         _connection.PanadapterUpdated += OnPanadapterListChanged;
+        _connection.RfPowerChanged += OnRfPowerChanged;
         _connection.StartTelemetry();
 
         RefreshSlices();
@@ -524,6 +654,7 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
         // Adopt whatever the connection already holds, so a reopened window
         // shows values immediately instead of dashes until the next event.
         Apply(_connection.Telemetry);
+        ApplyRfPower(_connection.RfPowerWatts);
     }
 
     /// <summary>Unsubscribes and stops the radio publishing telemetry. Idempotent.</summary>
@@ -540,8 +671,14 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
         _connection.PanadapterAdded -= OnPanadapterListChanged;
         _connection.PanadapterRemoved -= OnPanadapterListChanged;
         _connection.PanadapterUpdated -= OnPanadapterListChanged;
+        _connection.RfPowerChanged -= OnRfPowerChanged;
         _connection.StopTelemetry();
         Apply(RadioTelemetryInfo.Empty);
+
+        // Closing the window drops the power to return to along with everything
+        // else. The radio keeps whatever power it holds; nothing is restored
+        // behind the operator's back on reopen.
+        ApplyRfPower(null);
     }
 
     // TelemetryChanged fires on the pump thread, not the UI thread.
@@ -570,12 +707,25 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
         // rather than clearing by hand keeps one code path deciding what the
         // deck shows. The telemetry footer needs no equivalent: StopTelemetry
         // already publishes an empty snapshot, so it falls back to dashes.
+        // Bug fix 2026-08-04 (found by the Codex deep audit of the QRP toggle
+        // before it shipped): with SmartDeck left open across a radio-side drop,
+        // QRP stayed lit holding a power from the previous session, and a press
+        // after the reconnect wrote that stale power to the new one. Root cause
+        // is that only the operator Disconnect() path published a power change;
+        // a FlexLib-side drop raises ConnectionStateChanged alone. Re-deriving
+        // power from the connection here, the way slices already are, means the
+        // deck cannot be left holding state the connection no longer backs.
         if (!connected)
         {
-            _postToUi(RefreshSlices);
+            _postToUi(() =>
+            {
+                RefreshSlices();
+                ApplyRfPower(_connection.RfPowerWatts);
+            });
             return;
         }
 
+        _postToUi(() => ApplyRfPower(_connection.RfPowerWatts));
         _connection.StartTelemetry();
     }
 

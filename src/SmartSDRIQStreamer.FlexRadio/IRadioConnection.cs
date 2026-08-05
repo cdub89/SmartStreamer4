@@ -146,6 +146,51 @@ public interface IRadioConnection
     Task SetSliceTxAntennaAsync(SliceInfo slice, string antenna);
 
     /// <summary>
+    /// The station whose context this connection operates in, matching the
+    /// app's selected control station. Setting it binds our non-GUI client to
+    /// that station's GUI client, which is what makes client-scoped radio
+    /// state (transmit power) readable. Empty leaves the connection unbound.
+    /// </summary>
+    /// <remarks>
+    /// Slice-scoped state never needed this, which is why the connection went
+    /// without it until issue #64. Left unset, FlexLib still binds at connect,
+    /// but to an empty client id (<c>Radio.cs:2249</c>), and the radio answers
+    /// in a context belonging to no station.
+    /// </remarks>
+    string ControlStation { get; set; }
+
+    // ── Transmit power (issue #64, SmartDeck QRP toggle) ─────────────────────
+
+    /// <summary>
+    /// The radio's transmit power setting in watts, or <c>null</c> until the
+    /// radio has reported one. Absent is distinct from zero here: 0 W is a
+    /// setting the operator can select, so it cannot double as "not known yet".
+    /// </summary>
+    /// <remarks>
+    /// Radio-scoped, not slice-scoped, and the radio persists it per band on
+    /// its own. This is the power <em>setting</em>, not the forward power
+    /// <see cref="RadioTelemetryInfo.PowerWatts"/> reads off the meter.
+    /// </remarks>
+    int? RfPowerWatts { get; }
+
+    /// <summary>
+    /// Fires when the radio reports a new transmit power, whether we asked for
+    /// it or another client did. May fire off the UI thread.
+    /// </summary>
+    event Action<int?> RfPowerChanged;
+
+    /// <summary>
+    /// Set the radio's transmit power, in watts. FlexLib clamps to 0-100
+    /// itself, so callers need not. No-op while disconnected or when the radio
+    /// already holds the value.
+    /// </summary>
+    /// <remarks>
+    /// This changes what a subsequent transmission will do; it does not key the
+    /// radio.
+    /// </remarks>
+    Task SetRfPowerAsync(int watts);
+
+    /// <summary>
     /// Reset session network status display values.
     /// Subsequent FlexLib updates repopulate current and max RTT values.
     /// </summary>

@@ -55,6 +55,14 @@ public sealed class FlexLibRadioConnection : IRadioConnection
         var flexRadio = API.RadioList.FirstOrDefault(r => r.Serial == radio.Serial);
         if (flexRadio is null) return false;
 
+        // Found by the Codex deep audit of the issue #64 binding change: a
+        // radio-side drop leaves these handlers attached (only the operator
+        // Disconnect path unwires), so reconnecting to the same Radio object
+        // subscribed a second time and every event arrived twice. Unsubscribing
+        // first is a no-op when nothing is attached, so one line covers both
+        // paths rather than duplicating teardown into the drop handler.
+        UnwireRadioEvents(flexRadio);
+
         flexRadio.PropertyChanged    += OnRadioPropertyChanged;
         flexRadio.PanadapterAdded    += OnPanadapterAdded;
         flexRadio.PanadapterRemoved  += OnPanadapterRemoved;
@@ -107,6 +115,11 @@ public sealed class FlexLibRadioConnection : IRadioConnection
         }
 
         _maxObservedNetworkPing = -1;
+        // Cleared here as well as on Disconnect, since a radio-side drop leaves
+        // the old radio object in place and this is the only path a reconnect
+        // after one takes.
+        _rfPowerReported = false;
+        _boundToStation = false;
         PublishNetworkStatus();
         RefreshGuiClients();
 
@@ -138,6 +151,10 @@ public sealed class FlexLibRadioConnection : IRadioConnection
         _daxIQStreams.Clear();
         _flexDaxIQStreams.Clear();
         _maxObservedNetworkPing = -1;
+        // The next radio reports its own power; until it does, absent.
+        _rfPowerReported = false;
+        _boundToStation = false;
+        RfPowerChanged?.Invoke(null);
         NetworkStatus = NetworkStatusInfo.Empty;
         NetworkStatusChanged?.Invoke(NetworkStatus);
         _guiClients = Array.Empty<GuiClientInfo>();
@@ -174,12 +191,26 @@ public sealed class FlexLibRadioConnection : IRadioConnection
                         // pump running against a dead Radio; tear them down on
                         // this path too, not just the operator Disconnect path.
                         StopTelemetry();
+                        // Same reasoning for transmit power: RfPowerWatts already
+                        // reads absent once Connected goes false, but nothing
+                        // told subscribers, so SmartDeck's QRP toggle stayed lit
+                        // holding a power from the dropped session.
+                        _rfPowerReported = false;
+                        _boundToStation = false;
+                        RfPowerChanged?.Invoke(null);
                     }
                     ConnectionStateChanged?.Invoke(nowConnected);
                 }
                 break;
             case "AvgDAXkbps":
                 if (_radio is not null) AvgDAXKbpsChanged?.Invoke(_radio.AvgDAXkbps);
+                break;
+            // Fires for our own writes and for another client's alike, which is
+            // what lets SmartDeck's QRP toggle stand down when the operator
+            // changes power in SmartSDR instead of fighting them for it.
+            case "RFPower":
+                _rfPowerReported = true;
+                RfPowerChanged?.Invoke(RfPowerWatts);
                 break;
             case "NetworkPing":
             case "RemoteNetworkQuality":
@@ -410,6 +441,41 @@ public sealed class FlexLibRadioConnection : IRadioConnection
         return Task.CompletedTask;
     }
 
+    // ── Transmit power (issue #64) ───────────────────────────────────────────
+
+    // FlexLib initialises Radio.RFPower to 0, which is also a power the operator
+    // can select, so the value is only trustworthy once the radio has actually
+    // reported one. ParseTransmitStatus raises RFPower unconditionally on every
+    // transmit status (Radio.cs:10183-10184), so this flag flips during the
+    // connect-time status burst and stays set for the session.
+    private volatile bool _rfPowerReported;
+
+    // Written from the binding path, read on FlexLib event threads.
+    private volatile bool _boundToStation;
+
+    // Absent until the radio has reported a power *in the station's context*.
+    // The bind requirement is the whole lesson of issue #64: an unbound client
+    // is told a fictional 100 W, and SmartDeck saving that as the power to
+    // return to would write it over the operator's real setting.
+    public int? RfPowerWatts =>
+        _boundToStation && _rfPowerReported && _radio is { Connected: true } radio ? radio.RFPower : null;
+
+    public event Action<int?>? RfPowerChanged;
+
+    public Task SetRfPowerAsync(int watts)
+    {
+        // No MOX guard, and none is needed: this sets what a later transmission
+        // will do rather than keying the radio. FlexLib clamps to 0-100 in the
+        // setter (Radio.cs:8377-8379).
+        // Not logged here: SmartDeck writes one [STREAMER] line per QRP press
+        // naming what it saved or restored, which says more than a bare write
+        // would, and a slider drag would otherwise put a line on the log per
+        // step (same reasoning as the band-restore summary line).
+        if (_radio is { Connected: true } radio && radio.RFPower != watts)
+            radio.RFPower = watts;
+        return Task.CompletedTask;
+    }
+
     // No MOX guard on either antenna setter: the radio itself refuses antenna
     // changes while transmitting, so a guard here would be app-side code
     // duplicating a hardware interlock.
@@ -604,12 +670,95 @@ public sealed class FlexLibRadioConnection : IRadioConnection
                 .Select(c => new GuiClientInfo(
                     c.ClientHandle,
                     c.Program?.Trim() ?? string.Empty,
-                    c.Station?.Trim() ?? string.Empty))
+                    c.Station?.Trim() ?? string.Empty)
+                {
+                    ClientID = c.ClientID?.Trim() ?? string.Empty
+                })
                 .ToList();
         }
 
         _guiClients = snapshot;
+        BindToStationGuiClient(radio, snapshot);
         GuiClientsChanged?.Invoke(_guiClients);
+    }
+
+    private volatile string _controlStation = string.Empty;
+
+    /// <inheritdoc />
+    public string ControlStation
+    {
+        get => _controlStation;
+        set
+        {
+            var station = value ?? string.Empty;
+            if (string.Equals(_controlStation, station, StringComparison.OrdinalIgnoreCase)) return;
+
+            _controlStation = station;
+            // The station can be chosen before the GUI-client snapshot exists,
+            // so bind against whatever snapshot we hold now; RefreshGuiClients
+            // binds again when the snapshot arrives or changes. Deliberately
+            // not a full RefreshGuiClients call: that republishes
+            // GuiClientsChanged, which re-enters the app's control-station loss
+            // detection mid-station-change, where the "seen" gate can still be
+            // set from the station being left.
+            if (_radio is { } radio) BindToStationGuiClient(radio, _guiClients);
+        }
+    }
+
+    /// <summary>
+    /// Puts this non-GUI connection into the station's client context.
+    /// </summary>
+    /// <remarks>
+    /// FlexLib binds every non-GUI client at connect, to whatever
+    /// <c>BoundClientID</c> holds (<c>Radio.cs:2249</c>). Left unset that is an
+    /// empty id, and the radio then answers in a context belonging to no
+    /// station: transmit status reported a constant 100 W while the operator's
+    /// radio was at 62 W, and per-band transmit settings never arrived at all
+    /// (issue #64, diagnosed 2026-08-04 from a live capture). Binding is what
+    /// makes the transmit status ours to read. Slice-scoped controls never
+    /// needed it, which is why the phase-2 plan correctly declined it; TX power
+    /// is the first client-scoped control the deck has carried.
+    /// </remarks>
+    private void BindToStationGuiClient(Radio radio, IReadOnlyList<GuiClientInfo> clients)
+    {
+        // Bind to the station the app is already operating inside, rather than
+        // to whichever GUI client happens to be alone on the radio: slices,
+        // panadapters and the CW Skimmer workflow are all scoped by
+        // ControlStation, so the transmit context has to agree with them or the
+        // deck would read one station while controlling another.
+        if (ControlStation is not { Length: > 0 } wanted) return;
+
+        var station = clients.FirstOrDefault(c =>
+            c.ClientID.Length > 0 &&
+            string.Equals(c.Station, wanted, StringComparison.OrdinalIgnoreCase));
+
+        if (station is null)
+        {
+            // Normal during connect: the GUI-client snapshot arrives after the
+            // station is chosen. RefreshGuiClients runs again when it lands.
+            if (_verboseDiagnostics)
+                EmitDiag($"Not binding yet: no GUI client with a client id for station '{wanted}' among {clients.Count} reported.");
+            return;
+        }
+
+        if (string.Equals(radio.BoundClientID, station.ClientID, StringComparison.Ordinal))
+        {
+            _boundToStation = true;
+            return;
+        }
+
+        radio.BoundClientID = station.ClientID;
+        _boundToStation = true;
+
+        // Anything cached before this moment came from the unbound context that
+        // reported a fictional 100 W, so discard it and wait for the radio to
+        // report in the station's context. Found by the Codex deep audit: the
+        // connect-time status can land before the GUI-client snapshot the bind
+        // needs, and SmartDeck would otherwise offer QRP against that value.
+        _rfPowerReported = false;
+        RfPowerChanged?.Invoke(null);
+
+        EmitDiag($"Bound to GUI client {station.DisplayLabel} (client_id={station.ClientID}).");
     }
 
     public void ResetNetworkStatus()

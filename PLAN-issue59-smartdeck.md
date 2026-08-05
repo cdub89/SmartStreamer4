@@ -425,6 +425,13 @@ that ComboBox with chips.
 
 ### No GUI-client binding, and no "active slice"
 
+> **Superseded in part, 2026-08-04.** The "no binding" half of this decision was
+> reversed by issue #64: the app now binds to the control station's GUI client,
+> because client-scoped radio state (TX power) is unreadable without it. See
+> "Phase 3" below for what that fixed and why this section's reasoning was
+> nonetheless right for everything phase 2 shipped. The "no active slice" half
+> stands unchanged.
+
 An earlier draft of this plan said phase 2 required binding via
 `Radio.BoundClientID` / `BindGUIClient` and following `Slice.Active`. **Both
 were dropped.**
@@ -541,6 +548,33 @@ decision, not an oversight.
 - **Skin deferred.** Whether SmartDeck keeps Windows Fluent light or adopts the
   Stream Deck look (bright blue on near-black) is open, and deliberately
   separated from the arrangement.
+
+## Height squeeze (issue #64, 2026-08-04)
+
+Live testing v0.3.0b1 found the deck stood twice the height of the operator's
+physical Stream Deck buttons beside it. Height, not width, is the scarce
+resource, so this pass buys one row back and nothing else changes.
+
+- **RX and TX antenna share one row**, two groups side by side in a `2*,*` grid,
+  the same shape the RF gain / AGC-T pair already uses. The split matches what a
+  6600 reports once transverter ports are filtered (4 RX against 2 TX); a radio
+  reporting other counts renders one group slightly wider, which is cosmetic.
+- **Transverter ports are hidden.** The radio offers `XVTA` / `XVTB` on every
+  slice and the operator base does not run transverters. A port the radio
+  *currently holds* survives the filter, because hiding the selected antenna
+  would leave the group with no lit button and no way off the transverter from
+  here; the list is re-derived on every slice update, so it goes again once the
+  radio moves off it. This is the general rule the deck follows everywhere: the
+  radio wins, and no control claims a state the radio does not hold.
+- **Band and Mode keep their group headings.** Dropping them was the next
+  available ~50px and was considered and declined; the headings earned their
+  place in the layout pass.
+
+Default window height goes 362 to 316. **Saved geometry defeats this for anyone
+who already ran the deck**: `SmartDeckHeight` is restored on open, so an existing
+operator keeps their old height and the slack lands in the spacer row above the
+telemetry footer. Whether the deck should persist height at all is a live
+question, since every row is `Auto` and a taller window only adds dead space.
 
 ## Per-band memory beyond frequency (live-validated 2026-08-03)
 
@@ -689,26 +723,118 @@ different bodies anyway.
 is a different risk class from one that changes bands on receive, and deserves
 its own guards written deliberately rather than inherited from this one.
 
-## Phase 3 outline (deferred)
+## Phase 3: the QRP toggle, and nothing else (issue #64, 2026-08-04)
 
-TX and PTT (`Radio.Mox`), guarded by `Radio.InterlockState` /
-`InterlockReason`. QRP/QRO presets are cheap when they arrive: `Radio.RFPower`
-(`Radio.cs:8370`) is an int in watts clamped 0-100, emitting
-`transmit set rfpower=N`, with `TunePower` separate.
+Phase 3 was TX/PTT, CWX and power presets. Issue #64 cut it to **one control**:
+a QRP toggle that drops to 5 W and gives the previous power back.
 
-**Neither power setting needs per-band memory.** Both are radio-scoped, so per
-"What follows a direct frequency change" above they already persist per band on
-the radio and follow a direct frequency entry on their own (operator-verified
-2026-08-03). Adding them to `BandState` would race the radio's own value, which
-is the mistake that section exists to prevent. CWX is a full surface, not
-a stub: `CWX.cs` has `SendMacro(int)`, `Send(string)`, a `Macros[]` array with
-`GetMacro` / `SetMacro`, plus `Speed`, `Delay`, `QskEnabled` and
-`MessageQueued` / `CharSent` events, so "send CW from memories" is
-`SendMacro(index)`.
+**That cut changes the risk class of the whole phase.** The warning this section
+used to carry, that everything in phase 3 transmits and a mis-click is a
+hardware-damage path rather than a UI bug, was written for `Radio.Mox` and CWX.
+Setting `Radio.RFPower` does not key the radio; it changes what a later
+transmission will do. So the QRP toggle needs no interlock guard and no
+elevated live-smoke bar beyond confirming the value lands and comes back.
+**If TX/PTT or CWX are ever revived, that warning comes back with them.**
 
-Everything in this phase transmits. A mis-click into a cold amplifier or the
-wrong antenna is a hardware-damage path, not a UI bug, so each control here
-needs an explicit guard and a materially higher live-smoke bar.
+Shipped shape:
+
+- `Radio.RFPower` (`Radio.cs:8370`) is an int in watts clamped 0-100, emitting
+  `transmit set rfpower=N`. `TunePower` is separate and is not exposed.
+- `IRadioConnection.RfPowerWatts` is `int?`. FlexLib initialises `RFPower` to 0,
+  which is also a power the operator can select, so the connection reports
+  absent until the radio has actually said one. `ParseTransmitStatus` raises
+  `RFPower` unconditionally on every transmit status
+  (`Radio.cs:10183-10184`), so the flag flips during the connect-time burst.
+- **The saved power is held in memory only.** Not in `AppSettings`: across a
+  restart the radio's own power is the only truth, and a saved number would be
+  a guess about a value another client may have changed since.
+- **The radio wins.** `RFPower` is raised for our own writes and another
+  client's alike, so if the operator moves the power slider in SmartSDR while
+  QRP is lit, the toggle stands down and forgets what it was holding rather
+  than overwriting their choice on release. Same rule as everywhere else on
+  the deck; see the antenna filter above.
+- **No per-band memory**, and this was already settled: RF power is
+  radio-scoped, so the radio persists it per band itself (operator-verified
+  2026-08-03). Adding it to `BandState` would race the radio's own value, which
+  is the mistake that section exists to prevent.
+- The footer's forward-power reading is relabelled **Fwd**, since "Power" now
+  sits above it as a setting. The two are different numbers.
+- **QRP lights for a power it is holding, not for the radio reading 5 W.** A
+  deliberate exception to the deck's usual lit rule, because QRP is a toggle
+  rather than a value: lighting on 5 W would produce a lit button whose press
+  has nothing to restore, and a radio already at 5 W would look engaged when
+  nothing is saved.
+
+### The bind, and the four wrong theories it killed (live-validated 2026-08-04)
+
+The toggle shipped broken and the investigation is worth keeping, because the
+root cause was one line of FlexLib nobody had looked at.
+
+**Symptom:** the deck read a constant `100 W` while the radio was at 62 W.
+Pressing QRP set the radio to 5 W (SmartSDR followed), the readout flashed 5 and
+snapped back to 100, the button never stayed lit, and a second press re-engaged
+instead of restoring.
+
+**Root cause:** `Radio.cs:2241-2251`. FlexLib binds *every* non-GUI client at
+connect, to whatever `BoundClientID` holds. We never set it, so the command sent
+was `client bind client_id=` with an empty id. We were not an unbound client
+seeing a global view; we were bound to nothing, and the radio answered
+client-scoped questions in a context belonging to no station.
+
+**Fix:** bind to the GUI client for `ControlStation`, matching the station the
+app already scopes slices, panadapters and the CW Skimmer workflow by. The
+readout then tracks the operator's slider step for step and the toggle restores
+correctly.
+
+Four theories died first, all of them plausible from the code alone:
+
+1. **Stale status echo**, the mechanism behind the antenna bounce above.
+   Refuted: the reported value never changed at all, not even late.
+2. **`Radio.RFPower` unusable for non-GUI clients.** Refuted by the operator:
+   other non-GUI clients read and set power fine.
+3. **Per-band `TxBandSettings.PowerLevel` is the real source** (Codex and Claude
+   agreed on this one). Refuted by capture: no `transmit band` status arrived at
+   all. It arrives *now*, once bound, and mirrors the global value, so we do not
+   need it.
+4. **The radio rejecting our write.** Refuted: `tx_rf_power_changes_allowed` was
+   true throughout, and the write always landed.
+
+**Why the phase-2 "no binding" decision was still right.** It reasoned that
+binding buys nothing for slice-scoped controls, and that holds: antenna, mode,
+frequency and RF gain all worked unbound, in the field, for releases. TX power
+is simply the first client-scoped control the deck has carried. The decision was
+correct for its scope rather than wrong.
+
+**One trap in the fix.** Setting the station from `SetSelectedControlStation`
+must not republish `GuiClientsChanged`: that re-enters the issue #45
+control-station loss detection mid-change, where `_controlStationSeen` can still
+be set from the station being left, and the app would drop the radio connection
+on a station switch. The setter binds against the snapshot it already holds.
+
+**Reading the logs.** A `TX power reported` line whose value matches a write we
+just made can be our own echo: FlexLib raises `PropertyChanged` inside its own
+setter, before the calling code continues. Radio-originated values are the ones
+that arrive later, unprompted.
+
+Two things the Codex deep audit caught before this shipped:
+
+- **A radio-side drop left QRP lit holding a power from the dropped session**,
+  and a press after the reconnect wrote that stale power to the new one. Only
+  the operator `Disconnect()` path published a power change; a FlexLib-side
+  drop raises `ConnectionStateChanged` alone. Fixed on both layers: the
+  connection publishes absent on that path too, and the ViewModel re-derives
+  power from the connection on any connection-state change, the way it already
+  re-derives slices.
+- **Accepted limitation.** Another client deliberately setting 5 W while QRP is
+  engaged is indistinguishable from the echo of our own write, so the toggle
+  keeps its saved power and releasing it climbs back out. That is what the
+  operator gets from a QRP contact either way, and telling the two apart would
+  mean tracking write provenance for no change in outcome.
+
+Deferred, not dropped. `CWX.cs` remains a full surface if "send CW from
+memories" is ever wanted: `SendMacro(int)`, `Send(string)`, a `Macros[]` array
+with `GetMacro` / `SetMacro`, plus `Speed`, `Delay`, `QskEnabled` and
+`MessageQueued` / `CharSent` events.
 
 ## Alternatives considered and rejected
 

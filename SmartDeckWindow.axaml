@@ -3,12 +3,12 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:SDRIQStreamer.App"
-        mc:Ignorable="d" d:DesignWidth="360" d:DesignHeight="362"
+        mc:Ignorable="d" d:DesignWidth="360" d:DesignHeight="316"
         x:Class="SDRIQStreamer.App.SmartDeckWindow"
         x:DataType="local:SmartDeckViewModel"
         Title="SmartDeck"
-        Width="360" Height="362"
-        MinWidth="340" MinHeight="346"
+        Width="360" Height="316"
+        MinWidth="356" MinHeight="300"
         WindowStartupLocation="CenterOwner">
 
     <!-- Accelerators match the ones the operator already uses in FRStack.
@@ -146,7 +146,7 @@
         </Style>
     </Window.Styles>
 
-    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto" RowSpacing="6" Margin="10,8">
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto" RowSpacing="6" Margin="10,8">
 
         <!-- Header. Answers slice, frequency and mode without opening anything;
              before the layout pass that state lived inside the slice dropdown's
@@ -257,52 +257,64 @@
             </ItemsControl>
         </StackPanel>
 
-        <!-- Antenna options come from the radio, so the row sizes itself to
-             however many this model reports rather than to a fixed five. -->
-        <StackPanel Grid.Row="3" IsEnabled="{Binding HasSelectedSlice}">
-            <TextBlock Classes="group-label" Text="RX antenna"/>
-            <ItemsControl ItemsSource="{Binding RxAntennaButtons}" Margin="-2">
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <UniformGrid Rows="1"/>
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="local:DeckOption">
-                        <Button Classes="deck-button"
-                                Classes.lit="{Binding IsCurrent}"
-                                Content="{Binding Label}"
-                                Command="{Binding $parent[Window].((local:SmartDeckViewModel)DataContext).SelectRxAntennaCommand}"
-                                CommandParameter="{Binding Label}"/>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-        </StackPanel>
+        <!-- RX and TX antenna share one row rather than owning one each: at two
+             rows the deck stood twice the height of the operator's Stream Deck
+             buttons beside it (issue #64). Antenna options come from the radio,
+             so each group sizes itself to however many this model reports.
+             The 2:1 column split matches the shape a 6600 reports once the
+             transverter ports are filtered out (4 RX against 2 TX), so buttons
+             read the same width across the seam; a radio reporting other counts
+             renders one group slightly wider, which is cosmetic only. -->
+        <Grid Grid.Row="3" ColumnDefinitions="2*,*" ColumnSpacing="10"
+              IsEnabled="{Binding HasSelectedSlice}">
+            <StackPanel Grid.Column="0">
+                <TextBlock Classes="group-label" Text="RX antenna"/>
+                <ItemsControl ItemsSource="{Binding RxAntennaButtons}" Margin="-2">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <UniformGrid Rows="1"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="local:DeckOption">
+                            <Button Classes="deck-button"
+                                    Classes.lit="{Binding IsCurrent}"
+                                    Content="{Binding Label}"
+                                    Command="{Binding $parent[Window].((local:SmartDeckViewModel)DataContext).SelectRxAntennaCommand}"
+                                    CommandParameter="{Binding Label}"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
 
-        <StackPanel Grid.Row="4" IsEnabled="{Binding HasSelectedSlice}">
-            <TextBlock Classes="group-label" Text="TX antenna"/>
-            <ItemsControl ItemsSource="{Binding TxAntennaButtons}" Margin="-2">
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <UniformGrid Rows="1"/>
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="local:DeckOption">
-                        <Button Classes="deck-button"
-                                Classes.lit="{Binding IsCurrent}"
-                                Content="{Binding Label}"
-                                Command="{Binding $parent[Window].((local:SmartDeckViewModel)DataContext).SelectTxAntennaCommand}"
-                                CommandParameter="{Binding Label}"/>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-        </StackPanel>
+            <StackPanel Grid.Column="1">
+                <TextBlock Classes="group-label" Text="TX antenna"/>
+                <ItemsControl ItemsSource="{Binding TxAntennaButtons}" Margin="-2">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <UniformGrid Rows="1"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="local:DeckOption">
+                            <Button Classes="deck-button"
+                                    Classes.lit="{Binding IsCurrent}"
+                                    Content="{Binding Label}"
+                                    Command="{Binding $parent[Window].((local:SmartDeckViewModel)DataContext).SelectTxAntennaCommand}"
+                                    CommandParameter="{Binding Label}"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </Grid>
 
         <!-- RF gain is a panadapter property with a radio-reported range; AGC-T
              is slice-scoped with a protocol-fixed one. They pair here because
-             both step an integer, and both carry their FRStack accelerator. -->
-        <Grid Grid.Row="5" ColumnDefinitions="*,*" ColumnSpacing="10">
+             both step an integer, and both carry their FRStack accelerator.
+             TX power joins them as a readout with one button rather than a
+             third stepper, so the column takes only the width it needs and the
+             other two keep equal shares of the rest. -->
+        <Grid Grid.Row="4" ColumnDefinitions="*,*,Auto" ColumnSpacing="10">
             <StackPanel Grid.Column="0" IsEnabled="{Binding CanAdjustRfGain}">
                 <TextBlock Classes="group-label" Text="RF gain"/>
                 <!-- Readout and its buttons pack together at the left edge under
@@ -342,16 +354,43 @@
                             Command="{Binding AgcThresholdUpCommand}"/>
                 </Grid>
             </StackPanel>
+
+            <!-- The readout is the setting the radio will transmit at, which is
+                 what the operator needs to see to know what QRP will give back.
+                 The footer's "Fwd" is the measured forward power, a different
+                 number. QRP lights while the deck is holding a power to return
+                 to, and stands down on its own if the power changes elsewhere. -->
+            <StackPanel Grid.Column="2" IsEnabled="{Binding CanToggleQrp}">
+                <TextBlock Classes="group-label" Text="TX power"/>
+                <Grid ColumnDefinitions="Auto,Auto" ColumnSpacing="4">
+                    <TextBlock Grid.Column="0"
+                               Text="{Binding TxPowerText}"
+                               FontSize="13"
+                               FontWeight="SemiBold"
+                               VerticalAlignment="Center"
+                               MinWidth="44"
+                               Margin="2,0,0,0"/>
+                    <Button Grid.Column="1"
+                            Classes="deck-button"
+                            Classes.lit="{Binding IsQrp}"
+                            Content="QRP"
+                            MinWidth="40"
+                            ToolTip.Tip="Drop to 5 W and remember the current power. Press again to restore it."
+                            Command="{Binding ToggleQrpCommand}"/>
+                </Grid>
+            </StackPanel>
         </Grid>
 
-        <Border Grid.Row="7" BorderBrush="#E6E6E6" BorderThickness="0,1,0,0" Padding="0,5,0,0">
+        <Border Grid.Row="6" BorderBrush="#E6E6E6" BorderThickness="0,1,0,0" Padding="0,5,0,0">
             <Grid ColumnDefinitions="*,*,*,*">
                 <StackPanel Grid.Column="0">
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                         <TextBlock Classes="telemetry-value" Text="{Binding PowerText}"/>
                         <TextBlock Classes="telemetry-unit" Text="W"/>
                     </StackPanel>
-                    <TextBlock Classes="telemetry-label" Text="Power"/>
+                    <!-- "Fwd", not "Power": the TX power group above is the
+                         setting, this is what the meter reads coming out. -->
+                    <TextBlock Classes="telemetry-label" Text="Fwd"/>
                 </StackPanel>
 
                 <StackPanel Grid.Column="1">

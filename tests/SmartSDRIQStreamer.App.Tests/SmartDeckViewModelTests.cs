@@ -791,6 +791,205 @@ public class SmartDeckViewModelTests
         Assert.Equal("ANT2", Assert.Single(viewModel.TxAntennaButtons, button => button.IsCurrent).Label);
     }
 
+    // The radio offers XVTA/XVTB on every slice. Issue #64 hides them: they cost
+    // a button each in a window whose height is the scarce resource, and the
+    // operator base does not run transverters.
+    // Carries both spellings at once (XVTA/XVTB per APD.cs, and the older XVTR)
+    // rather than what one radio would really report, so the test pins the rule
+    // "no transverter ports" rather than a list of port names.
+    private static SliceInfo SliceWithTransverterPorts(string rxAnt, string txAnt) =>
+        Slice("A", rxAnt: rxAnt, txAnt: txAnt) with
+        {
+            RxAntennaOptions = ["ANT1", "ANT2", "RX_A", "XVTA", "XVTB", "XVTR"],
+            TxAntennaOptions = ["ANT1", "ANT2", "XVTA", "XVTR"]
+        };
+
+    [Fact]
+    public void Transverter_ports_the_radio_is_not_using_are_hidden()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(SliceWithTransverterPorts(rxAnt: "RX_A", txAnt: "ANT2"));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+
+        viewModel.Start();
+
+        Assert.Equal(["ANT1", "ANT2", "RX_A"], viewModel.RxAntennaButtons.Select(button => button.Label));
+        Assert.Equal(["ANT1", "ANT2"], viewModel.TxAntennaButtons.Select(button => button.Label));
+    }
+
+    [Fact]
+    public void A_transverter_port_the_radio_currently_holds_stays_visible_until_the_radio_leaves_it()
+    {
+        // Hiding the selected antenna would leave the group with no lit button
+        // and no way to move off the transverter from the deck. The radio wins:
+        // the port appears while the radio holds it and goes once it does not.
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(SliceWithTransverterPorts(rxAnt: "XVTA", txAnt: "XVTA"));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+        viewModel.Start();
+
+        Assert.Equal(["ANT1", "ANT2", "RX_A", "XVTA"], viewModel.RxAntennaButtons.Select(button => button.Label));
+        Assert.Equal("XVTA", Assert.Single(viewModel.RxAntennaButtons, button => button.IsCurrent).Label);
+        Assert.Equal("XVTA", Assert.Single(viewModel.TxAntennaButtons, button => button.IsCurrent).Label);
+
+        var movedOff = SliceWithTransverterPorts(rxAnt: "ANT1", txAnt: "ANT1");
+        connection.SetSlices(movedOff);
+        connection.RaiseSliceUpdated(movedOff);
+
+        Assert.Equal(["ANT1", "ANT2", "RX_A"], viewModel.RxAntennaButtons.Select(button => button.Label));
+        Assert.Equal(["ANT1", "ANT2"], viewModel.TxAntennaButtons.Select(button => button.Label));
+    }
+
+    // ── QRP toggle (issue #64) ───────────────────────────────────────────────
+
+    private static (FakeTelemetryConnection Connection, SmartDeckViewModel ViewModel) DeckAtPower(int? watts)
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A"));
+        connection.ReportRfPower(watts);
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+        viewModel.Start();
+        return (connection, viewModel);
+    }
+
+    [Fact]
+    public void QRP_drops_to_five_watts_and_the_second_press_restores_the_power_it_replaced()
+    {
+        var (connection, viewModel) = DeckAtPower(75);
+
+        viewModel.ToggleQrpCommand.Execute(null);
+
+        Assert.Equal(5, Assert.Single(connection.RfPowerWrites));
+        Assert.True(viewModel.IsQrp);
+        Assert.Equal("5 W", viewModel.TxPowerText);
+
+        viewModel.ToggleQrpCommand.Execute(null);
+
+        Assert.Equal([5, 75], connection.RfPowerWrites);
+        Assert.False(viewModel.IsQrp);
+        Assert.Equal("75 W", viewModel.TxPowerText);
+    }
+
+    [Fact]
+    public void Changing_power_elsewhere_while_QRP_is_engaged_stands_the_toggle_down()
+    {
+        // The radio wins. The operator moved the slider in SmartSDR, so the
+        // power we saved is stale and releasing QRP must not overwrite what
+        // they just chose.
+        var (connection, viewModel) = DeckAtPower(75);
+        viewModel.ToggleQrpCommand.Execute(null);
+
+        connection.ReportRfPower(30);
+
+        Assert.False(viewModel.IsQrp);
+        Assert.Equal("30 W", viewModel.TxPowerText);
+
+        viewModel.ToggleQrpCommand.Execute(null);
+
+        // Engages afresh against 30 W rather than restoring the discarded 75.
+        Assert.Equal([5, 5], connection.RfPowerWrites);
+        Assert.True(viewModel.IsQrp);
+
+        viewModel.ToggleQrpCommand.Execute(null);
+
+        Assert.Equal([5, 5, 30], connection.RfPowerWrites);
+    }
+
+    [Fact]
+    public void The_radios_own_echo_of_the_QRP_write_does_not_stand_the_toggle_down()
+    {
+        var (connection, viewModel) = DeckAtPower(100);
+
+        viewModel.ToggleQrpCommand.Execute(null);
+
+        // The fake echoes the write as FlexLib does; 5 W is the value we asked
+        // for, so it is not somebody else changing power.
+        Assert.True(viewModel.IsQrp);
+        Assert.Equal(5, connection.RfPowerWatts);
+    }
+
+    [Fact]
+    public void The_QRP_toggle_is_unavailable_until_the_radio_reports_a_power()
+    {
+        var (connection, viewModel) = DeckAtPower(null);
+
+        Assert.False(viewModel.CanToggleQrp);
+        Assert.Equal("---", viewModel.TxPowerText);
+
+        viewModel.ToggleQrpCommand.Execute(null);
+
+        Assert.Empty(connection.RfPowerWrites);
+        Assert.False(viewModel.IsQrp);
+    }
+
+    [Fact]
+    public void A_disconnect_drops_the_saved_power_rather_than_restoring_it_later()
+    {
+        var (connection, viewModel) = DeckAtPower(75);
+        viewModel.ToggleQrpCommand.Execute(null);
+
+        connection.ReportRfPower(null);
+
+        Assert.False(viewModel.IsQrp);
+        Assert.False(viewModel.CanToggleQrp);
+        Assert.Equal("---", viewModel.TxPowerText);
+
+        // Reconnecting at whatever the radio now holds must not resurrect 75.
+        connection.ReportRfPower(50);
+        viewModel.ToggleQrpCommand.Execute(null);
+        viewModel.ToggleQrpCommand.Execute(null);
+
+        Assert.Equal([5, 5, 50], connection.RfPowerWrites);
+    }
+
+    [Fact]
+    public void A_radio_side_drop_clears_the_saved_power_before_the_next_session_can_use_it()
+    {
+        // Regression, Codex deep audit 2026-08-04: a FlexLib-side drop raises
+        // ConnectionStateChanged alone, so QRP stayed lit holding a power from
+        // the dropped session and the next press wrote it to the new one.
+        var (connection, viewModel) = DeckAtPower(75);
+        viewModel.ToggleQrpCommand.Execute(null);
+
+        connection.RaiseConnectionStateChanged(false);
+
+        Assert.False(viewModel.IsQrp);
+        Assert.False(viewModel.CanToggleQrp);
+        Assert.Equal("---", viewModel.TxPowerText);
+
+        connection.RaiseConnectionStateChanged(true);
+        connection.ReportRfPower(40);
+        viewModel.ToggleQrpCommand.Execute(null);
+        viewModel.ToggleQrpCommand.Execute(null);
+
+        Assert.Equal([5, 5, 40], connection.RfPowerWrites);
+    }
+
+    [Fact]
+    public void QRP_lights_for_a_power_it_is_holding_rather_than_for_the_radio_reading_five_watts()
+    {
+        // A deliberate exception to the deck's usual "lit means the value the
+        // radio holds": QRP is a toggle, not a value. Lit means SmartDeck has a
+        // power to give back, so a radio already sitting at 5 W reads unlit and
+        // the first press is still the one that saves something. The
+        // alternative, lighting on 5 W, produces a lit button whose press has
+        // nothing to restore.
+        var (connection, viewModel) = DeckAtPower(5);
+
+        Assert.False(viewModel.IsQrp);
+        Assert.Equal("5 W", viewModel.TxPowerText);
+
+        viewModel.ToggleQrpCommand.Execute(null);
+
+        Assert.True(viewModel.IsQrp);
+
+        viewModel.ToggleQrpCommand.Execute(null);
+
+        Assert.False(viewModel.IsQrp);
+        Assert.Equal("5 W", viewModel.TxPowerText);
+        Assert.Equal(5, connection.RfPowerWatts);
+    }
+
     [Fact]
     public void Pressing_an_antenna_button_writes_it_and_moves_the_lit_state()
     {

@@ -188,6 +188,18 @@ public sealed record GuiClientInfo(
     string Program,
     string Station)
 {
+    /// <summary>
+    /// The radio's own identifier for this GUI client, as opposed to the
+    /// per-session <see cref="ClientHandle"/>. Empty until the radio reports
+    /// one. This is what <c>client bind client_id=</c> takes, so it is what
+    /// puts our non-GUI connection into the station's context (issue #64).
+    /// </summary>
+    /// <remarks>
+    /// An init property rather than a positional parameter, so the existing
+    /// constructions stay valid.
+    /// </remarks>
+    public string ClientID { get; init; } = string.Empty;
+
     public string DisplayLabel => $"{Program}/{Station}";
 }
 

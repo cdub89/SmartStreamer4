@@ -25,9 +25,21 @@ internal sealed class FakeTelemetryConnection : IRadioConnection
         TelemetryChanged?.Invoke(telemetry);
     }
 
-    /// <summary>Raises a connection-state transition as FlexLib would.</summary>
-    public void RaiseConnectionStateChanged(bool connected) =>
+    /// <summary>
+    /// Raises a connection-state transition as FlexLib would. A drop makes the
+    /// power absent, matching FlexLibRadioConnection, whose RfPowerWatts reads
+    /// null the moment Radio.Connected goes false.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately does not raise <see cref="RfPowerChanged"/>: the real
+    /// connection does, but leaving it out here is what makes the disconnect
+    /// test exercise the ViewModel's own re-derive rather than the event path.
+    /// </remarks>
+    public void RaiseConnectionStateChanged(bool connected)
+    {
+        if (!connected) RfPowerWatts = null;
         ConnectionStateChanged?.Invoke(connected);
+    }
 
     public event Action<RadioTelemetryInfo>? TelemetryChanged;
     public event Action<bool>? ConnectionStateChanged;
@@ -97,6 +109,35 @@ internal sealed class FakeTelemetryConnection : IRadioConnection
     {
         AgcThresholdWrites.Add((slice, threshold));
         return Task.CompletedTask;
+    }
+
+    public string ControlStation { get; set; } = string.Empty;
+
+    // ── Transmit power (issue #64) ───────────────────────────────────────────
+
+    public List<int> RfPowerWrites { get; } = [];
+
+    public int? RfPowerWatts { get; private set; }
+
+    public event Action<int?>? RfPowerChanged;
+
+    /// <summary>
+    /// Records the write and echoes it as the radio does, since FlexLib raises
+    /// RFPower for our own writes as well as another client's
+    /// (<c>Radio.cs:8381-8390</c>).
+    /// </summary>
+    public Task SetRfPowerAsync(int watts)
+    {
+        RfPowerWrites.Add(watts);
+        ReportRfPower(watts);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Reports a power as the radio would, whoever changed it.</summary>
+    public void ReportRfPower(int? watts)
+    {
+        RfPowerWatts = watts;
+        RfPowerChanged?.Invoke(watts);
     }
 
     public List<(PanadapterInfo Panadapter, int RfGain)> RfGainWrites { get; } = [];
