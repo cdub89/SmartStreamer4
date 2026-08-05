@@ -27,25 +27,66 @@
          value the radio currently holds. -->
 
     <Window.Styles>
-        <!-- Telemetry readouts are glanced at mid-QSO. They carry the same size
-             and weight as the RF gain and AGC-T readouts, so every number on the
-             window reads as one family rather than the footer being its own
-             thing (operator-reported, layout pass). -->
+        <!-- Telemetry readouts are glanced at mid-QSO. They sit a step below the
+             RF gain and AGC-T readouts rather than matching them: matched, the
+             footer competed with the controls above it (operator-reported, issue
+             #59 live feedback). The step-down is the only part of that pass that
+             survived. Spacing is untouched from the shipped layout, the tighter
+             label margin tried alongside the move having gone back with it. -->
         <Style Selector="TextBlock.telemetry-value">
-            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontSize" Value="11"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="HorizontalAlignment" Value="Center"/>
         </Style>
         <Style Selector="TextBlock.telemetry-label">
-            <Setter Property="FontSize" Value="9"/>
+            <Setter Property="FontSize" Value="8"/>
             <Setter Property="Foreground" Value="{DynamicResource AppMutedBrush}"/>
             <Setter Property="HorizontalAlignment" Value="Center"/>
         </Style>
         <Style Selector="TextBlock.telemetry-unit">
-            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="FontSize" Value="9"/>
             <Setter Property="Foreground" Value="{DynamicResource AppMutedBrush}"/>
             <Setter Property="VerticalAlignment" Value="Bottom"/>
-            <Setter Property="Margin" Value="2,0,0,2"/>
+            <Setter Property="Margin" Value="2,0,0,1"/>
+        </Style>
+
+        <!-- The mode readout is a control, not a caption: clicking it steps the
+             slice through CW, LSB, USB, AM. It replaced a four-button row and
+             its heading, which is the row the window got back (issue #59 live
+             feedback). Deliberately not styled as a button, per the operator, so
+             the only resting cue is that it reads as live state like the
+             frequency beside it; the hover wash and the hand cursor are what
+             say "clickable" before the click, because plain text that silently
+             retunes the radio is otherwise a trap. -->
+        <Style Selector="Button.mode-toggle">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="Padding" Value="4,0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="VerticalAlignment" Value="Bottom"/>
+            <!-- Fluent gives a Button a 32px minimum height and a 1px border.
+                 Both have to go or the readout stops being text: the minimum
+                 would centre the mode inside a box taller than the frequency
+                 beside it and push the whole header row down, which is the row
+                 this control was added to save. -->
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <!-- Belt and braces with MinHeight above: if the template ever
+                 hands the button a box taller than its text, the text still
+                 sits on the row baseline instead of centring in the slack. -->
+            <Setter Property="VerticalContentAlignment" Value="Bottom"/>
+        </Style>
+        <Style Selector="Button.mode-toggle /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+        </Style>
+        <Style Selector="Button.mode-toggle:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AppHoverWashBrush}"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+        </Style>
+        <Style Selector="Button.mode-toggle:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AppHoverWashBrush}"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
         </Style>
 
         <!-- One heading per group, rather than a label beside every row: the
@@ -146,31 +187,50 @@
         </Style>
     </Window.Styles>
 
-    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="6" Margin="10,8">
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="6" Margin="10,8">
 
         <!-- Header. Answers slice, frequency and mode without opening anything;
              before the layout pass that state lived inside the slice dropdown's
              label, which is the one place it could not be read at a glance. -->
         <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
-            <!-- The readout spans all three columns so it centres on the window
-                 rather than on the gap between the chips and the pin, which are
-                 different widths. Declared first so the chips and the pin draw
-                 over it if a very wide frequency ever reaches them. -->
-            <StackPanel Grid.Column="0" Grid.ColumnSpan="3"
+            <!-- The readout centres inside the middle column rather than
+                 spanning all three. Spanning centred it on the window, which is
+                 fractionally truer (the chips and the pin are different widths)
+                 but let the chips overlap it once there were enough slices to
+                 reach the middle. Adding "Mode" to the readout widened it by
+                 roughly a chip, which moved that collision from four slices to
+                 three, so the tradeoff no longer holds: at one slice the two
+                 layouts differ by about a pixel, and this one cannot collide.
+                 Still declared first so the chips and the pin draw over it if a
+                 station ever runs enough slices to squeeze the column anyway. -->
+            <StackPanel Grid.Column="1"
                         Orientation="Horizontal"
                         HorizontalAlignment="Center"
                         VerticalAlignment="Center">
-                <TextBlock Text="{Binding FrequencyText}" FontSize="17" FontWeight="SemiBold"/>
+                <!-- Bottom-aligned explicitly rather than left on the default
+                     Stretch. Stretched, it filled whatever height the mode
+                     button claimed and drew its text at the top of that box,
+                     while the button centred its own content, so the mode read
+                     as sitting lower than the frequency (operator-reported,
+                     issue #59 live feedback). Every item on this row is
+                     bottom-aligned now, which is what puts the two on a common
+                     baseline; do not drop this back to the default. -->
+                <TextBlock Text="{Binding FrequencyText}" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Bottom"/>
                 <TextBlock Text="MHz" FontSize="10" Foreground="{DynamicResource AppMutedBrush}" VerticalAlignment="Bottom" Margin="3,0,0,2"/>
-                <!-- Mode is part of the answer to "what am I on", so it carries
-                     the same weight as the frequency rather than sitting at
-                     unit-label contrast beside it. -->
-                <TextBlock Text="{Binding ModeText}"
-                           FontSize="12"
-                           FontWeight="SemiBold"
-                           Foreground="{DynamicResource AppMutedStrongBrush}"
-                           VerticalAlignment="Bottom"
-                           Margin="7,0,0,1"/>
+                <!-- Mode repeats the frequency's value-then-unit shape one size
+                     down, so the pair reads as two answers to "what am I on"
+                     rather than a number with a suffix. Hidden rather than blank
+                     with no slice, so the bare word "Mode" never sits alone. -->
+                <Button Classes="mode-toggle"
+                        IsVisible="{Binding HasSelectedSlice}"
+                        Command="{Binding CycleModeCommand}"
+                        ToolTip.Tip="Click to step the slice mode: CW, LSB, USB, AM"
+                        Margin="4,0,0,0">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="{Binding ModeText}" FontSize="14" FontWeight="SemiBold"/>
+                        <TextBlock Text="Mode" FontSize="10" Foreground="{DynamicResource AppMutedBrush}" VerticalAlignment="Bottom" Margin="3,0,0,1"/>
+                    </StackPanel>
+                </Button>
             </StackPanel>
 
             <ItemsControl Grid.Column="0" ItemsSource="{Binding SliceOptions}" Margin="-2">
@@ -237,26 +297,6 @@
             </ItemsControl>
         </StackPanel>
 
-        <StackPanel Grid.Row="2" IsEnabled="{Binding HasSelectedSlice}">
-            <TextBlock Classes="group-label" Text="Mode"/>
-            <ItemsControl ItemsSource="{Binding ModeOptions}" Margin="-2">
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <UniformGrid Columns="4"/>
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="local:ModeOption">
-                        <Button Classes="deck-button"
-                                Classes.lit="{Binding IsCurrent}"
-                                Content="{Binding Label}"
-                                Command="{Binding $parent[Window].((local:SmartDeckViewModel)DataContext).SetModeCommand}"
-                                CommandParameter="{Binding Mode}"/>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-        </StackPanel>
-
         <!-- RX and TX antenna share one row rather than owning one each: at two
              rows the deck stood twice the height of the operator's Stream Deck
              buttons beside it (issue #64). Antenna options come from the radio,
@@ -265,7 +305,7 @@
              transverter ports are filtered out (4 RX against 2 TX), so buttons
              read the same width across the seam; a radio reporting other counts
              renders one group slightly wider, which is cosmetic only. -->
-        <Grid Grid.Row="3" ColumnDefinitions="2*,*" ColumnSpacing="10"
+        <Grid Grid.Row="2" ColumnDefinitions="2*,*" ColumnSpacing="10"
               IsEnabled="{Binding HasSelectedSlice}">
             <StackPanel Grid.Column="0">
                 <TextBlock Classes="group-label" Text="RX antenna"/>
@@ -312,44 +352,59 @@
              is slice-scoped with a protocol-fixed one. They pair here because
              both step an integer, and both carry their FRStack accelerator.
              TX power joins them as a readout with one button rather than a
-             third stepper, so the column takes only the width it needs and the
-             other two keep equal shares of the rest. -->
-        <Grid Grid.Row="4" ColumnDefinitions="*,*,Auto" ColumnSpacing="10">
+             third stepper, so it takes only the width it needs.
+
+             Each stepper brackets its own readout: minus, value, plus. The
+             previous shape put both buttons after the value, which meant every
+             group's "+" ended up flush against the *next* group's number, and
+             the three groups overflowed their columns badly enough that the
+             gutter between them collapsed to nothing. The value read as
+             belonging to the buttons on its left rather than its right
+             (operator-reported, issue #59 live feedback). Bracketing makes the
+             grouping true at any spacing, so it cannot regress into the same
+             ambiguity if a readout grows a digit. Do not move the buttons back
+             to one side.
+
+             Readouts keep a minimum width, now sized per group to its own
+             widest real value rather than a shared 44px, so the buttons hold
+             still as the number changes without the leftover slack reopening
+             the gap this fixed. The min is a floor, not a cap: a wider value
+             grows its Auto column instead of clipping. -->
+        <Grid Grid.Row="3" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
             <StackPanel Grid.Column="0" IsEnabled="{Binding CanAdjustRfGain}">
                 <TextBlock Classes="group-label" Text="RF gain"/>
-                <!-- Readout and its buttons pack together at the left edge under
-                     the group heading, and the readout carries a minimum width
-                     so the buttons hold still as the value changes width.
-                     Spreading them across the column put the number under the
-                     heading with its buttons at the far edge, which read as two
-                     unrelated controls (operator-reported, layout pass). -->
-                <Grid ColumnDefinitions="Auto,Auto,Auto,*" ColumnSpacing="4">
-                    <TextBlock Grid.Column="0"
+                <Grid ColumnDefinitions="Auto,Auto,Auto">
+                    <Button Grid.Column="0" Classes="deck-button" Content="&#x2212;" MinWidth="30"
+                            Command="{Binding RfGainDownCommand}"/>
+                    <TextBlock Grid.Column="1"
                                Text="{Binding RfGainText}"
                                FontSize="13"
                                FontWeight="SemiBold"
+                               TextAlignment="Center"
                                VerticalAlignment="Center"
                                MinWidth="44"
-                               Margin="2,0,0,0"/>
-                    <Button Grid.Column="1" Classes="deck-button" Content="&#x2212;" MinWidth="30"
-                            Command="{Binding RfGainDownCommand}"/>
+                               Margin="2,0"/>
                     <Button Grid.Column="2" Classes="deck-button" Content="+" MinWidth="30"
                             Command="{Binding RfGainUpCommand}"/>
                 </Grid>
             </StackPanel>
 
-            <StackPanel Grid.Column="1" IsEnabled="{Binding HasSelectedSlice}">
+            <!-- Centred in the slack column so the two gutters either side of it
+                 come out even, rather than piling all the leftover width on one
+                 side of the row. -->
+            <StackPanel Grid.Column="1" HorizontalAlignment="Center" IsEnabled="{Binding HasSelectedSlice}">
                 <TextBlock Classes="group-label" Text="AGC-T"/>
-                <Grid ColumnDefinitions="Auto,Auto,Auto,*" ColumnSpacing="4">
-                    <TextBlock Grid.Column="0"
+                <Grid ColumnDefinitions="Auto,Auto,Auto">
+                    <Button Grid.Column="0" Classes="deck-button" Content="&#x2212;" MinWidth="30"
+                            Command="{Binding AgcThresholdDownCommand}"/>
+                    <TextBlock Grid.Column="1"
                                Text="{Binding AgcThresholdText}"
                                FontSize="13"
                                FontWeight="SemiBold"
+                               TextAlignment="Center"
                                VerticalAlignment="Center"
-                               MinWidth="44"
-                               Margin="2,0,0,0"/>
-                    <Button Grid.Column="1" Classes="deck-button" Content="&#x2212;" MinWidth="30"
-                            Command="{Binding AgcThresholdDownCommand}"/>
+                               MinWidth="24"
+                               Margin="2,0"/>
                     <Button Grid.Column="2" Classes="deck-button" Content="+" MinWidth="30"
                             Command="{Binding AgcThresholdUpCommand}"/>
                 </Grid>
@@ -357,19 +412,22 @@
 
             <!-- The readout is the setting the radio will transmit at, which is
                  what the operator needs to see to know what QRP will give back.
-                 The footer's "Fwd" is the measured forward power, a different
-                 number. QRP lights while the deck is holding a power to return
-                 to, and stands down on its own if the power changes elsewhere. -->
+                 The "Fwd" telemetry above is the measured forward power, a
+                 different number. QRP lights while the deck is holding a power
+                 to return to, and stands down on its own if the power changes
+                 elsewhere. One labelled button rather than a stepper, so there
+                 is no bracketing to do here. -->
             <StackPanel Grid.Column="2" IsEnabled="{Binding CanToggleQrp}">
                 <TextBlock Classes="group-label" Text="TX power"/>
-                <Grid ColumnDefinitions="Auto,Auto" ColumnSpacing="4">
+                <Grid ColumnDefinitions="Auto,Auto">
                     <TextBlock Grid.Column="0"
                                Text="{Binding TxPowerText}"
                                FontSize="13"
                                FontWeight="SemiBold"
+                               TextAlignment="Right"
                                VerticalAlignment="Center"
-                               MinWidth="44"
-                               Margin="2,0,0,0"/>
+                               MinWidth="38"
+                               Margin="2,0"/>
                     <Button Grid.Column="1"
                             Classes="deck-button"
                             Classes.lit="{Binding IsQrp}"
@@ -381,7 +439,16 @@
             </StackPanel>
         </Grid>
 
-        <Border Grid.Row="5" BorderBrush="{DynamicResource AppDividerBrush}" BorderThickness="0,1,0,0" Padding="0,5,0,0">
+        <!-- Telemetry stays the footer, spread across the full width above its
+             own top divider. Moving it up under the header and centring the four
+             cells as a narrower group was tried on the operator's request and
+             put back: the cluster it was meant to join did not read as one
+             block, and the panel looked wrong in the position it was moved to
+             (operator-reported twice, issue #59 live feedback). Only the font
+             step-down from that attempt was kept. Padding and placement here are
+             the shipped v0.3.0b2 values; do not move this again without the
+             operator asking for it specifically. -->
+        <Border Grid.Row="4" BorderBrush="{DynamicResource AppDividerBrush}" BorderThickness="0,1,0,0" Padding="0,5,0,0">
             <Grid ColumnDefinitions="*,*,*,*">
                 <StackPanel Grid.Column="0">
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">

@@ -90,6 +90,7 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSelectedSlice))]
     [NotifyPropertyChangedFor(nameof(FrequencyText))]
+    [NotifyPropertyChangedFor(nameof(ModeText))]
     private SliceInfo? _selectedSlice;
 
     [ObservableProperty]
@@ -111,8 +112,16 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
     /// </summary>
     public string FrequencyText => SelectedSlice is { } slice ? FormatFrequency(slice.FreqMHz) : Absent;
 
-    /// <summary>The selected slice's mode, named as the radio names it.</summary>
-    public string ModeText => CurrentMode is { } mode ? mode.ToRadioValue() : string.Empty;
+    /// <summary>
+    /// The selected slice's mode, named as the radio names it. A slice sitting
+    /// in a mode SmartDeck does not offer (DIGU under WSJT-X, RTTY) falls back
+    /// to the radio's own string rather than reading blank: the header readout
+    /// replaced the mode buttons, so a blank here would leave the operator with
+    /// no way to see the mode and nothing to click to change it.
+    /// </summary>
+    public string ModeText => CurrentMode is { } mode
+        ? mode.ToRadioValue()
+        : SelectedSlice?.Mode.Trim() ?? string.Empty;
 
     /// <summary>
     /// Groups a frequency as MHz.kHz.Hz, so 14.05 MHz reads "14.050.000". The
@@ -129,13 +138,14 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
             (hz % 1_000).ToString("000", CultureInfo.InvariantCulture));
     }
 
-    /// <summary>The modes SmartDeck offers, in button order.</summary>
-    private static readonly SliceMode[] OfferedModes =
-        [SliceMode.Cw, SliceMode.Usb, SliceMode.Lsb, SliceMode.Am];
-
-    /// <summary>Mode buttons, each tracking whether it is the slice's current mode.</summary>
-    public IReadOnlyList<ModeOption> ModeOptions { get; } =
-        OfferedModes.Select(mode => new ModeOption(mode, mode.ToRadioValue())).ToArray();
+    /// <summary>
+    /// The modes SmartDeck offers, in the order the header readout cycles them
+    /// (operator-specified, issue #59 live feedback). Four buttons and their
+    /// group heading collapsed into this one clickable readout to give the
+    /// window back a row, so the order here is the whole mode surface.
+    /// </summary>
+    private static readonly SliceMode[] CycleOrder =
+        [SliceMode.Cw, SliceMode.Lsb, SliceMode.Usb, SliceMode.Am];
 
     /// <summary>RX antenna buttons for the selected slice, from the radio's own list.</summary>
     public ObservableCollection<DeckOption> RxAntennaButtons { get; } = [];
@@ -143,12 +153,26 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
     /// <summary>TX antenna buttons for the selected slice, from the radio's own list.</summary>
     public ObservableCollection<DeckOption> TxAntennaButtons { get; } = [];
 
+    /// <summary>
+    /// The mode one step along the cycle from <paramref name="current"/>,
+    /// wrapping past the last entry back to the first.
+    /// </summary>
+    internal static SliceMode NextMode(SliceMode? current)
+    {
+        // A mode SmartDeck does not offer indexes as -1, and -1 + 1 lands on
+        // the first entry: a slice sitting in DIGU enters the cycle at CW
+        // rather than being a dead end the readout cannot move off.
+        var index = current is { } mode ? Array.IndexOf(CycleOrder, mode) : -1;
+        return CycleOrder[(index + 1) % CycleOrder.Length];
+    }
+
     [RelayCommand]
-    private async Task SetModeAsync(SliceMode mode)
+    private async Task CycleModeAsync()
     {
         if (SelectedSlice is not { } slice) return;
-        await _connection.SetSliceModeAsync(slice, mode);
-        CurrentMode = mode;
+        var next = NextMode(CurrentMode);
+        await _connection.SetSliceModeAsync(slice, next);
+        CurrentMode = next;
     }
 
     // Antenna buttons drive the same two-way properties the selectors used
@@ -231,12 +255,6 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
             button.IsCurrent = string.Equals(button.Label, SelectedRxAntenna, StringComparison.OrdinalIgnoreCase);
         foreach (var button in TxAntennaButtons)
             button.IsCurrent = string.Equals(button.Label, SelectedTxAntenna, StringComparison.OrdinalIgnoreCase);
-    }
-
-    partial void OnCurrentModeChanged(SliceMode? value)
-    {
-        foreach (var option in ModeOptions)
-            option.IsCurrent = option.Mode == value;
     }
 
     partial void OnCurrentBandChanged(string value)

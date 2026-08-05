@@ -319,20 +319,53 @@ public class SmartDeckViewModelTests
     }
 
     [Fact]
-    public async Task Setting_the_mode_writes_to_the_selected_slice()
+    public async Task Cycling_the_mode_writes_to_the_selected_slice()
     {
         var connection = new FakeTelemetryConnection();
-        connection.SetSlices(Slice("A"), Slice("B"));
+        connection.SetSlices(Slice("A"), Slice("B", mode: "CW"));
         var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
         viewModel.Start();
         viewModel.SelectedSlice = viewModel.Slices.Single(s => s.Letter == "B");
 
-        await viewModel.SetModeCommand.ExecuteAsync(SliceMode.Lsb);
+        await viewModel.CycleModeCommand.ExecuteAsync(null);
 
         var (slice, mode) = Assert.Single(connection.ModeWrites);
         Assert.Equal("B", slice.Letter);
         Assert.Equal(SliceMode.Lsb, mode);
         Assert.Equal(SliceMode.Lsb, viewModel.CurrentMode);
+    }
+
+    [Fact]
+    public async Task Cycling_the_mode_with_no_slice_selected_writes_nothing()
+    {
+        var connection = new FakeTelemetryConnection();
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+        viewModel.Start();
+
+        await viewModel.CycleModeCommand.ExecuteAsync(null);
+
+        Assert.Empty(connection.ModeWrites);
+    }
+
+    [Theory]
+    [InlineData(SliceMode.Cw, SliceMode.Lsb)]
+    [InlineData(SliceMode.Lsb, SliceMode.Usb)]
+    [InlineData(SliceMode.Usb, SliceMode.Am)]
+    // Wraps rather than sticking at the end: the readout is the whole mode
+    // surface now, so a cycle that dead-ends at AM would strand the operator.
+    [InlineData(SliceMode.Am, SliceMode.Cw)]
+    public void The_mode_cycle_runs_in_the_operators_order_and_wraps(SliceMode current, SliceMode expected)
+    {
+        Assert.Equal(expected, SmartDeckViewModel.NextMode(current));
+    }
+
+    [Fact]
+    public void A_mode_smartdeck_does_not_offer_enters_the_cycle_at_the_start()
+    {
+        // A slice sitting in DIGU under WSJT-X is valid and outside the cycle.
+        // It has to be clickable anyway: the mode buttons that used to offer a
+        // way back to CW are gone, so a dead end here would be a regression.
+        Assert.Equal(SliceMode.Cw, SmartDeckViewModel.NextMode(null));
     }
 
     [Fact]
@@ -753,7 +786,7 @@ public class SmartDeckViewModelTests
     }
 
     [Fact]
-    public void The_slices_mode_is_the_only_one_lit()
+    public void The_header_names_the_slices_mode()
     {
         var connection = new FakeTelemetryConnection();
         connection.SetSlices(Slice("A", mode: "LSB"));
@@ -761,20 +794,23 @@ public class SmartDeckViewModelTests
 
         viewModel.Start();
 
-        Assert.Equal(SliceMode.Lsb, Assert.Single(viewModel.ModeOptions, mode => mode.IsCurrent).Mode);
+        Assert.Equal("LSB", viewModel.ModeText);
     }
 
     [Fact]
-    public void A_mode_smartdeck_does_not_offer_lights_nothing()
+    public void A_mode_smartdeck_does_not_offer_still_reads_out_as_the_radio_names_it()
     {
-        // A slice sitting in DIGU is valid; no button should claim to be it.
+        // A slice sitting in DIGU is valid. The readout replaced the mode
+        // buttons, so falling back to blank would leave the operator unable to
+        // see the mode at all.
         var connection = new FakeTelemetryConnection();
         connection.SetSlices(Slice("A", mode: "DIGU"));
         var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
 
         viewModel.Start();
 
-        Assert.DoesNotContain(viewModel.ModeOptions, mode => mode.IsCurrent);
+        Assert.Null(viewModel.CurrentMode);
+        Assert.Equal("DIGU", viewModel.ModeText);
     }
 
     [Fact]
@@ -1181,8 +1217,8 @@ public class SmartDeckViewModelTests
         Assert.Empty(viewModel.Slices);
         Assert.Empty(viewModel.SliceOptions);
         Assert.DoesNotContain(viewModel.BandOptions, band => band.IsCurrent);
-        Assert.DoesNotContain(viewModel.ModeOptions, mode => mode.IsCurrent);
         Assert.Equal("---", viewModel.FrequencyText);
+        Assert.Equal(string.Empty, viewModel.ModeText);
     }
 
     [Fact]

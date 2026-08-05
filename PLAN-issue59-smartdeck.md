@@ -126,6 +126,8 @@ account. Roughly seventeen controls, not thirty.
   considered and dropped: WSJT-X owns mode selection for digital operating. One
   line each to add later if wanted. `Slice.Mode` is a string discriminator, so
   per CLAUDE.md it gets a typed wrapper rather than bare literals at call sites.
+  **Superseded 2026-08-05**: the four buttons collapsed into the header readout.
+  See "v0.3.0b2 live feedback" below.
 
 ### Telemetry values, and why we never touch meter names
 
@@ -576,7 +578,8 @@ resource, so this pass buys one row back and nothing else changes.
   radio wins, and no control claims a state the radio does not hold.
 - **Band and Mode keep their group headings.** Dropping them was the next
   available ~50px and was considered and declined; the headings earned their
-  place in the layout pass.
+  place in the layout pass. **Partly superseded 2026-08-05**: the Mode heading
+  went with the Mode row it labelled. Band's heading stands.
 
 Default window height goes 362 to 316. **Saved geometry defeated this for anyone
 who had already run the deck**: `SmartDeckHeight` was restored on open, so an
@@ -857,6 +860,105 @@ Deferred, not dropped. `CWX.cs` remains a full surface if "send CW from
 memories" is ever wanted: `SendMacro(int)`, `Send(string)`, a `Macros[]` array
 with `GetMacro` / `SetMacro`, plus `Speed`, `Delay`, `QskEnabled` and
 `MessageQueued` / `CharSent` events.
+
+## v0.3.0b2 live feedback (2026-08-05)
+
+Three findings from the operator running the tester build on a real radio. All
+three are layout, none touched the radio-facing paths.
+
+### Mode: four buttons became one clickable readout
+
+The header already answered "what am I on" with frequency and mode, and the four
+mode buttons below repeated the mode answer at the cost of a whole row. Clicking
+the header readout now steps the slice through **CW, LSB, USB, AM** and wraps.
+That is the operator's stated order, which is not the old button order (CW, USB,
+LSB, AM); the cycle order lives in `SmartDeckViewModel.CycleOrder` and is the
+whole mode surface now.
+
+Cost paid deliberately: reaching AM from CW is three clicks instead of one, and
+there is no way to step backwards. The row was worth more than the directness at
+four modes. This does not scale, so it is not a precedent: adding a fifth mode
+would make the cycle worse than the buttons it replaced, not better.
+
+Two edges settled:
+
+- **A slice in a mode SmartDeck does not offer** (DIGU under WSJT-X, RTTY) reads
+  out as the radio names it rather than blank, and the first click enters the
+  cycle at CW. Blank would have been a regression twice over: the buttons used
+  to show the mode was unrecognised *and* offer a way back to CW, and a blank
+  readout is not even a click target. The tradeoff is that one stray click on a
+  WSJT-X slice knocks it out of DIGU.
+- **Plain text that retunes the radio is a trap**, so the resting style stays a
+  caption per the operator, but pointer-over gets a background wash and the
+  cursor becomes a hand. Nothing at rest says "button", which is what was asked
+  for; nothing is silently live either.
+
+### The stepper buttons now bracket their readouts
+
+Reported as "the buttons are right justified and need to be closer to the values
+they control". The cause was not a justification setting. Each group laid out as
+`value − +` inside a column too narrow to hold it: RF gain wanted ~122px in a
+~116px share, so the 10px gutter between groups collapsed to zero and every
+group's `+` ended up flush against the *next* group's number, 4px from it, while
+its own value sat further away across the readout's `MinWidth` slack. The eye
+grouped `+ 40` and the operator read it exactly as drawn.
+
+Fixed by ordering each stepper `− value +` so the readout sits between its own
+buttons. That makes the grouping true at any spacing rather than dependent on a
+gutter staying wider than the slack, which is what failed here. Readout
+`MinWidth` is now per group (RF gain 44, AGC-T 24, TX power 38) instead of a
+shared 44, so the buttons still hold still as a value changes width without the
+leftover slack reopening the gap. The min is a floor, not a cap; a wider value
+grows its `Auto` column instead of clipping. TX power keeps `value QRP`, since
+one labelled button has no bracketing ambiguity to solve.
+
+### Telemetry: moved up, then put back
+
+Asked for and built as "slice, frequency, mode, then telemetry" so the radio's
+current state read as one cluster: panel moved under the header, divider flipped
+to its underside, values stepped down to 11px (labels 8, units 9). Two live
+passes later the operator called the result wrong in the new position and asked
+for the original placement and padding back, keeping only the smaller fonts.
+
+**Net effect: the font step-down is the only surviving part.** Telemetry is the
+footer again, full width above its own top divider, at the shipped v0.3.0b2
+spacing. The 13px that matched the RF gain and AGC-T readouts is gone for the
+reason the move was requested in the first place, that it made the footer
+compete with the controls, and that part held up in use.
+
+Worth naming, since the same idea will come round again: the cluster reasoning
+was sound on paper and did not survive contact with the window. Grouping
+telemetry with the header meant the whole middle of the deck became controls
+with no visual anchor at the bottom, and the panel no longer read as a footer
+without looking like it belonged anywhere else either. Do not move it again
+without the operator asking specifically.
+
+**Header centring changed with it.** The readout used to span all three header
+columns so it centred on the window rather than on the gap between the slice
+chips and the pin. Adding "Mode" widened it by roughly a chip, which moved the
+point where the chips start overlapping it from four slices to three. It now
+centres inside the middle column instead: about a pixel different at one slice,
+and it cannot collide.
+
+### Second live pass, same day
+
+Two more from running the above on the radio.
+
+- **The mode sat lower than the frequency.** Not a baseline nudge: the frequency
+  `TextBlock` was on the default `Stretch`, so it filled whatever height the
+  mode button claimed and drew its text at the top of that box while the button
+  centred its own content. Every item on the header row is explicitly
+  bottom-aligned now, and the button carries `VerticalContentAlignment="Bottom"`
+  as well as `MinHeight="0"`, so a template that hands it a taller box cannot
+  reintroduce the offset. A margin nudge would have papered over this and drifted
+  again the next time a font size changed.
+- **Telemetry was padded and too wide** in its new position. Tightened by
+  centring the four cells as a narrower `UniformGrid` group and pulling each
+  label 2px up into its value's descender space. This did not save it: on the
+  next look the operator called the panel wrong in that position outright, and
+  both tweaks went back with the move. Recorded because the second attempt is
+  the evidence that the problem was the placement rather than the spacing, which
+  is why the panel is not worth re-tuning in place.
 
 ## Alternatives considered and rejected
 

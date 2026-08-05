@@ -1,5 +1,4 @@
 using CommunityToolkit.Mvvm.ComponentModel;
-using SDRIQStreamer.FlexRadio;
 
 namespace SDRIQStreamer.App;
 
@@ -20,14 +19,4 @@ public partial class DeckOption(string label) : ObservableObject
 
     [ObservableProperty]
     private bool _isCurrent;
-}
-
-/// <summary>
-/// A <see cref="DeckOption"/> that carries the mode it selects, so the mode
-/// buttons pass a typed <see cref="SliceMode"/> rather than re-parsing their
-/// own label back into one.
-/// </summary>
-public sealed class ModeOption(SliceMode mode, string label) : DeckOption(label)
-{
-    public SliceMode Mode { get; } = mode;
 }
