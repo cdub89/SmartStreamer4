@@ -516,10 +516,21 @@ series is retired — issue #56):
 
 - `vMAJOR.MINOR.PATCH` — general availability release (e.g. `v0.2.1`).
   Bump PATCH for a fixes-only release, MINOR when a feature lands.
-- Prerelease suffixes stay supported by the tooling for future use
-  (`b`/`bN` as before; the update service also ranks `a`/`alpha` and
-  `rc`). A suffix-free tag outranks any suffixed tag at the same
-  numeric version, so `v0.2.1` supersedes a hypothetical `v0.2.1b`.
+- **Do not add a `bN` suffix.** The convention retired with the beta
+  series; GA left it behind at v0.2.1 and it stopped being used after
+  the v0.3.0b1-b5 tester builds (operator decision, 2026-08-05). A
+  tester build now carries the plain release tag it is a candidate
+  for: the next one is `v0.3.1`, built with phase 1 only. What makes a
+  build a tester build is not running phase 2, not the tag.
+- Consequence, accepted deliberately: with no suffix to burn, a tester
+  build that fails its live test means retracting the real tag rather
+  than a throwaway one (`git push origin :refs/tags/<tag>`, delete
+  locally, fix, retag). That is the documented retract path already;
+  it just gets used more often now.
+- The tooling still ranks `a`/`alpha`, `b`/`bN` and `rc` suffixes, and
+  a suffix-free tag outranks any suffixed tag at the same numeric
+  version. That support stays for reading old tags, not for minting
+  new ones.
 
 **No release without operator-facing benefit**: No release ships unless
 it carries at least one change an existing operator would actually
@@ -542,9 +553,12 @@ script invocations, so a hung session can never strand a release.
 
 **Two destinations, one phase 1.** A **tester build** stops after phase 1
 and the zip is handed out by hand; a **published release** continues into
-phase 2. Both `v0.3.0b1` and `v0.3.0b2` were tester builds: tagged,
-pushed and zipped, never `gh release create`d. Decide which you are
-doing before tagging, because phase 2 hard-codes `--latest` (see below).
+phase 2. `v0.3.0b1` through `b5` were all tester builds: tagged, pushed
+and zipped, never `gh release create`d. Since the `bN` suffix was retired
+a tester build carries the plain release tag, so the tag no longer tells
+you which one you are looking at; only whether phase 2 ever ran does.
+Decide which you are doing before tagging, because phase 2 hard-codes
+`--latest` (see below).
 
 ### Phase 1 — tag, push, build (`.\publish-release.ps1`)
 
