@@ -573,8 +573,14 @@ resource, so this pass buys one row back and nothing else changes.
 Default window height goes 362 to 316. **Saved geometry defeats this for anyone
 who already ran the deck**: `SmartDeckHeight` is restored on open, so an existing
 operator keeps their old height and the slack lands in the spacer row above the
-telemetry footer. Whether the deck should persist height at all is a live
-question, since every row is `Auto` and a taller window only adds dead space.
+telemetry footer.
+
+The fix, folded into issue #63 by the operator on 2026-08-04 so it lands with
+the theme pass rather than converting the same XAML twice: stop persisting
+height, set `SizeToContent="Height"`, and drop the `*` spacer row. Every row is
+`Auto`, so a taller window only ever adds dead space, and this is what stops the
+next layout change being invisible to anyone who has run the deck before. Width
+stays resizable and persisted, since it governs button sizing.
 
 ## Per-band memory beyond frequency (live-validated 2026-08-03)
 

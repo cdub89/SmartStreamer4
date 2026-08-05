@@ -10,9 +10,33 @@
         WindowStartupLocation="CenterScreen"
         MinWidth="700"
         MinHeight="500">
+
+    <!-- SETUP_GUIDE.md is rendered into ContentPanel by the code-behind, which
+         used to set its own brushes (DodgerBlue links, LightGray code borders,
+         a #F7F7F7 code ground). Those are classes now, styled here (issue #63):
+         a static render method cannot look up a theme resource, but a class it
+         stamps on the control resolves per variant like everything else. -->
+    <Window.Styles>
+        <Style Selector="Button.guide-link">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource AppLinkBrush}"/>
+        </Style>
+        <Style Selector="Border.guide-code">
+            <Setter Property="BorderBrush" Value="{DynamicResource AppPanelBorderBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource AppCodeBackgroundBrush}"/>
+        </Style>
+        <Style Selector="TextBlock.guide-notice">
+            <Setter Property="Foreground" Value="{DynamicResource AppWarnBrush}"/>
+        </Style>
+        <Style Selector="TextBlock.guide-caption">
+            <Setter Property="Foreground" Value="{DynamicResource AppMutedBrush}"/>
+        </Style>
+    </Window.Styles>
+
     <DockPanel LastChildFill="True">
         <Border DockPanel.Dock="Top"
-                BorderBrush="#E3E6EA"
+                BorderBrush="{DynamicResource AppPanelBorderBrush}"
                 BorderThickness="0,0,0,1"
                 Padding="12,10">
             <StackPanel Spacing="4">
@@ -23,12 +47,12 @@
                 <TextBlock x:Name="WizardStepText"
                            Text="Step 1 of 1"
                            FontSize="11"
-                           Foreground="Gray"/>
+                           Foreground="{DynamicResource AppMutedBrush}"/>
             </StackPanel>
         </Border>
 
         <Border DockPanel.Dock="Bottom"
-                BorderBrush="#E3E6EA"
+                BorderBrush="{DynamicResource AppPanelBorderBrush}"
                 BorderThickness="0,1,0,0"
                 Padding="12,8">
             <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="8">
@@ -43,7 +67,7 @@
                 <TextBlock x:Name="WizardHintText"
                            Grid.Column="3"
                            FontSize="10"
-                           Foreground="Gray"
+                           Foreground="{DynamicResource AppMutedBrush}"
                            VerticalAlignment="Center"
                            Text="Content is loaded from bundled setup guide"/>
             </Grid>

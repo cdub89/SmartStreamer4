@@ -39,6 +39,41 @@ public sealed class AppSettingsRoundTripTests
         Assert.False(restored.DebugLoggingEnabled);
     }
 
+    // ── Appearance (issue #63) ───────────────────────────────────────────────
+
+    [Fact]
+    public void ThemeMode_DefaultsToLight()
+    {
+        // Deliberately not "follow the OS": two named options, and an operator
+        // whose desktop is dark presses Theme once.
+        Assert.Equal(AppTheme.Light, new AppSettings().ThemeMode);
+    }
+
+    [Fact]
+    public void ThemeMode_RoundTrips()
+    {
+        Assert.Equal(AppTheme.Dark, RoundTrip(new AppSettings { ThemeMode = AppTheme.Dark }).ThemeMode);
+    }
+
+    [Fact]
+    public void ThemeMode_PersistsByNameNotOrdinal()
+    {
+        // Same reasoning as BandState.Mode: the store has no global string-enum
+        // converter, and an ordinal would silently remap if AppTheme were ever
+        // reordered or gained a member.
+        var json = JsonSerializer.Serialize(new AppSettings { ThemeMode = AppTheme.Dark });
+
+        Assert.Contains("\"ThemeMode\":\"Dark\"", json);
+    }
+
+    [Fact]
+    public void ThemeMode_MissingFromJson_LoadsAsLight()
+    {
+        // Settings files written before issue #63 have no ThemeMode; they must
+        // load as the look those releases actually shipped.
+        Assert.Equal(AppTheme.Light, JsonSerializer.Deserialize<AppSettings>("{}")!.ThemeMode);
+    }
+
     // ── SmartDeck window placement (issue #59) ───────────────────────────────
 
     [Fact]
@@ -51,7 +86,6 @@ public sealed class AppSettingsRoundTripTests
         Assert.Null(settings.SmartDeckX);
         Assert.Null(settings.SmartDeckY);
         Assert.Null(settings.SmartDeckWidth);
-        Assert.Null(settings.SmartDeckHeight);
         Assert.False(settings.SmartDeckAlwaysOnTop);
     }
 
@@ -63,15 +97,26 @@ public sealed class AppSettingsRoundTripTests
             SmartDeckX = 120,
             SmartDeckY = 340,
             SmartDeckWidth = 420,
-            SmartDeckHeight = 118,
             SmartDeckAlwaysOnTop = true
         });
 
         Assert.Equal(120, restored.SmartDeckX);
         Assert.Equal(340, restored.SmartDeckY);
         Assert.Equal(420, restored.SmartDeckWidth);
-        Assert.Equal(118, restored.SmartDeckHeight);
         Assert.True(restored.SmartDeckAlwaysOnTop);
+    }
+
+    [Fact]
+    public void SmartDeckHeight_FromAnOlderSettingsFile_IsIgnoredRatherThanMigrated()
+    {
+        // The deck sizes itself to its content now (issue #63), so height is no
+        // longer a setting. System.Text.Json ignores unknown properties on read,
+        // which is the whole migration: an existing file keeps the dead key and
+        // the deck simply stops honouring it.
+        var restored = JsonSerializer.Deserialize<AppSettings>(
+            """{"SmartDeckWidth":420,"SmartDeckHeight":362}""")!;
+
+        Assert.Equal(420, restored.SmartDeckWidth);
     }
 
     [Fact]

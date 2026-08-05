@@ -42,10 +42,13 @@ public partial class SmartDeckWindow : Window
     {
         // Nullable rather than zero-defaulted: 0,0 is a real position on a
         // multi-monitor desktop, so "never positioned" has to be its own state.
+        //
+        // Width only. Height is not persisted (issue #63): the window sizes to
+        // its content, so a restored height could only ever add dead space, and
+        // restoring it made the issue #64 row merge invisible to anyone who had
+        // already run the deck. Width still governs button sizing, so it stays.
         if (_settings.SmartDeckWidth is { } width && width > 0)
             Width = width;
-        if (_settings.SmartDeckHeight is { } height && height > 0)
-            Height = height;
 
         if (_settings.SmartDeckX is { } x && _settings.SmartDeckY is { } y)
         {
@@ -61,7 +64,6 @@ public partial class SmartDeckWindow : Window
         _settings.SmartDeckX = Position.X;
         _settings.SmartDeckY = Position.Y;
         _settings.SmartDeckWidth = Bounds.Width;
-        _settings.SmartDeckHeight = Bounds.Height;
 
         _viewModel.Stop();
     }

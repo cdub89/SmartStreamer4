@@ -33,6 +33,14 @@
                 <Setter Property="FontSize" Value="10"/>
                 <Setter Property="Padding" Value="8,0"/>
             </Style>
+            <!-- Connected state as a class rather than a colour name bound from
+                 the ViewModel, so the two states resolve per theme (issue #63). -->
+            <Style Selector="TextBlock.connect-header">
+                <Setter Property="Foreground" Value="{DynamicResource AppMutedBrush}"/>
+            </Style>
+            <Style Selector="TextBlock.connect-header.connected">
+                <Setter Property="Foreground" Value="{DynamicResource AppOkBrush}"/>
+            </Style>
             <!-- "Streaming" buttons (an app/mode is actively running) are green so
                  the running state reads at a glance. Covers normal/hover/pressed. -->
             <Style Selector="Button.streaming">
@@ -80,32 +88,43 @@
                         </Style>
                     </StackPanel.Styles>
                     <TextBlock Text="{Binding StatusText}"
-                               FontSize="12" Foreground="Gray"
+                               FontSize="12" Foreground="{DynamicResource AppMutedBrush}"
                                IsVisible="{Binding StatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
-                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6" Margin="0,0,0,2">
+                    <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="6" Margin="0,0,0,2">
                         <TextBlock Grid.Column="0"
                                    Text="{Binding ConnectTargetHeaderText}"
                                    FontSize="11"
                                    FontWeight="Bold"
-                                   Foreground="{Binding ConnectTargetHeaderColor}"/>
+                                   Classes="connect-header"
+                                   Classes.connected="{Binding IsConnected}"/>
+                        <!-- Theme (issue #63). Light / Dark, app-wide, applied
+                             live. Sits here because the Launch tab is the only
+                             tab that is not mode-specific: both Config tabs
+                             belong to CW or Digital. -->
+                        <Button Grid.Column="1"
+                                Classes="action-button"
+                                Content="Theme"
+                                MinWidth="52"
+                                Click="OnToggleTheme"
+                                ToolTip.Tip="Switches the whole app, SmartDeck included, between Light and Dark."/>
                         <!-- SmartDeck (issue #59). Connected-only: its telemetry
                              comes from radio-level meter events, so there is
                              nothing to show while disconnected. -->
-                        <Button Grid.Column="1"
+                        <Button Grid.Column="2"
                                 Classes="action-button"
                                 Content="SmartDeck"
                                 MinWidth="70"
                                 Click="OnOpenSmartDeck"
                                 IsVisible="{Binding IsConnected}"
                                 ToolTip.Tip="Opens the SmartDeck window: live power, SWR, PA temperature, and supply voltage from the radio."/>
-                        <Button Grid.Column="2"
+                        <Button Grid.Column="3"
                                 Classes="action-button"
                                 Content="Connect"
                                 MinWidth="56"
                                 Command="{Binding ConnectCommand}"
                                 IsVisible="{Binding !IsConnected}"/>
-                        <Button Grid.Column="2"
+                        <Button Grid.Column="3"
                                 Classes="action-button"
                                 Content="Disconnect"
                                 MinWidth="56"
@@ -125,20 +144,20 @@
                     </ListBox>
 
                     <StackPanel Spacing="2" Margin="0,8,0,0" IsVisible="{Binding IsConnected}">
-                        <TextBlock Text="Discovered stations and slices" FontSize="11" FontWeight="Bold" Foreground="Gray"/>
+                        <TextBlock Text="Discovered stations and slices" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AppMutedBrush}"/>
                         <ItemsControl ItemsSource="{Binding ClientGroups}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="local:ClientGroup">
                                     <StackPanel Spacing="1" Margin="0,3,0,0">
                                         <TextBlock Text="{Binding Station, StringFormat='Station: {0}'}"
-                                                   FontSize="11" FontWeight="SemiBold" Foreground="Green"/>
+                                                   FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource AppOkBrush}"/>
                                         <ItemsControl ItemsSource="{Binding Panadapters}">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate x:DataType="local:PanSliceGroup">
                                                     <ItemsControl ItemsSource="{Binding Slices}">
                                                         <ItemsControl.ItemTemplate>
                                                             <DataTemplate x:DataType="local:SliceViewModel">
-                                                                <Border BorderBrush="#DDD" BorderThickness="0,0,0,1"
+                                                                <Border BorderBrush="{DynamicResource AppDividerBrush}" BorderThickness="0,0,0,1"
                                                                         Padding="0,2" Margin="4,0,0,0">
                                                                     <Grid ColumnDefinitions="52,116,Auto,*" ColumnSpacing="5">
                                                                         <TextBlock Grid.Column="0" Text="{Binding SliceLabel}"
@@ -148,11 +167,11 @@
                                                                                    FontSize="11" VerticalAlignment="Center"
                                                                                    TextTrimming="CharacterEllipsis"/>
                                                                         <TextBlock Grid.Column="2" Text="{Binding DaxIqDisplay}"
-                                                                                   FontSize="11" Foreground="DarkCyan"
+                                                                                   FontSize="11" Foreground="{DynamicResource AppInfoBrush}"
                                                                                    VerticalAlignment="Center"
                                                                                    TextTrimming="CharacterEllipsis"/>
                                                                         <TextBlock Grid.Column="3" Text="{Binding DaxRxDisplay}"
-                                                                                   FontSize="11" Foreground="Gray"
+                                                                                   FontSize="11" Foreground="{DynamicResource AppMutedBrush}"
                                                                                    VerticalAlignment="Center"
                                                                                    TextTrimming="CharacterEllipsis"/>
                                                                     </Grid>
@@ -176,7 +195,7 @@
                              active, so you Stop before switching. -->
                         <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,2">
                             <TextBlock Grid.Column="0" Text="{Binding ModeHeaderText}" FontSize="11" FontWeight="Bold"
-                                       Foreground="Gray" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource AppMutedBrush}" VerticalAlignment="Center"
                                        TextTrimming="CharacterEllipsis"/>
                             <Button Grid.Column="1"
                                     Classes="action-button"
@@ -191,17 +210,17 @@
                                  FontSize="12"/>
                     </StackPanel>
 
-                    <Border BorderBrush="#E3E6EA"
+                    <Border BorderBrush="{DynamicResource AppPanelBorderBrush}"
                             BorderThickness="1"
                             CornerRadius="4"
                             Padding="6"
                             Margin="0,8,0,0">
                         <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
-                            <TextBlock Grid.Column="0" Text="Event" FontSize="10" Foreground="Gray" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="0" Text="Event" FontSize="10" Foreground="{DynamicResource AppMutedBrush}" VerticalAlignment="Center"/>
                             <TextBlock Grid.Column="1"
                                        Text="{Binding LatestFooterEvent}"
                                        FontSize="10"
-                                       Foreground="DarkOrange"
+                                       Foreground="{DynamicResource AppWarnBrush}"
                                        TextWrapping="NoWrap"
                                        TextTrimming="CharacterEllipsis"
                                        VerticalAlignment="Center"/>
@@ -230,17 +249,17 @@
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="local:ClientGroup">
                                 <StackPanel Spacing="4" Margin="0,4,0,0">
-                                    <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="Green"
+                                    <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource AppOkBrush}"
                                                Text="{Binding Station, StringFormat='Station:  {0}'}"/>
 
                                     <ItemsControl ItemsSource="{Binding Panadapters}" Margin="8,0,0,0">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate x:DataType="local:PanSliceGroup">
-                                                <Border BorderBrush="#E3E6EA" BorderThickness="1" CornerRadius="4" Padding="6" Margin="0,2,0,2">
+                                                <Border BorderBrush="{DynamicResource AppPanelBorderBrush}" BorderThickness="1" CornerRadius="4" Padding="6" Margin="0,2,0,2">
                                                     <StackPanel Spacing="2">
                                                         <TextBlock Text="{Binding StreamSummary}"
                                                                    FontSize="11"
-                                                                   Foreground="DarkCyan"
+                                                                   Foreground="{DynamicResource AppInfoBrush}"
                                                                    VerticalAlignment="Center"/>
 
                                                         <ItemsControl ItemsSource="{Binding Slices}" Margin="8,1,0,0">
@@ -282,9 +301,9 @@
                     <TextBlock Text="Network Status"
                                FontSize="11"
                                FontWeight="Bold"
-                               Foreground="Gray"
+                               Foreground="{DynamicResource AppMutedBrush}"
                                Margin="0,6,0,0"/>
-                    <Border BorderBrush="#E3E6EA"
+                    <Border BorderBrush="{DynamicResource AppPanelBorderBrush}"
                             BorderThickness="1"
                             CornerRadius="4"
                             Padding="8"
@@ -311,17 +330,17 @@
                         </Grid>
                     </Border>
 
-                    <Border BorderBrush="#E3E6EA"
+                    <Border BorderBrush="{DynamicResource AppPanelBorderBrush}"
                             BorderThickness="1"
                             CornerRadius="4"
                             Padding="6"
                             Margin="0,8,0,0">
                         <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
-                            <TextBlock Grid.Column="0" Text="Event" FontSize="10" Foreground="Gray" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="0" Text="Event" FontSize="10" Foreground="{DynamicResource AppMutedBrush}" VerticalAlignment="Center"/>
                             <TextBlock Grid.Column="1"
                                        Text="{Binding LatestFooterEvent}"
                                        FontSize="10"
-                                       Foreground="DarkOrange"
+                                       Foreground="{DynamicResource AppWarnBrush}"
                                        TextWrapping="NoWrap"
                                        TextTrimming="CharacterEllipsis"
                                        VerticalAlignment="Center"/>
@@ -350,7 +369,7 @@
                         </Style>
                     </DockPanel.Styles>
                     <StackPanel DockPanel.Dock="Top" Spacing="6">
-                    <TextBlock Text="CW Skimmer paths" FontSize="11" FontWeight="SemiBold" Foreground="Gray"/>
+                    <TextBlock Text="CW Skimmer paths" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource AppMutedBrush}"/>
                     <Grid ColumnDefinitions="*,70" ColumnSpacing="6">
                         <TextBox Grid.Column="0"
                                  Classes="config-entry"
@@ -375,9 +394,9 @@
                                 Click="OnBrowseCwSkimmerIni"/>
                     </Grid>
 
-                    <Separator Margin="0,4,0,0" Background="#DDD"/>
+                    <Separator Margin="0,4,0,0" Background="{DynamicResource AppDividerBrush}"/>
                     <Grid ColumnDefinitions="Auto,Auto,10,Auto,30,10,52,10,52,*" ColumnSpacing="3" RowDefinitions="Auto" Margin="0,0,0,2">
-                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Spots" FontSize="11" FontWeight="SemiBold" Foreground="Gray" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Spots" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource AppMutedBrush}" VerticalAlignment="Center"/>
                         <CheckBox Grid.Row="0" Grid.Column="1" IsChecked="{Binding SpotForwardingEnabled}" Content="Enabled" FontSize="11" VerticalAlignment="Center"/>
 
                         <TextBlock Grid.Row="0" Grid.Column="3" Text="Persist" FontSize="11" VerticalAlignment="Center"/>
@@ -402,7 +421,7 @@
                                         Width="26"
                                         Height="11"
                                         Background="{Binding SpotSelectedColorOption.Hex}"
-                                        BorderBrush="#666"
+                                        BorderBrush="{DynamicResource AppOutlineBrush}"
                                         BorderThickness="1"
                                         CornerRadius="2"
                                         HorizontalAlignment="Right"
@@ -422,7 +441,7 @@
                                         Width="26"
                                         Height="11"
                                         Background="{Binding SpotSelectedBackgroundColorOption.Hex}"
-                                        BorderBrush="#666"
+                                        BorderBrush="{DynamicResource AppOutlineBrush}"
                                         BorderThickness="1"
                                         CornerRadius="2"
                                         HorizontalAlignment="Right"
@@ -431,13 +450,13 @@
                         </Button>
                     </Grid>
 
-                    <Separator Margin="0,4,0,0" Background="#DDD"/>
+                    <Separator Margin="0,4,0,0" Background="{DynamicResource AppDividerBrush}"/>
                     <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="6" Margin="0,0,0,2">
                         <TextBlock Grid.Column="0"
                                    Text="CW Skimmer Config"
                                    FontSize="11"
                                    FontWeight="SemiBold"
-                                   Foreground="Gray"
+                                   Foreground="{DynamicResource AppMutedBrush}"
                                    VerticalAlignment="Center"/>
                         <Button Grid.Column="1"
                                 Background="Transparent"
@@ -449,7 +468,7 @@
                             <TextBlock Text="Set Up Wizard"
                                        FontSize="10"
                                        FontWeight="Bold"
-                                       Foreground="DarkOrange"
+                                       Foreground="{DynamicResource AppWarnBrush}"
                                        TextDecorations="Underline"/>
                         </Button>
                         <Button Grid.Column="3"
@@ -472,9 +491,9 @@
                                      IsReadOnly="True"
                                      FontFamily="Consolas"
                                      FontSize="10"
-                                     Foreground="DarkSlateGray"
+                                     Foreground="{DynamicResource AppMutedStrongBrush}"
                                      BorderThickness="1"
-                                     BorderBrush="#E3E6EA"
+                                     BorderBrush="{DynamicResource AppPanelBorderBrush}"
                                      Background="Transparent"
                                      TextWrapping="NoWrap"
                                      ScrollViewer.HorizontalScrollBarVisibility="Auto"
@@ -496,9 +515,9 @@
                                      IsReadOnly="True"
                                      FontFamily="Consolas"
                                      FontSize="10"
-                                     Foreground="DarkSlateGray"
+                                     Foreground="{DynamicResource AppMutedStrongBrush}"
                                      BorderThickness="1"
-                                     BorderBrush="#E3E6EA"
+                                     BorderBrush="{DynamicResource AppPanelBorderBrush}"
                                      Background="Transparent"
                                      TextWrapping="NoWrap"
                                      ScrollViewer.HorizontalScrollBarVisibility="Auto"
@@ -529,17 +548,17 @@
                                    Text="{Binding ActiveEngineLabel, StringFormat='Engine: {0}'}"/>
                     </Grid>
 
-                    <TextBlock Text="Connect to a radio to list its slices." FontSize="11" Foreground="Gray"
+                    <TextBlock Text="Connect to a radio to list its slices." FontSize="11" Foreground="{DynamicResource AppMutedBrush}"
                                IsVisible="{Binding !IsConnected}"/>
 
                     <TextBlock Text="{Binding SelectedControlStation, StringFormat='Station: {0}'}"
-                               FontSize="11" FontWeight="SemiBold" Foreground="Green"
+                               FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource AppOkBrush}"
                                IsVisible="{Binding IsConnected}"/>
 
                     <ItemsControl ItemsSource="{Binding DigitalSlices}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="local:DigitalOperatingRowViewModel">
-                                <Border BorderBrush="#DDD" BorderThickness="0,0,0,1" Padding="0,2">
+                                <Border BorderBrush="{DynamicResource AppDividerBrush}" BorderThickness="0,0,0,1" Padding="0,2">
                                     <StackPanel Spacing="1">
                                         <Grid ColumnDefinitions="50,112,64,*,Auto" ColumnSpacing="5">
                                             <TextBlock Grid.Column="0" Text="{Binding SliceLabel}" FontSize="11"
@@ -547,7 +566,7 @@
                                             <TextBlock Grid.Column="1" FontSize="11" VerticalAlignment="Center"
                                                        TextTrimming="CharacterEllipsis"
                                                        Text="{Binding BandFreqDisplay}"/>
-                                            <TextBlock Grid.Column="2" FontSize="11" Foreground="Gray" VerticalAlignment="Center"
+                                            <TextBlock Grid.Column="2" FontSize="11" Foreground="{DynamicResource AppMutedBrush}" VerticalAlignment="Center"
                                                        Text="{Binding DaxRxDisplay}"/>
                                             <Button Grid.Column="4" Classes="action-button" Content="Start" MinWidth="70"
                                                     Command="{Binding #Root.((local:MainWindowViewModel)DataContext).StartDigitalForSliceCommand}"
@@ -559,13 +578,13 @@
                                                     CommandParameter="{Binding}"
                                                     IsVisible="{Binding IsRunning}"/>
                                         </Grid>
-                                        <TextBlock FontSize="10" Foreground="#C60" TextWrapping="Wrap"
+                                        <TextBlock FontSize="10" Foreground="{DynamicResource AppWarnBrush}" TextWrapping="Wrap"
                                                    IsVisible="{Binding !HasDaxRx}"
                                                    Text="No DAX RX audio channel assigned to this slice; assign one in SmartSDR to enable Start."/>
-                                        <TextBlock FontSize="10" Foreground="#C60" TextWrapping="Wrap"
+                                        <TextBlock FontSize="10" Foreground="{DynamicResource AppWarnBrush}" TextWrapping="Wrap"
                                                    IsVisible="{Binding IsModeMismatch}"
                                                    Text="{Binding Mode, StringFormat='Slice mode {0} is not USB/DIGU; WSJT-X/JTDX need USB/DIGU audio to decode (still launchable).'}"/>
-                                        <TextBlock FontSize="10" Foreground="#C00" TextWrapping="Wrap"
+                                        <TextBlock FontSize="10" Foreground="{DynamicResource AppErrorBrush}" TextWrapping="Wrap"
                                                    Text="{Binding StatusText}"
                                                    IsVisible="{Binding StatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                                     </StackPanel>
@@ -574,17 +593,17 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
 
-                    <Border BorderBrush="#E3E6EA"
+                    <Border BorderBrush="{DynamicResource AppPanelBorderBrush}"
                             BorderThickness="1"
                             CornerRadius="4"
                             Padding="6"
                             Margin="0,8,0,0">
                         <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
-                            <TextBlock Grid.Column="0" Text="Event" FontSize="10" Foreground="Gray" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="0" Text="Event" FontSize="10" Foreground="{DynamicResource AppMutedBrush}" VerticalAlignment="Center"/>
                             <TextBlock Grid.Column="1"
                                        Text="{Binding LatestFooterEvent}"
                                        FontSize="10"
-                                       Foreground="DarkOrange"
+                                       Foreground="{DynamicResource AppWarnBrush}"
                                        TextWrapping="NoWrap"
                                        TextTrimming="CharacterEllipsis"
                                        VerticalAlignment="Center"/>
@@ -623,7 +642,7 @@
 
                     <Grid ColumnDefinitions="44,Auto,Auto,Auto,*" ColumnSpacing="12">
                         <TextBlock Grid.Column="0" Text="Engine" FontSize="11" FontWeight="SemiBold"
-                                   Foreground="Gray" VerticalAlignment="Center"/>
+                                   Foreground="{DynamicResource AppMutedBrush}" VerticalAlignment="Center"/>
                         <RadioButton Grid.Column="1" Classes="compact" GroupName="DigitalEngine" Content="WSJT-X"
                                      VerticalAlignment="Center" IsChecked="{Binding IsWsjtXSelected}"
                                      IsEnabled="{Binding CanChangeDigitalEngine}"/>
@@ -642,11 +661,11 @@
                                 Width="70" Click="OnBrowseDigitalExe"/>
                     </Grid>
 
-                    <Separator Margin="0,4,0,0" Background="#DDD"/>
+                    <Separator Margin="0,4,0,0" Background="{DynamicResource AppDividerBrush}"/>
 
                     <Grid ColumnDefinitions="58,30,90,16,30,*" ColumnSpacing="6">
                         <TextBlock Grid.Column="0" Text="Operator:" FontSize="11" FontWeight="SemiBold"
-                                   Foreground="Gray" VerticalAlignment="Center"/>
+                                   Foreground="{DynamicResource AppMutedBrush}" VerticalAlignment="Center"/>
                         <TextBlock Grid.Column="1" Text="Call" FontSize="10" VerticalAlignment="Center"/>
                         <TextBox Grid.Column="2" Classes="config-entry"
                                  Text="{Binding DigitalMyCall}" Watermark="MyCall"/>
@@ -656,14 +675,14 @@
                                  HorizontalAlignment="Left"/>
                     </Grid>
 
-                    <Separator Margin="0,4,0,0" Background="#DDD"/>
+                    <Separator Margin="0,4,0,0" Background="{DynamicResource AppDividerBrush}"/>
 
                     <TextBlock Text="Per-slice DAX + ports (defaults set; edit as needed)" FontSize="11"
-                               FontWeight="SemiBold" Foreground="Gray"/>
+                               FontWeight="SemiBold" Foreground="{DynamicResource AppMutedBrush}"/>
                     <Grid ColumnDefinitions="64,60,70,70,*" ColumnSpacing="6">
-                        <TextBlock Grid.Column="1" Text="DAX RX" FontSize="9" Foreground="Gray" VerticalAlignment="Center"/>
-                        <TextBlock Grid.Column="2" Text="CAT port" FontSize="9" Foreground="Gray" VerticalAlignment="Center"/>
-                        <TextBlock Grid.Column="3" Text="UDP port" FontSize="9" Foreground="Gray" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="1" Text="DAX RX" FontSize="9" Foreground="{DynamicResource AppMutedBrush}" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="2" Text="CAT port" FontSize="9" Foreground="{DynamicResource AppMutedBrush}" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="3" Text="UDP port" FontSize="9" Foreground="{DynamicResource AppMutedBrush}" VerticalAlignment="Center"/>
                     </Grid>
                     <ItemsControl ItemsSource="{Binding DigitalSliceConfigs}">
                         <ItemsControl.ItemTemplate>
@@ -682,7 +701,7 @@
                     </ItemsControl>
 
                     <TextBlock Text="Shared TX (all slices): DAX TX (FlexRadio DAX)" FontSize="10"
-                               Foreground="Gray" Margin="0,2,0,0"/>
+                               Foreground="{DynamicResource AppMutedBrush}" Margin="0,2,0,0"/>
                 </StackPanel>
             </ScrollViewer>
         </TabItem>
@@ -696,7 +715,7 @@
             </TabItem.Header>
             <Grid Margin="8" RowDefinitions="Auto,Auto,Auto,*" RowSpacing="6">
                 <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
-                    <TextBlock Grid.Column="0" Text="Streamer status" FontSize="11" FontWeight="SemiBold" Foreground="Gray" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="0" Text="Streamer status" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource AppMutedBrush}" VerticalAlignment="Center"/>
                     <Button Grid.Column="1"
                             Classes="action-button"
                             Content="Dump Audio Devices"
@@ -708,16 +727,16 @@
                                Text="Logs folder"
                                Width="60"
                                FontSize="10"
-                               Foreground="Gray"
+                               Foreground="{DynamicResource AppMutedBrush}"
                                VerticalAlignment="Center"/>
                     <TextBox Grid.Column="1"
                              Text="{Binding LogsFolderPathText}"
                              IsReadOnly="True"
                              FontFamily="Consolas"
                              FontSize="10"
-                             Foreground="DarkSlateGray"
+                             Foreground="{DynamicResource AppMutedStrongBrush}"
                              BorderThickness="1"
-                             BorderBrush="#E3E6EA"
+                             BorderBrush="{DynamicResource AppPanelBorderBrush}"
                              Background="Transparent"
                              TextWrapping="NoWrap"
                              ScrollViewer.HorizontalScrollBarVisibility="Auto"
@@ -732,7 +751,7 @@
                     <TextBlock Grid.Column="0"
                                Text="Logging Mode:"
                                FontSize="10"
-                               Foreground="Gray"
+                               Foreground="{DynamicResource AppMutedBrush}"
                                VerticalAlignment="Center"/>
                     <Button Grid.Column="2"
                             Classes="action-button"
@@ -749,12 +768,12 @@
                             IsVisible="{Binding DebugLoggingEnabled}"
                             ToolTip.Tip="Debug logging is on: per-spot publish payloads, telnet spot echoes, DAX-IQ stream churn, and MOX transitions are being logged. Click to turn it off and keep the logs small (issue #58)."/>
                 </Grid>
-                <Border Grid.Row="3" BorderBrush="#E3E6EA" BorderThickness="1" CornerRadius="4" Padding="4">
+                <Border Grid.Row="3" BorderBrush="{DynamicResource AppPanelBorderBrush}" BorderThickness="1" CornerRadius="4" Padding="4">
                     <TextBox Text="{Binding FooterStatusText}"
                              IsReadOnly="True"
                              AcceptsReturn="True"
                              FontSize="10"
-                             Foreground="DarkOrange"
+                             Foreground="{DynamicResource AppWarnBrush}"
                              BorderThickness="0"
                              Background="Transparent"
                              TextWrapping="Wrap"
@@ -771,7 +790,7 @@
                     <Button Content="Update Available"
                             FontSize="11"
                             FontWeight="Bold"
-                            Foreground="DarkOrange"
+                            Foreground="{DynamicResource AppWarnBrush}"
                             Background="Transparent"
                             BorderThickness="0"
                             Padding="0"
@@ -805,17 +824,17 @@
 
                     <TextBlock Text="{Binding UpdateStatusText}"
                                FontSize="11"
-                               Foreground="Gray"
+                               Foreground="{DynamicResource AppMutedBrush}"
                                TextWrapping="Wrap"/>
 
                     <TextBlock Text="About" FontSize="15" FontWeight="SemiBold"/>
                     <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" RowDefinitions="Auto,Auto,Auto" RowSpacing="4">
-                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Release:" FontSize="11" Foreground="Gray"/>
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Release:" FontSize="11" Foreground="{DynamicResource AppMutedBrush}"/>
                         <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="12">
                             <TextBlock Text="{Binding AppReleaseDisplay}" FontSize="11" VerticalAlignment="Center"/>
                             <Button Content="Release notes"
                                     FontSize="11"
-                                    Foreground="RoyalBlue"
+                                    Foreground="{DynamicResource AppLinkBrush}"
                                     Background="Transparent"
                                     BorderThickness="0"
                                     Padding="0"
@@ -824,7 +843,7 @@
                                     Command="{Binding OpenReleaseNotesCommand}"/>
                             <Button Content="wx7v.net"
                                     FontSize="11"
-                                    Foreground="RoyalBlue"
+                                    Foreground="{DynamicResource AppLinkBrush}"
                                     Background="Transparent"
                                     BorderThickness="0"
                                     Padding="0"
@@ -833,14 +852,14 @@
                                     Command="{Binding OpenWx7vSiteCommand}"/>
                         </StackPanel>
 
-                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Commit:" FontSize="11" Foreground="Gray"/>
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Commit:" FontSize="11" Foreground="{DynamicResource AppMutedBrush}"/>
                         <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding AppCommitHash}" FontSize="11"/>
 
-                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Date:" FontSize="11" Foreground="Gray"/>
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Date:" FontSize="11" Foreground="{DynamicResource AppMutedBrush}"/>
                         <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding AppBuildDate}" FontSize="11"/>
                     </Grid>
 
-                    <Border BorderBrush="#E3E6EA" BorderThickness="1" CornerRadius="4" Padding="8">
+                    <Border BorderBrush="{DynamicResource AppPanelBorderBrush}" BorderThickness="1" CornerRadius="4" Padding="8">
                         <StackPanel Spacing="4">
                             <TextBlock Text="{Binding AboutLicenseReference}" FontSize="11" TextWrapping="Wrap"/>
                             <TextBlock Text="{Binding AboutDevelopedBy}" FontSize="11" TextWrapping="Wrap"/>

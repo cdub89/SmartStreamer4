@@ -3,12 +3,12 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:SDRIQStreamer.App"
-        mc:Ignorable="d" d:DesignWidth="360" d:DesignHeight="316"
+        mc:Ignorable="d" d:DesignWidth="360"
         x:Class="SDRIQStreamer.App.SmartDeckWindow"
         x:DataType="local:SmartDeckViewModel"
         Title="SmartDeck"
-        Width="360" Height="316"
-        MinWidth="356" MinHeight="300"
+        Width="360" MinWidth="356"
+        SizeToContent="Height"
         WindowStartupLocation="CenterOwner">
 
     <!-- Accelerators match the ones the operator already uses in FRStack.
@@ -21,10 +21,10 @@
         <KeyBinding Gesture="F4" Command="{Binding AgcThresholdUpCommand}"/>
     </Window.KeyBindings>
 
-    <Window.Resources>
-        <SolidColorBrush x:Key="DeckLitBrush" Color="#0067C0"/>
-        <SolidColorBrush x:Key="DeckLitHoverBrush" Color="#005FB4"/>
-    </Window.Resources>
+    <!-- The lit blue is no longer the deck's own brush: it is the app-wide
+         accent from App.axaml, so the deck follows the Theme button like every
+         other window (issue #63). It still means exactly one thing here, the
+         value the radio currently holds. -->
 
     <Window.Styles>
         <!-- Telemetry readouts are glanced at mid-QSO. They carry the same size
@@ -38,12 +38,12 @@
         </Style>
         <Style Selector="TextBlock.telemetry-label">
             <Setter Property="FontSize" Value="9"/>
-            <Setter Property="Foreground" Value="#4F4F4F"/>
+            <Setter Property="Foreground" Value="{DynamicResource AppMutedBrush}"/>
             <Setter Property="HorizontalAlignment" Value="Center"/>
         </Style>
         <Style Selector="TextBlock.telemetry-unit">
             <Setter Property="FontSize" Value="10"/>
-            <Setter Property="Foreground" Value="Gray"/>
+            <Setter Property="Foreground" Value="{DynamicResource AppMutedBrush}"/>
             <Setter Property="VerticalAlignment" Value="Bottom"/>
             <Setter Property="Margin" Value="2,0,0,2"/>
         </Style>
@@ -56,7 +56,7 @@
                  disabled text rather than as a heading (operator-reported,
                  layout pass). Still well below the button labels, so the
                  headings name the group without competing with it. -->
-            <Setter Property="Foreground" Value="#4F4F4F"/>
+            <Setter Property="Foreground" Value="{DynamicResource AppMutedBrush}"/>
             <Setter Property="Margin" Value="1,0,0,1"/>
         </Style>
 
@@ -75,10 +75,10 @@
                  small labels reads washed out at a glance. Weight and ink both
                  lift a step; the lit styles below still override both. -->
             <Setter Property="FontWeight" Value="Medium"/>
-            <Setter Property="Foreground" Value="#141414"/>
+            <Setter Property="Foreground" Value="{DynamicResource AppInkBrush}"/>
         </Style>
         <Style Selector="Button.deck-button /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="TextElement.Foreground" Value="#141414"/>
+            <Setter Property="TextElement.Foreground" Value="{DynamicResource AppInkBrush}"/>
         </Style>
 
         <!-- "Lit" is the current value the radio holds, not a pressed state.
@@ -88,19 +88,19 @@
             <Setter Property="FontWeight" Value="SemiBold"/>
         </Style>
         <Style Selector="Button.lit /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="{StaticResource DeckLitBrush}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource DeckLitBrush}"/>
-            <Setter Property="TextElement.Foreground" Value="White"/>
+            <Setter Property="Background" Value="{DynamicResource AppAccentBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AppAccentBrush}"/>
+            <Setter Property="TextElement.Foreground" Value="{DynamicResource AppOnAccentBrush}"/>
         </Style>
         <Style Selector="Button.lit:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="{StaticResource DeckLitHoverBrush}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource DeckLitHoverBrush}"/>
-            <Setter Property="TextElement.Foreground" Value="White"/>
+            <Setter Property="Background" Value="{DynamicResource AppAccentHoverBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AppAccentHoverBrush}"/>
+            <Setter Property="TextElement.Foreground" Value="{DynamicResource AppOnAccentBrush}"/>
         </Style>
         <Style Selector="Button.lit:pressed /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="{StaticResource DeckLitHoverBrush}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource DeckLitHoverBrush}"/>
-            <Setter Property="TextElement.Foreground" Value="White"/>
+            <Setter Property="Background" Value="{DynamicResource AppAccentHoverBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AppAccentHoverBrush}"/>
+            <Setter Property="TextElement.Foreground" Value="{DynamicResource AppOnAccentBrush}"/>
         </Style>
 
         <!-- Always-on-top as a pushpin: hollow and grey when off, its inside
@@ -119,18 +119,18 @@
         </Style>
         <Style Selector="ToggleButton.pin Path">
             <Setter Property="Fill" Value="Transparent"/>
-            <Setter Property="Stroke" Value="#6E6E6E"/>
+            <Setter Property="Stroke" Value="{DynamicResource AppOutlineBrush}"/>
         </Style>
         <Style Selector="ToggleButton.pin:checked Path">
-            <Setter Property="Fill" Value="{StaticResource DeckLitBrush}"/>
-            <Setter Property="Stroke" Value="{StaticResource DeckLitBrush}"/>
+            <Setter Property="Fill" Value="{DynamicResource AppAccentBrush}"/>
+            <Setter Property="Stroke" Value="{DynamicResource AppAccentBrush}"/>
         </Style>
         <Style Selector="ToggleButton.pin /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderBrush" Value="Transparent"/>
         </Style>
         <Style Selector="ToggleButton.pin:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="#F0F0F0"/>
+            <Setter Property="Background" Value="{DynamicResource AppHoverWashBrush}"/>
             <Setter Property="BorderBrush" Value="Transparent"/>
         </Style>
         <!-- The pin itself lights, not the box behind it. A filled box was
@@ -141,12 +141,12 @@
             <Setter Property="BorderBrush" Value="Transparent"/>
         </Style>
         <Style Selector="ToggleButton.pin:checked:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="#F0F0F0"/>
+            <Setter Property="Background" Value="{DynamicResource AppHoverWashBrush}"/>
             <Setter Property="BorderBrush" Value="Transparent"/>
         </Style>
     </Window.Styles>
 
-    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto" RowSpacing="6" Margin="10,8">
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="6" Margin="10,8">
 
         <!-- Header. Answers slice, frequency and mode without opening anything;
              before the layout pass that state lived inside the slice dropdown's
@@ -161,14 +161,14 @@
                         HorizontalAlignment="Center"
                         VerticalAlignment="Center">
                 <TextBlock Text="{Binding FrequencyText}" FontSize="17" FontWeight="SemiBold"/>
-                <TextBlock Text="MHz" FontSize="10" Foreground="Gray" VerticalAlignment="Bottom" Margin="3,0,0,2"/>
+                <TextBlock Text="MHz" FontSize="10" Foreground="{DynamicResource AppMutedBrush}" VerticalAlignment="Bottom" Margin="3,0,0,2"/>
                 <!-- Mode is part of the answer to "what am I on", so it carries
                      the same weight as the frequency rather than sitting at
                      unit-label contrast beside it. -->
                 <TextBlock Text="{Binding ModeText}"
                            FontSize="12"
                            FontWeight="SemiBold"
-                           Foreground="#3A3A3A"
+                           Foreground="{DynamicResource AppMutedStrongBrush}"
                            VerticalAlignment="Bottom"
                            Margin="7,0,0,1"/>
             </StackPanel>
@@ -381,7 +381,7 @@
             </StackPanel>
         </Grid>
 
-        <Border Grid.Row="6" BorderBrush="#E6E6E6" BorderThickness="0,1,0,0" Padding="0,5,0,0">
+        <Border Grid.Row="5" BorderBrush="{DynamicResource AppDividerBrush}" BorderThickness="0,1,0,0" Padding="0,5,0,0">
             <Grid ColumnDefinitions="*,*,*,*">
                 <StackPanel Grid.Column="0">
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">

@@ -430,6 +430,18 @@ public partial class MainWindow : Window
         deck.Show(this);
     }
 
+    // One button rather than a Light/Dark pair or a dropdown: two options with
+    // no "follow the OS" third state is a toggle, and the Launch header row is
+    // tight. Applied live via DynamicResource, so every open window (SmartDeck
+    // included) repaints on the press; the setting is written to the same
+    // in-memory session everything else uses and saved on shutdown.
+    private void OnToggleTheme(object? sender, RoutedEventArgs e)
+    {
+        var settings = _settingsSession.Settings;
+        settings.ThemeMode = settings.ThemeMode == AppTheme.Dark ? AppTheme.Light : AppTheme.Dark;
+        App.ApplyTheme(settings.ThemeMode);
+    }
+
     private void OnOpenSetupWizard(object? sender, RoutedEventArgs e)
     {
         var viewer = new SetupWizardWindow();

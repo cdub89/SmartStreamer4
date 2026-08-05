@@ -460,7 +460,9 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
     public string AppBuildDate => s_appBuildInfo.BuildDate;
     private string AppReleaseTagForUpdateChecks => ResolveReleaseTagForUpdateChecks();
     public string WindowTitle => $"SmartStreamer4 {AppBuildDisplay}";
-    public string ConnectTargetHeaderColor => IsConnected ? "Green" : "Gray";
+    // ConnectTargetHeaderColor used to live here, returning the colour names
+    // "Green" / "Gray". A ViewModel handing out colour names cannot be
+    // theme-aware (issue #63), so the header now styles itself on IsConnected.
     public string ConnectTargetHeaderText
     {
         get
@@ -979,7 +981,6 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         UIPost(() =>
         {
             IsConnected = connected;
-            OnPropertyChanged(nameof(ConnectTargetHeaderColor));
             OnPropertyChanged(nameof(ConnectTargetHeaderText));
             if (connected)
             {

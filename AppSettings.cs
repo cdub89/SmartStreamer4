@@ -1,7 +1,19 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
 
 namespace SDRIQStreamer.App;
+
+/// <summary>
+/// App-wide appearance variant (issue #63). Maps one-to-one onto Avalonia's
+/// <c>ThemeVariant.Light</c> / <c>ThemeVariant.Dark</c>; there is deliberately no
+/// "follow the OS" member.
+/// </summary>
+public enum AppTheme
+{
+    Light,
+    Dark
+}
 
 /// <summary>
 /// Persisted application settings (serialized to JSON).
@@ -140,14 +152,31 @@ public sealed class AppSettings
     public int? LastSeenMmeDeviceIndexCh3 { get; set; }
     public int? LastSeenMmeDeviceIndexCh4 { get; set; }
 
+    // ── Appearance (issue #63) ───────────────────────────────────────────────
+    // Two named options, not three: "follow the OS" is a third behaviour to
+    // explain, test and reason about, and this is a tool configured once and
+    // then left alone rather than something that should shift underneath the
+    // operator. Tradeoff accepted: an operator whose desktop is dark gets a
+    // light app on first launch until they press the Theme button.
+    //
+    // Persisted by name so reordering AppTheme cannot silently remap a saved
+    // setting; the settings store has no global string-enum converter.
+
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public AppTheme ThemeMode { get; set; } = AppTheme.Light;
+
     // ── SmartDeck window (issue #59) ─────────────────────────────────────────
     // Nullable: null means "never positioned", which is distinct from a real
     // 0 coordinate on a multi-monitor desktop where 0,0 is a valid position.
+    //
+    // Height is deliberately absent (issue #63): the deck sizes itself to its
+    // content, so persisting height only preserved dead space and made every
+    // layout change invisible to anyone who had already run the deck. An older
+    // settings file still carrying SmartDeckHeight is simply ignored on read.
 
     public double? SmartDeckX { get; set; }
     public double? SmartDeckY { get; set; }
     public double? SmartDeckWidth { get; set; }
-    public double? SmartDeckHeight { get; set; }
     public bool SmartDeckAlwaysOnTop { get; set; }
 
     // Per-band state memory for the SmartDeck band buttons (issue #59 phase 2b,

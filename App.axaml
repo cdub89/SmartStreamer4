@@ -1,8 +1,105 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="SDRIQStreamer.App.App"
-             RequestedThemeVariant="Default">
+             RequestedThemeVariant="Light">
+
+    <!-- App-wide Light / Dark palette (issue #63).
+
+         Two rules this file exists to enforce:
+
+         1. Every consumer looks these up with DynamicResource, never
+            StaticResource. One StaticResource slipping in produces a control
+            that changes on restart and not before, which is worse than a
+            consistent restart-required behaviour.
+         2. We own surfaces, ink and semantic status colours; Fluent owns the
+            controls. Do not restyle an unlit button face: the moment you set
+            its background you owe hover, pressed, disabled and focus to match.
+
+         The dark values are the palette live-tested on a FLEX-6400M alongside
+         SmartSDR and approved by the operator (issue #63). The ground is a
+         near-grey with a blue bias rather than black, because pure black read
+         as a hole next to SmartSDR. -->
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+
+                <ResourceDictionary x:Key="Light">
+                    <!-- Surfaces and structure -->
+                    <SolidColorBrush x:Key="AppSurfaceBrush"      Color="#F3F3F3"/>
+                    <SolidColorBrush x:Key="AppPanelBorderBrush"  Color="#E3E6EA"/>
+                    <SolidColorBrush x:Key="AppDividerBrush"      Color="#DDDDDD"/>
+                    <SolidColorBrush x:Key="AppHoverWashBrush"    Color="#F0F0F0"/>
+                    <SolidColorBrush x:Key="AppOutlineBrush"      Color="#6E6E6E"/>
+
+                    <!-- Ink. Muted is #4F4F4F rather than the Gray most of the
+                         app started with: at small sizes Gray read as disabled
+                         text rather than as a heading (operator-reported during
+                         the SmartDeck layout pass, then unified app-wide). -->
+                    <SolidColorBrush x:Key="AppInkBrush"          Color="#141414"/>
+                    <SolidColorBrush x:Key="AppMutedBrush"        Color="#4F4F4F"/>
+                    <SolidColorBrush x:Key="AppMutedStrongBrush"  Color="#3A3A3A"/>
+
+                    <!-- Accent. Means exactly one thing on SmartDeck: the value
+                         the radio currently holds. Break that and the panel
+                         becomes a light show. -->
+                    <SolidColorBrush x:Key="AppAccentBrush"       Color="#0067C0"/>
+                    <SolidColorBrush x:Key="AppAccentHoverBrush"  Color="#005FB4"/>
+                    <SolidColorBrush x:Key="AppOnAccentBrush"     Color="#FFFFFF"/>
+
+                    <!-- Semantic status -->
+                    <SolidColorBrush x:Key="AppOkBrush"           Color="#008000"/>
+                    <SolidColorBrush x:Key="AppWarnBrush"         Color="#CC6600"/>
+                    <SolidColorBrush x:Key="AppErrorBrush"        Color="#C00000"/>
+                    <SolidColorBrush x:Key="AppInfoBrush"         Color="#008B8B"/>
+                    <SolidColorBrush x:Key="AppLinkBrush"         Color="#4169E1"/>
+
+                    <!-- Callout and code blocks -->
+                    <SolidColorBrush x:Key="AppCalloutBackgroundBrush" Color="#FFF4E0"/>
+                    <SolidColorBrush x:Key="AppCalloutInkBrush"        Color="#3A2A00"/>
+                    <SolidColorBrush x:Key="AppCodeBackgroundBrush"    Color="#F7F7F7"/>
+                </ResourceDictionary>
+
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="AppSurfaceBrush"      Color="#252B33"/>
+                    <SolidColorBrush x:Key="AppPanelBorderBrush"  Color="#3D4653"/>
+                    <SolidColorBrush x:Key="AppDividerBrush"      Color="#3D4653"/>
+                    <SolidColorBrush x:Key="AppHoverWashBrush"    Color="#313842"/>
+                    <SolidColorBrush x:Key="AppOutlineBrush"      Color="#8892A0"/>
+
+                    <SolidColorBrush x:Key="AppInkBrush"          Color="#E8EDF4"/>
+                    <SolidColorBrush x:Key="AppMutedBrush"        Color="#7E8896"/>
+                    <SolidColorBrush x:Key="AppMutedStrongBrush"  Color="#A9B3C0"/>
+
+                    <SolidColorBrush x:Key="AppAccentBrush"       Color="#1479FF"/>
+                    <SolidColorBrush x:Key="AppAccentHoverBrush"  Color="#3D8CFF"/>
+                    <SolidColorBrush x:Key="AppOnAccentBrush"     Color="#FFFFFF"/>
+
+                    <SolidColorBrush x:Key="AppOkBrush"           Color="#4CC26A"/>
+                    <SolidColorBrush x:Key="AppWarnBrush"         Color="#FFB25C"/>
+                    <SolidColorBrush x:Key="AppErrorBrush"        Color="#FF6B6B"/>
+                    <SolidColorBrush x:Key="AppInfoBrush"         Color="#4FC3C7"/>
+                    <SolidColorBrush x:Key="AppLinkBrush"         Color="#6FA8FF"/>
+
+                    <SolidColorBrush x:Key="AppCalloutBackgroundBrush" Color="#3A2E1C"/>
+                    <SolidColorBrush x:Key="AppCalloutInkBrush"        Color="#F0DFC0"/>
+                    <SolidColorBrush x:Key="AppCodeBackgroundBrush"    Color="#2C333C"/>
+                </ResourceDictionary>
+
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+
     <Application.Styles>
         <FluentTheme />
+
+        <!-- The ground is set by the window, not by the theme. Fluent ships
+             exactly two variants with no re-basing hook: the legacy WinUI
+             palette keys (SystemAltHighColor and friends) still exist in
+             Avalonia.Themes.Fluent 11.3.12 but the 11.x control themes do not
+             resolve against them, so overriding them does nothing (measured,
+             issue #63 sizing spike). One selector covers every window instead. -->
+        <Style Selector="Window">
+            <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}"/>
+        </Style>
     </Application.Styles>
 </Application>

@@ -282,9 +282,7 @@ public partial class SetupWizardWindow : Window
         {
             Content = label,
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
-            Background = Brushes.Transparent,
-            BorderBrush = Brushes.Transparent,
-            Foreground = Brushes.DodgerBlue,
+            Classes = { "guide-link" },
             Padding = new Thickness(0),
             Margin = new Thickness(0, 0, 0, 2),
             FontSize = 12
@@ -345,9 +343,7 @@ public partial class SetupWizardWindow : Window
         {
             Content = string.IsNullOrWhiteSpace(label) ? url : label,
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
-            Background = Brushes.Transparent,
-            BorderBrush = Brushes.Transparent,
-            Foreground = Brushes.DodgerBlue,
+            Classes = { "guide-link" },
             Padding = new Thickness(0),
             Margin = new Thickness(0, 0, 0, 2),
             FontSize = 12
@@ -377,12 +373,11 @@ public partial class SetupWizardWindow : Window
     {
         target.Children.Add(new Border
         {
-            BorderBrush = Brushes.LightGray,
+            Classes = { "guide-code" },
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(4),
             Padding = new Thickness(8),
             Margin = new Thickness(0, 4, 0, 4),
-            Background = new SolidColorBrush(Color.Parse("#F7F7F7")),
             Child = new TextBlock
             {
                 Text = code,
@@ -406,7 +401,7 @@ public partial class SetupWizardWindow : Window
             target.Children.Add(new TextBlock
             {
                 Text = $"[Image not found] {imageReference}",
-                Foreground = Brushes.DarkOrange,
+                Classes = { "guide-notice" },
                 FontSize = 11,
                 TextWrapping = TextWrapping.Wrap
             });
@@ -433,7 +428,7 @@ public partial class SetupWizardWindow : Window
                 {
                     Text = alt,
                     FontSize = 11,
-                    Foreground = Brushes.Gray,
+                    Classes = { "guide-caption" },
                     Margin = new Thickness(0, 0, 0, 4),
                     TextWrapping = TextWrapping.Wrap
                 });
@@ -444,7 +439,7 @@ public partial class SetupWizardWindow : Window
             target.Children.Add(new TextBlock
             {
                 Text = $"[Image load failed] {imageReference}",
-                Foreground = Brushes.DarkOrange,
+                Classes = { "guide-notice" },
                 FontSize = 11,
                 TextWrapping = TextWrapping.Wrap
             });
