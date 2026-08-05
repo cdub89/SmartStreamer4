@@ -549,6 +549,14 @@ decision, not an oversight.
   Stream Deck look (bright blue on near-black) is open, and deliberately
   separated from the arrangement.
 
+  **Settled by issue #63, shipped and live-validated 2026-08-04.** Neither, as
+  a deck-private choice: the skin became an app-wide Light / Dark setting and
+  SmartDeck follows it like every other window. The deck therefore owns no
+  colours of its own any more. Its lit blue is the app accent
+  (`AppAccentBrush`), so the one rule that matters here, that the accent means
+  exactly one thing and that thing is the value the radio currently holds,
+  is now enforced from `App.axaml` rather than from this window.
+
 ## Height squeeze (issue #64, 2026-08-04)
 
 Live testing v0.3.0b1 found the deck stood twice the height of the operator's
@@ -570,17 +578,25 @@ resource, so this pass buys one row back and nothing else changes.
   available ~50px and was considered and declined; the headings earned their
   place in the layout pass.
 
-Default window height goes 362 to 316. **Saved geometry defeats this for anyone
-who already ran the deck**: `SmartDeckHeight` is restored on open, so an existing
-operator keeps their old height and the slack lands in the spacer row above the
-telemetry footer.
+Default window height goes 362 to 316. **Saved geometry defeated this for anyone
+who had already run the deck**: `SmartDeckHeight` was restored on open, so an
+existing operator kept their old height and the slack landed in the spacer row
+above the telemetry footer.
 
-The fix, folded into issue #63 by the operator on 2026-08-04 so it lands with
-the theme pass rather than converting the same XAML twice: stop persisting
-height, set `SizeToContent="Height"`, and drop the `*` spacer row. Every row is
-`Auto`, so a taller window only ever adds dead space, and this is what stops the
-next layout change being invisible to anyone who has run the deck before. Width
-stays resizable and persisted, since it governs button sizing.
+The fix was folded into issue #63 by the operator on 2026-08-04 so it landed
+with the theme pass rather than converting the same XAML twice, and **shipped
+there, live-validated 2026-08-04**: height is no longer persisted,
+`SizeToContent="Height"` is set, and the `*` spacer row is gone. Every row is
+`Auto`, so a taller window could only ever add dead space, and this is what
+stops the next layout change being invisible to anyone who has run the deck
+before. Width stays resizable and persisted, since it governs button sizing.
+
+`AppSettings.SmartDeckHeight` was deleted rather than deprecated. No migration
+is needed: `System.Text.Json` ignores unknown properties on read, so an existing
+settings file keeps the dead key and the deck simply stops honouring it. The
+consequence is deliberate rather than a cost, but it is a capability removed: a
+deck taller than its content is no longer possible, and this is the decision to
+revisit if one is ever wanted.
 
 ## Per-band memory beyond frequency (live-validated 2026-08-03)
 
