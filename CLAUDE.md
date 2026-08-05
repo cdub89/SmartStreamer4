@@ -536,20 +536,43 @@ and surface the gap rather than auto-shipping. Asking users to update
 from a working install implies there is a reason to; shipping
 hygiene-only releases trains operators to ignore update prompts.
 
-Release publishing flow. Two automated phases bracket three manual
+Release publishing flow. Two automated phases bracket the manual
 gates. The script does not pause for human input — gates happen between
 script invocations, so a hung session can never strand a release.
 
-### Phase 1 — build (`.\publish-release.ps1`)
+**Two destinations, one phase 1.** A **tester build** stops after phase 1
+and the zip is handed out by hand; a **published release** continues into
+phase 2. Both `v0.3.0b1` and `v0.3.0b2` were tester builds: tagged,
+pushed and zipped, never `gh release create`d. Decide which you are
+doing before tagging, because phase 2 hard-codes `--latest` (see below).
 
-1. Tag the local HEAD with the release label, always as an
+### Phase 1 — tag, push, build (`.\publish-release.ps1`)
+
+Steps 1–5 are the operator's; Claude runs step 6 and does step 7.
+
+1. Commit everything, including docs. The script tags HEAD and does
+   **not** check for a clean working tree, so anything uncommitted is
+   simply absent from what the tag names.
+2. Tag the local HEAD with the release label, always as an
    **annotated** tag: `git tag -a v0.2.1 -m "SmartStreamer4 v0.2.1"`.
    Lightweight tags have caused busted releases before; annotated only.
    The csproj `<Version>` stays at the clean numeric default; release
    version comes from the tag.
-2. Run `.\publish-release.ps1`. The script:
+3. `git push origin main` **before** pushing the tag. Otherwise origin
+   carries a tag pointing at a commit unreachable from any branch.
+4. `git push origin <tag>`. Every release tag goes to origin, including
+   tester builds that will never be published; only phase 2 puts a
+   release in front of operators.
+5. Confirm no SmartStreamer4 instance is running. Phase 1 does a
+   `dotnet publish`, and a live instance holds `bin\...\*.dll`, turning
+   the build into a wall of `MSB3021` / `MSB3027` lock errors that read
+   like a code failure and are not one.
+6. Run `.\publish-release.ps1`. The script:
    - Refuses to run if the tag at HEAD is absent or doesn't match the
      version regex.
+   - **Runs `dotnet test SmartStreamer4.sln` first and aborts the
+     release on any failure** (issue #50 fix). A phase 1 failure is
+     therefore as likely to be a red test as a packaging problem.
    - Builds with `-p:InformationalVersion=<label>+<commit-sha>` so the
      in-app About display and update check report the right version.
    - Verifies the published exe's embedded `ProductVersion` matches
@@ -559,27 +582,61 @@ script invocations, so a hung session can never strand a release.
    - Writes a single-line `SHA256SUMS.txt` sidecar next to the zip in
      the publish dir. (The tracked `artifacts/release/SHA256SUMS.txt`
      is a frozen v0.1.18b-era snapshot the script no longer updates.)
+7. Copy the zip to `C:\Users\chris\OneDrive\Documents\SmartStreamer4-releases\`
+   so it syncs to the other Windows test machines. A dedicated folder
+   rather than Documents itself: the zips accumulate one per tag and
+   are already uniquely named.
+8. **Prune old builds.** Each zip is ~80 MB, and OneDrive syncs every
+   one of them to every test machine. Keep the tag just built and the
+   one before it — enough to put a tester back on the previous build
+   — and delete older zips from both the OneDrive folder and the
+   publish dir. Report what was removed; do not delete silently.
+
+   **Never delete `artifacts/release/SHA256SUMS.txt`.** `/artifacts/`
+   is gitignored, but that one file is tracked (`git ls-files
+   artifacts` returns it and nothing else). It is the frozen
+   v0.1.18b-era cumulative hash snapshot, and it is the only thing in
+   that whole tree the pipeline still depends on.
+
+   Everything else under `artifacts/release/` is legacy: the folder
+   holds pre-GA zips (newest `v0.1.12b`, April 2026), extracted alpha
+   build directories, and three orphaned `RELEASE_NOTES-*.md`. The
+   current script has never written there. Treat a non-empty
+   `artifacts/release/` as a cleanup task, not as release output.
+
+**Tradeoff in this ordering, named deliberately.** The tag is pushed
+(step 4) before the zip is live-tested, so a failed live test means
+deleting a tag that is already on origin, not just a local one. The
+previous ordering built first and pushed the tag only once the zip was
+good, which made a bad tag cheap to retract. It was reordered to match
+how the operator actually works, and because a pushed tag with no
+GitHub Release attached is invisible to operators anyway. If a live
+test does fail: `git push origin :refs/tags/<tag>` then delete locally,
+fix, retag.
 
 ### Human gates between phases
+
+Only for a published release. A tester build stops at the live test.
 
 1. Live-test the zip: extract to a temp directory **outside the repo**
    (so the runtime version resolver can't fall back to `git describe`),
    run the exe, confirm About / status shows `<tag> (<sha>)`, and
    trigger an update check to confirm it resolves the current tag
-   correctly. If anything is wrong, delete the local tag, fix, retag,
-   re-run phase 1.
-2. Push the tag once the zip is good: `git push origin v0.2.1`. The
-   tag must be on origin before `-Publish` runs; if `gh release create`
-   ran against a tag missing from origin, GitHub would fabricate its
-   own lightweight tag server-side (the script's phase 2 precondition
-   check exists to prevent exactly this).
-3. Confirm `RELEASE_NOTES-<tag>.md` exists at the repo root and is
+   correctly.
+2. Confirm `RELEASE_NOTES-<tag>.md` exists at the repo root and is
    finalized. The file is gitignored. Claude drafts it by analyzing the
    actual code diffs between the prior tag and HEAD, never by
    summarizing commit messages alone; the operator reviews and edits
-   in place.
+   in place. **Phase 1 does not need this file** — it prints the
+   expected filename but only phase 2 reads it, which is why tester
+   builds carry no notes.
 
 ### Phase 2 — publish (`.\publish-release.ps1 -Publish`)
+
+Skip this entirely for a tester build. **`--latest` is hard-coded**, so
+publishing any tag, `b` suffix included, makes it the current release
+and prompts every operator whose version it outranks. A `v0.3.0b2`
+published this way would be pushed at everyone still on `v0.2.1`.
 
 1. Run `.\publish-release.ps1 -Publish`. The script:
    - Fails fast on any missing precondition: tag on `origin`, zip
