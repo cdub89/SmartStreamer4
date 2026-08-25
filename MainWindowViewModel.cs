@@ -25,6 +25,14 @@ public partial class MainWindowViewModel : ObservableObject, IDaxStationConfirme
     private readonly IRadioConnection  _connection;
     private readonly ICwSkimmerLauncher _launcher;
     private readonly IDigitalAppLauncher _digitalLauncher;
+
+    /// <summary>
+    /// Checks the slice's SmartSDR CAT port before Digital Start (issue #66).
+    /// Optional in the constructor rather than a required eighth service: only
+    /// this one call site uses it, and defaulting keeps every existing caller
+    /// and test unchanged while still allowing a fake to be passed in.
+    /// </summary>
+    private readonly ICatPortProbe _catPortProbe;
     private readonly AppSettingsSession _settingsSession;
     private readonly AppSettings _settings;
     private readonly FooterStatusBuffer _footerStatusBuffer;
@@ -496,12 +504,14 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
                                ICwSkimmerLauncher launcher, IDigitalAppLauncher digitalLauncher,
                                AppSettingsSession settingsSession,
                                IReleaseUpdateService releaseUpdateService,
-                               IAudioDeviceFinder deviceFinder)
+                               IAudioDeviceFinder deviceFinder,
+                               ICatPortProbe? catPortProbe = null)
     {
         _discovery     = discovery;
         _connection    = connection;
         _launcher      = launcher;
         _digitalLauncher = digitalLauncher;
+        _catPortProbe  = catPortProbe ?? new TcpCatPortProbe();
         _settingsSession = settingsSession;
         _settings = _settingsSession.Settings;
         // No mode is active until the operator chooses one on the Launch tab, so
@@ -940,6 +950,17 @@ private static readonly (string ReleaseTag, string CommitHash, string Display, s
         if (!row.HasDaxRx)
         {
             row.StatusText = "Assign a DAX RX audio channel to this slice in SmartSDR before starting.";
+            return;
+        }
+
+        // Guard (issue #66): CAT gates Digital Start the way DAX-IQ gates CW
+        // Start. Without it the engine launches, fails against an absent CAT
+        // port with its own configuration error, and the operator is left
+        // reading a WSJT-X message that never mentions the port or the fix.
+        // Reported from a fresh install where no CAT port had been added yet.
+        if (!await _catPortProbe.IsListeningAsync(row.CatPort))
+        {
+            row.StatusText = CatPortHint.ForUnreachablePort(row.CatPort, CatSettingsReader.ReadCatTcpPorts());
             return;
         }
 

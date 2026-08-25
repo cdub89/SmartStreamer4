@@ -250,6 +250,11 @@ public sealed class CwSkimmerWorkflowServiceTests
         public Task SetRfPowerAsync(int watts)                                    => Task.CompletedTask;
 
         public event Action<int?>? RfPowerChanged;
+
+        // Issue #69: this fake exercises the CW Skimmer workflow, which has no
+        // interest in transmit state. Present to satisfy the interface.
+        public bool IsTransmitting => false;
+        public event Action<bool>? TransmitStateChanged;
         public event Action<bool>? ConnectionStateChanged;
         public event Action<PanadapterInfo>? PanadapterAdded;
         public event Action<PanadapterInfo>? PanadapterRemoved;
@@ -270,6 +275,7 @@ public sealed class CwSkimmerWorkflowServiceTests
         private void _Touch()
         {
             RfPowerChanged?.Invoke(null);
+            TransmitStateChanged?.Invoke(false);
             ConnectionStateChanged?.Invoke(false);
             PanadapterAdded?.Invoke(default!);
             PanadapterRemoved?.Invoke(default!);
@@ -297,17 +303,16 @@ public sealed class CwSkimmerWorkflowServiceTests
         public bool IsRunning              => false;
         public bool IsChannelRunning(int _) => false;
         public bool TelnetConnected        => false;
-        public string LastDiagnostics      => string.Empty;
 
         public (string SignalDevice, int SignalIdx, string AudioDevice, int AudioIdx)?
             PreviewDevices(int daxIqChannel) => null;
 
-        public Task<LaunchResult> LaunchAsync(int daxIqChannel, int sampleRateHz, long centerFreqHz, CwSkimmerConfig config)
+        public Task<LaunchOutcome> LaunchAsync(int daxIqChannel, int sampleRateHz, long centerFreqHz, CwSkimmerConfig config)
         {
             LastDaxIqChannel = daxIqChannel;
             LastCenterFreqHz = centerFreqHz;
             LastConfig       = config;
-            return Task.FromResult(LaunchResult.Success);
+            return Task.FromResult(new LaunchOutcome(LaunchResult.Success, string.Empty));
         }
 
         public void RequestSkimmerSync(int daxIqChannel, long? loHz = null, double? vfoMHz = null) { }

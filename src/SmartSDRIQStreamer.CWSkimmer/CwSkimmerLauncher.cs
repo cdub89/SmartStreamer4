@@ -61,8 +61,6 @@ public sealed class CwSkimmerLauncher : ICwSkimmerLauncher, IDisposable
     public event Action<string>? TelnetStatusChanged;
     public event Action<int, double, DateTime>? OutboundQsyEmitted;
 
-    public string LastDiagnostics { get; private set; } = string.Empty;
-
     public CwSkimmerLauncher(CwSkimmerIniModelFactory modelFactory,
                              CwSkimmerIniWriter       iniWriter,
                              IAudioDeviceFinder       deviceFinder,
@@ -90,33 +88,38 @@ public sealed class CwSkimmerLauncher : ICwSkimmerLauncher, IDisposable
         return (signalLabel, sigIdx, string.Empty, -1);
     }
 
-    public async Task<LaunchResult> LaunchAsync(
+    public async Task<LaunchOutcome> LaunchAsync(
         int             daxIqChannel,
         int             sampleRateHz,
         long            centerFreqHz,
         CwSkimmerConfig config)
     {
-        if (IsChannelRunning(daxIqChannel)) return LaunchResult.AlreadyRunning;
+        if (IsChannelRunning(daxIqChannel))
+            return new LaunchOutcome(LaunchResult.AlreadyRunning, string.Empty);
 
         string exePath = config.ExePath;
-        if (!File.Exists(exePath)) return LaunchResult.ExeNotFound;
+        if (!File.Exists(exePath))
+            return new LaunchOutcome(LaunchResult.ExeNotFound, string.Empty);
 
         var model      = _modelFactory.Build(daxIqChannel, sampleRateHz, centerFreqHz, config);
         var iniPath = Path.Combine(IniDir, $"CwSkimmer-ch{daxIqChannel}.ini");
         var channelIniExists = File.Exists(iniPath);
 
-        LastDiagnostics = BuildDiagnostics(daxIqChannel, model, config.SkimmerIniPath, channelIniExists, _deviceFinder);
-        WriteDiagnosticLog(LastDiagnostics);
+        // Issue #75: a local, returned with the result. It used to be the shared
+        // LastDiagnostics property, which every channel overwrote and the caller
+        // read back after the fact.
+        var diagnostics = BuildDiagnostics(daxIqChannel, model, config.SkimmerIniPath, channelIniExists, _deviceFinder);
+        WriteDiagnosticLog(diagnostics);
 
         // Issue #74 (2026-08-24): an invalid cwskimmer.ini path (the operator had
         // entered the CW Skimmer folder, not the file) failed the calibration read
         // and surfaced as DeviceNotFound ("not found in WinMM enumeration") even
         // though the DAX device was present. Validate the template first so path
-        // problems report as path problems, and only gate on the device when a
-        // fresh channel INI is about to be written; an existing channel INI
+        // problems report as path problems, and only gate on the calibration when
+        // a fresh channel INI is about to be written; an existing channel INI
         // already carries its audio settings and the model is never written.
         if (!channelIniExists && string.IsNullOrWhiteSpace(ResolveTemplateIniPath(config)))
-            return LaunchResult.TemplateIniNotFound;
+            return new LaunchOutcome(LaunchResult.TemplateIniNotFound, diagnostics);
 
         // Generated channel INIs always use MME — only MmeSignalDev gates launch.
         if (!channelIniExists && model.MmeSignalDevIndex < 0)
@@ -124,13 +127,18 @@ public sealed class CwSkimmerLauncher : ICwSkimmerLauncher, IDisposable
             // With a readable template this index is never negative (the sequential
             // fallback anchors at the master's MmeSignalDev), so reaching here means
             // the template INI exists but carries no usable [Audio] calibration.
+            // Issue #75: that is a template problem, so it reports as one. The
+            // former DeviceNotFound result was retired rather than kept alive for
+            // this single residual case; the WinMM device list it used to print
+            // into the status line lives in the diagnostic log, which is where it
+            // is actually useful.
             EmitLauncherStatus(daxIqChannel,
-                $"Launch blocked: could not resolve an MME signal device for DAX IQ {daxIqChannel} (check the cwskimmer.ini calibration).");
-            return LaunchResult.DeviceNotFound;
+                $"Launch blocked: cwskimmer.ini has no usable [Audio] calibration, so no MME signal device could be resolved for DAX IQ {daxIqChannel}.");
+            return new LaunchOutcome(LaunchResult.TemplateIniNotFound, diagnostics);
         }
 
-        if (!PrepareManagedIniFromTemplate(iniPath, config, daxIqChannel, out _))
-            return LaunchResult.TemplateIniNotFound;
+        if (PrepareManagedIniFromTemplate(iniPath, config, daxIqChannel, out _) is { } prepareFailure)
+            return new LaunchOutcome(prepareFailure, diagnostics);
 
         // Audio section is seeded from calibrated baseline only on first channel INI
         // creation. After that, operator edits in CW Skimmer are preserved.
@@ -162,10 +170,11 @@ public sealed class CwSkimmerLauncher : ICwSkimmerLauncher, IDisposable
             // ProcessStartFailed is the correct result; log so the cause is
             // visible instead of silently swallowed (issue #50 Phase 3).
             LogNonFatal("CwSkimmer.exe process start failed.", ex);
-            return LaunchResult.ProcessStartFailed;
+            return new LaunchOutcome(LaunchResult.ProcessStartFailed, diagnostics);
         }
 
-        if (process is null) return LaunchResult.ProcessStartFailed;
+        if (process is null)
+            return new LaunchOutcome(LaunchResult.ProcessStartFailed, diagnostics);
 
         process.EnableRaisingEvents = true;
         process.Exited += (_, _) => OnProcessExited(daxIqChannel, process);
@@ -189,7 +198,7 @@ public sealed class CwSkimmerLauncher : ICwSkimmerLauncher, IDisposable
                 $"telnet connect ch {daxIqChannel}");
         }
 
-        return LaunchResult.Success;
+        return new LaunchOutcome(LaunchResult.Success, diagnostics);
     }
 
     private async Task ConnectTelnetAsync(
@@ -470,19 +479,30 @@ public sealed class CwSkimmerLauncher : ICwSkimmerLauncher, IDisposable
         catch (Exception ex) { LogNonFatal("Failed to write diagnostic log.", ex); }
     }
 
-    private bool PrepareManagedIniFromTemplate(string targetIniPath, CwSkimmerConfig config, int daxIqChannel, out string templateIniPath)
+    /// <summary>
+    /// Seeds the per-channel INI from the master template when it does not
+    /// already exist. Returns null on success, or the result that describes
+    /// why it could not be prepared.
+    /// </summary>
+    /// <remarks>
+    /// Codex deep audit of issue #75, 2026-08-24: this used to return a bare
+    /// bool for two unrelated failures, an unresolvable template and a failed
+    /// copy, which the caller then reported as one. They are separate results
+    /// now so the operator is told what actually went wrong.
+    /// </remarks>
+    private LaunchResult? PrepareManagedIniFromTemplate(string targetIniPath, CwSkimmerConfig config, int daxIqChannel, out string templateIniPath)
     {
         // Preserve per-channel window geometry and other CW-managed sections by
         // reusing an existing managed INI when present.
         if (File.Exists(targetIniPath))
         {
             templateIniPath = targetIniPath;
-            return true;
+            return null;
         }
 
         templateIniPath = ResolveTemplateIniPath(config);
         if (string.IsNullOrWhiteSpace(templateIniPath))
-            return false;
+            return LaunchResult.TemplateIniNotFound;
 
         try
         {
@@ -498,12 +518,12 @@ public sealed class CwSkimmerLauncher : ICwSkimmerLauncher, IDisposable
             // adjustment is never re-applied.
             OffsetChannelWindowPosition(targetIniPath, daxIqChannel);
 
-            return true;
+            return null;
         }
         catch (Exception ex)
         {
             LogNonFatal("Failed to seed managed INI from template.", ex);
-            return false;
+            return LaunchResult.ChannelIniWriteFailed;
         }
     }
 

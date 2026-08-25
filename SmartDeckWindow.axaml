@@ -158,6 +158,34 @@
             <Setter Property="TextElement.Foreground" Value="{DynamicResource AppOnAccentBrush}"/>
         </Style>
 
+        <!-- On the air (issue #69). The transmitting slice is usually also the
+             selected one, so a chip carries both classes at once and this must
+             win: Avalonia resolves competing setters by declaration order, not
+             selector specificity, so these MUST stay declared after the lit
+             styles above. Move them up and a transmitting chip reads blue.
+
+             Same red through hover and pressed, unlike lit: the colour is
+             saying the radio is keyed, and having it shift under the pointer
+             would read as the state changing when it has not. -->
+        <Style Selector="Button.tx">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style Selector="Button.tx /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AppTxBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AppTxBrush}"/>
+            <Setter Property="TextElement.Foreground" Value="{DynamicResource AppOnAccentBrush}"/>
+        </Style>
+        <Style Selector="Button.tx:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AppTxBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AppTxBrush}"/>
+            <Setter Property="TextElement.Foreground" Value="{DynamicResource AppOnAccentBrush}"/>
+        </Style>
+        <Style Selector="Button.tx:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AppTxBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AppTxBrush}"/>
+            <Setter Property="TextElement.Foreground" Value="{DynamicResource AppOnAccentBrush}"/>
+        </Style>
+
         <!-- Always-on-top as a pushpin: hollow and grey when off, its inside
              filled with the same lit blue as a selected band button when on.
              Drawn as a vector rather than an icon-font glyph because the font's
@@ -280,6 +308,7 @@
                     <DataTemplate x:DataType="local:DeckOption">
                         <Button Classes="deck-button"
                                 Classes.lit="{Binding IsCurrent}"
+                                Classes.tx="{Binding IsTransmitting}"
                                 Content="{Binding Label}"
                                 MinWidth="26"
                                 Command="{Binding $parent[Window].((local:SmartDeckViewModel)DataContext).SelectSliceCommand}"
@@ -482,12 +511,19 @@
                                VerticalAlignment="Center"
                                MinWidth="38"
                                Margin="2,0"/>
+                    <!-- Issue #70: two presets, and the label names the one the
+                         next press will set. No lit state, deliberately: the
+                         button is an action, not a value, and the readout
+                         immediately to its left already says which power the
+                         radio holds. Lighting it as well would encode the same
+                         fact twice, and would have to light while the label
+                         named the other preset. MinWidth covers both words,
+                         which are the same length, so the row does not shift. -->
                     <Button Grid.Column="1"
                             Classes="deck-button"
-                            Classes.lit="{Binding IsQrp}"
-                            Content="QRP"
+                            Content="{Binding TxPresetText}"
                             MinWidth="40"
-                            ToolTip.Tip="Drop to 5 W and remember the current power. Press again to restore it."
+                            ToolTip.Tip="Set transmit power to the preset shown. Presses alternate between QRP (5 W) and QRO (100 W); any other power is set on the readout wheel or in SmartSDR."
                             Command="{Binding ToggleQrpCommand}"/>
                 </Grid>
             </StackPanel>

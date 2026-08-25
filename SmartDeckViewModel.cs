@@ -201,7 +201,42 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
     private void ApplySliceButtonState()
     {
         foreach (var option in SliceOptions)
+        {
             option.IsCurrent = string.Equals(option.Label, SelectedSlice?.Letter, StringComparison.OrdinalIgnoreCase);
+
+            // Issue #69: red needs both halves. IsTransmitting is radio-scoped
+            // (the radio is keyed), IsTransmitSlice is slice-scoped (this is the
+            // one it transmits on). Either alone would redden the wrong chip, or
+            // every chip.
+            option.IsTransmitting = IsTransmitting && IsTransmitSliceLetter(option.Label);
+        }
+    }
+
+    private bool IsTransmitSliceLetter(string letter) =>
+        Slices.Any(slice => slice.IsTransmitSlice
+                            && string.Equals(slice.Letter, letter, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// True while the radio is keyed (issue #69). Radio-scoped; the chips pair
+    /// it with each slice's own transmit flag.
+    /// </summary>
+    /// <remarks>
+    /// Note this is "keyed", not "RF is going out". The SWR readout deliberately
+    /// stays gated on forward power instead: between CW elements, or on SSB with
+    /// no audio, the radio is keyed while forward power is nil, and the SWR
+    /// meter's 1.0 floor would read as a real 1:1 match. See FormatSwr.
+    /// </remarks>
+    [ObservableProperty]
+    private bool _isTransmitting;
+
+    // TransmitStateChanged can fire on a FlexLib event thread.
+    private void OnTransmitStateChanged(bool transmitting) =>
+        _postToUi(() => ApplyTransmitState(transmitting));
+
+    private void ApplyTransmitState(bool transmitting)
+    {
+        IsTransmitting = transmitting;
+        ApplySliceButtonState();
     }
 
     /// <summary>
@@ -505,61 +540,72 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
     /// <summary>The power a QRP contact runs at, in watts.</summary>
     private const int QrpWatts = 5;
 
+    /// <summary>The power the QRO preset returns to, in watts (issue #70).</summary>
+    private const int QroWatts = 100;
+
     /// <summary>
-    /// The power the radio held when QRP was engaged, restored when it is
-    /// released. Held in memory only, and deliberately not persisted: across a
-    /// restart the radio's own power is the only truth, and a saved number
-    /// would be a guess about a value another client may have changed since.
+    /// The power the deck last saw the radio at, or last wrote to it. Decides
+    /// which preset the button offers next, and is updated optimistically on a
+    /// press so the label flips with the readout instead of waiting for the
+    /// radio echo.
     /// </summary>
-    private int? _powerBeforeQrp;
+    private int? _lastKnownWatts;
 
     /// <summary>The radio's transmit power setting, or dashes until it reports one.</summary>
     [ObservableProperty]
     private string _txPowerText = Absent;
 
     /// <summary>
-    /// True while the deck is holding a power to return to, which is also the
-    /// only state in which pressing the button restores anything. The radio is
-    /// necessarily at <see cref="QrpWatts"/> whenever this is true, because
-    /// <see cref="ApplyRfPower"/> stands the toggle down the moment the radio
-    /// reports anything else.
+    /// The button label, which is always the preset the next press will set.
     /// </summary>
-    [ObservableProperty]
-    private bool _isQrp;
+    /// <remarks>
+    /// Issue #70, second pass (operator, 2026-08-25). The first build saved the
+    /// power in use and restored it on release, so the button had four
+    /// positions (QRP, saved, QRO, saved) and could sit reading "QRP" while the
+    /// radio was at the saved power, which is incoherent. The operator cut the
+    /// save/restore entirely: two presets, and any other power is set by hand.
+    ///
+    /// What that subtraction bought, beyond the simpler button: there is no
+    /// cached power left to go stale, so the "radio wins" stand-down and every
+    /// bug it existed to prevent are gone with it, including a saved power
+    /// leaking across a reconnect (Codex deep audit, 2026-08-04). The label is
+    /// now a pure function of the radio's own power, so it cannot disagree with
+    /// the radio at all. Do not reintroduce a remembered power here.
+    /// </remarks>
+    public string TxPresetText => _lastKnownWatts == QrpWatts ? "QRO" : "QRP";
 
-    /// <summary>False until the radio has reported a power, so the toggle cannot save an unknown one.</summary>
+    private void SetLastKnownWatts(int? watts)
+    {
+        if (_lastKnownWatts == watts) return;
+        _lastKnownWatts = watts;
+        OnPropertyChanged(nameof(TxPresetText));
+    }
+
+    /// <summary>False until the radio has reported a power, so the button cannot aim at an unknown one.</summary>
     [ObservableProperty]
     private bool _canToggleQrp;
 
     [RelayCommand]
     private async Task ToggleQrpAsync()
     {
-        if (_powerBeforeQrp is { } restore)
+        if (!CanToggleQrp)
         {
-            // Cleared before the write, so the radio's echo of the restored
-            // power is not read as the operator changing power elsewhere.
-            _powerBeforeQrp = null;
-            IsQrp = false;
-            _logStatus($"QRP released: restoring {restore} W.");
-            await _connection.SetRfPowerAsync(restore);
-            TxPowerText = FormatTxPower(restore);
+            _logStatus("Power preset press ignored: the radio has not reported a power.");
             return;
         }
 
-        if (_connection.RfPowerWatts is not { } current)
-        {
-            _logStatus("QRP press ignored: the radio has not reported a power.");
-            return;
-        }
+        // At QRP the button offers QRO; from anywhere else it offers QRP. That
+        // makes the first press from any operating power the low one, and the
+        // pair alternate from there.
+        var target = _lastKnownWatts == QrpWatts ? QroWatts : QrpWatts;
 
-        _powerBeforeQrp = current;
-        IsQrp = true;
-        _logStatus($"QRP engaged: saved {current} W, setting {QrpWatts} W.");
-        await _connection.SetRfPowerAsync(QrpWatts);
+        _logStatus($"{(target == QrpWatts ? "QRP" : "QRO")} selected: setting {target} W.");
+        SetLastKnownWatts(target);
 
         // Shown immediately rather than waiting for the radio's echo, so a
         // button press does not feel laggy; the echo re-applies the same value.
-        TxPowerText = FormatTxPower(QrpWatts);
+        TxPowerText = FormatTxPower(target);
+        await _connection.SetRfPowerAsync(target);
     }
 
     // RfPowerChanged can fire on a FlexLib event thread.
@@ -570,32 +616,10 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
         CanToggleQrp = watts is not null;
         TxPowerText = watts is { } value ? FormatTxPower(value) : Absent;
 
-        // The radio wins. Anything other than QRP while we are holding a power
-        // to return to means the operator changed power somewhere else, in
-        // SmartSDR or on another client, so the saved value is stale. Dropping
-        // it costs one press to re-engage; keeping it would silently overwrite
-        // their choice the next time the button was released.
-        //
-        // This deliberately includes SmartDeck's own TX power wheel (issue #65).
-        // Wheeling off 5 W is a manual power change like any other and loses the
-        // cached pre-QRP power, confirmed by the operator 2026-08-05 when the
-        // wheel was added. Do not special-case the wheel to preserve it.
-        //
-        // Accepted limitation (Codex deep audit, 2026-08-04): another client
-        // deliberately setting 5 W while QRP is engaged is indistinguishable
-        // from the echo of our own write, so the toggle keeps its saved power
-        // and releasing it climbs back out. That is the same thing the operator
-        // gets from a QRP contact either way, and telling the two apart would
-        // mean tracking write provenance for no change in outcome.
-        if (IsQrp && watts != QrpWatts)
-        {
-            // Worth a line: the button going dark on its own is otherwise
-            // unexplained from the operator's side.
-            _logStatus($"QRP stood down: radio reported {watts?.ToString() ?? "(absent)"} W, "
-                       + $"discarding the saved {_powerBeforeQrp?.ToString() ?? "(none)"} W.");
-            _powerBeforeQrp = null;
-            IsQrp = false;
-        }
+        // The radio wins, and now that is the whole of it: with no saved power
+        // there is nothing to invalidate, so a power change from anywhere (the
+        // deck wheel, SmartSDR, another client) simply re-aims the button.
+        SetLastKnownWatts(watts);
     }
 
     internal static string FormatTxPower(int watts) => $"{watts} W";
@@ -883,6 +907,14 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
         SelectedSlice = keep ?? wanted.FirstOrDefault();
         if (SelectedSlice is { } refreshed)
             ApplySliceState(refreshed);
+
+        // Issue #69: explicitly, not as a side effect of the selection
+        // changing. Chip state used to be repainted only from
+        // OnSelectedSliceChanged, so a slice refresh that left the selection
+        // alone never repainted, and moving the TX slice mid-transmission left
+        // the red on the old chip. Selection is sticky by design, so that is
+        // the common case rather than a corner.
+        ApplySliceButtonState();
     }
 
     private bool BelongsToControlStation(SliceInfo slice) =>
@@ -910,6 +942,7 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
         _connection.PanadapterRemoved += OnPanadapterListChanged;
         _connection.PanadapterUpdated += OnPanadapterListChanged;
         _connection.RfPowerChanged += OnRfPowerChanged;
+        _connection.TransmitStateChanged += OnTransmitStateChanged;
         _connection.StartTelemetry();
 
         RefreshSlices();
@@ -918,6 +951,7 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
         // shows values immediately instead of dashes until the next event.
         Apply(_connection.Telemetry);
         ApplyRfPower(_connection.RfPowerWatts);
+        ApplyTransmitState(_connection.IsTransmitting);
     }
 
     /// <summary>Unsubscribes and stops the radio publishing telemetry. Idempotent.</summary>
@@ -935,6 +969,7 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
         _connection.PanadapterRemoved -= OnPanadapterListChanged;
         _connection.PanadapterUpdated -= OnPanadapterListChanged;
         _connection.RfPowerChanged -= OnRfPowerChanged;
+        _connection.TransmitStateChanged -= OnTransmitStateChanged;
         _connection.StopTelemetry();
         Apply(RadioTelemetryInfo.Empty);
 

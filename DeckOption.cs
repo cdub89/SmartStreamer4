@@ -19,4 +19,12 @@ public partial class DeckOption(string label) : ObservableObject
 
     [ObservableProperty]
     private bool _isCurrent;
+
+    /// <summary>
+    /// True while this option's slice is on the air (issue #69). Meaningful
+    /// only for the slice chips; antenna and band options leave it false, since
+    /// neither can transmit.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isTransmitting;
 }

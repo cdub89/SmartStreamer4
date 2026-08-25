@@ -140,6 +140,22 @@ internal sealed class FakeTelemetryConnection : IRadioConnection
         RfPowerChanged?.Invoke(watts);
     }
 
+    public bool IsTransmitting { get; private set; }
+
+    public event Action<bool>? TransmitStateChanged;
+
+    /// <summary>
+    /// Keys or unkeys as the radio would (issue #69). Raises only on a real
+    /// change, matching FlexLibRadioConnection, so a test can call it
+    /// repeatedly without inventing transitions the radio would not report.
+    /// </summary>
+    public void ReportTransmitting(bool transmitting)
+    {
+        if (IsTransmitting == transmitting) return;
+        IsTransmitting = transmitting;
+        TransmitStateChanged?.Invoke(transmitting);
+    }
+
     public List<(PanadapterInfo Panadapter, int RfGain)> RfGainWrites { get; } = [];
 
     public Task SetPanadapterRfGainAsync(PanadapterInfo panadapter, int rfGain)

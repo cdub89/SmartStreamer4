@@ -155,6 +155,9 @@ public sealed class FlexLibRadioConnection : IRadioConnection
         _rfPowerReported = false;
         _boundToStation = false;
         RfPowerChanged?.Invoke(null);
+        // Issue #69: a radio that vanished is not transmitting. Left set, the
+        // slice chip would stay red for a session that no longer exists.
+        PublishTransmitState(false);
         NetworkStatus = NetworkStatusInfo.Empty;
         NetworkStatusChanged?.Invoke(NetworkStatus);
         _guiClients = Array.Empty<GuiClientInfo>();
@@ -198,6 +201,7 @@ public sealed class FlexLibRadioConnection : IRadioConnection
                         _rfPowerReported = false;
                         _boundToStation = false;
                         RfPowerChanged?.Invoke(null);
+                        PublishTransmitState(false);   // issue #69, same reason
                     }
                     ConnectionStateChanged?.Invoke(nowConnected);
                 }
@@ -237,9 +241,42 @@ public sealed class FlexLibRadioConnection : IRadioConnection
             // so CW key-down surfaces here, not just the MOX button.
             case "Mox":
                 if (_radio is { } moxRadio)
+                {
+                    // Issue #69: publish before logging, deliberately. The log
+                    // path is debug-gated and throttled, both of which are
+                    // right for a log line and wrong for a transmit indicator;
+                    // behind it, the chip would only work with Debug logging
+                    // on and would lag key-down by up to the throttle window.
+                    PublishTransmitState(moxRadio.Mox);
                     LogMoxTransition(moxRadio.Mox);
+                }
                 break;
         }
+    }
+
+    public bool IsTransmitting { get; private set; }
+
+    public event Action<bool>? TransmitStateChanged;
+
+    /// <summary>
+    /// Raises <see cref="TransmitStateChanged"/> on a real change of transmit
+    /// state (issue #69). Deliberately unthrottled and not debug-gated, unlike
+    /// <see cref="LogMoxTransition"/>: an indicator that lags key-down, or only
+    /// works when Debug logging happens to be on, is worse than none.
+    /// </summary>
+    /// <remarks>
+    /// Tracks its own last-seen value rather than reusing
+    /// <c>_lastSeenMox</c>, which is only updated after that method's
+    /// <see cref="VerboseDiagnostics"/> early return and so is unreliable as a
+    /// record of the radio's actual state.
+    /// </remarks>
+    private void PublishTransmitState(bool transmitting)
+    {
+        if (IsTransmitting == transmitting)
+            return;
+
+        IsTransmitting = transmitting;
+        TransmitStateChanged?.Invoke(transmitting);
     }
 
     /// <summary>
@@ -982,7 +1019,8 @@ public sealed class FlexLibRadioConnection : IRadioConnection
             TxAntenna = slc.TXAnt ?? string.Empty,
             RxAntennaOptions = slc.RXAntList ?? [],
             TxAntennaOptions = slc.TXAntList ?? [],
-            AgcThreshold = slc.AGCThreshold
+            AgcThreshold = slc.AGCThreshold,
+            IsTransmitSlice = slc.IsTransmitSlice
         };
 
     private static bool ShouldPublishSliceUpdate(string? propertyName)
@@ -1002,6 +1040,12 @@ public sealed class FlexLibRadioConnection : IRadioConnection
 
         // AGC-T drives its own SmartDeck readout.
         if (propertyName is "AGCThreshold")
+            return true;
+
+        // Issue #69: which slice transmits decides which chip reddens on key
+        // down, so a change of TX slice has to reach the UI even when nothing
+        // else about the slice moved.
+        if (propertyName is "IsTransmitSlice")
             return true;
 
         // FlexLib variants expose RIT state/offset and tune-step with different names.

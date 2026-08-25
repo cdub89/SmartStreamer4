@@ -670,7 +670,7 @@ public sealed class CwSkimmerLauncherGateTests
             var result = await launcher.LaunchAsync(channel, 48000, 14_000_000L,
                 new CwSkimmerConfig { ExePath = exe, SkimmerIniPath = folder, LaunchDelaySeconds = 0 });
 
-            Assert.Equal(LaunchResult.TemplateIniNotFound, result);
+            Assert.Equal(LaunchResult.TemplateIniNotFound, result.Result);
         }
         finally { File.Delete(exe); }
     }
@@ -703,12 +703,77 @@ Port=7399
                     LaunchDelaySeconds = 0,
                 });
 
-            Assert.Equal(LaunchResult.ProcessStartFailed, result);
+            Assert.Equal(LaunchResult.ProcessStartFailed, result.Result);
         }
         finally
         {
             File.Delete(exe);
             File.Delete(iniPath);
+        }
+    }
+
+    [Fact]
+    public async Task LaunchAsync_TemplateWithoutAudioCalibration_ReportsTemplateNotFound()
+    {
+        // Issue #75: this is the one case the retired DeviceNotFound result could
+        // still fire for after the issue #74 fix — a template INI that exists and
+        // is readable but carries no [Audio] calibration. It reports as a template
+        // problem now, because that is what it is.
+        const int channel = 96;
+        var iniPath = Path.Combine(RuntimePathResolver.ResolveCwSkimmerIniDir(), $"CwSkimmer-ch{channel}.ini");
+        if (File.Exists(iniPath))
+            File.Delete(iniPath);   // ensure the fresh-channel-INI branch
+
+        var exe      = Path.GetTempFileName();
+        var template = Path.GetTempFileName();
+        File.WriteAllText(template, """
+[Telnet]
+Port=7399
+""");
+        try
+        {
+            using var launcher = MakeLauncher(NoDevicesFinder());
+            var result = await launcher.LaunchAsync(channel, 48000, 14_000_000L,
+                new CwSkimmerConfig { ExePath = exe, SkimmerIniPath = template, LaunchDelaySeconds = 0 });
+
+            Assert.Equal(LaunchResult.TemplateIniNotFound, result.Result);
+        }
+        finally
+        {
+            File.Delete(exe);
+            File.Delete(template);
+        }
+    }
+
+    [Fact]
+    public async Task LaunchAsync_DiagnosticsAreScopedToTheirOwnChannel()
+    {
+        // Issue #75: diagnostics used to live in a shared LastDiagnostics property
+        // that every channel overwrote, so a caller formatting channel A's status
+        // could read channel B's capture. Returning them with the result is what
+        // makes that impossible; this asserts each launch carries its own.
+        var exe      = Path.GetTempFileName();
+        var template = Path.GetTempFileName();
+        File.WriteAllText(template, """
+[Telnet]
+Port=7399
+""");
+        try
+        {
+            using var launcher = MakeLauncher(NoDevicesFinder());
+
+            var config = new CwSkimmerConfig { ExePath = exe, SkimmerIniPath = template, LaunchDelaySeconds = 0 };
+            var first  = await launcher.LaunchAsync(94, 48000, 14_000_000L, config);
+            var second = await launcher.LaunchAsync(95, 48000, 14_000_000L, config);
+
+            Assert.Contains("DAX ch 94", first.Diagnostics);
+            Assert.DoesNotContain("DAX ch 95", first.Diagnostics);
+            Assert.Contains("DAX ch 95", second.Diagnostics);
+        }
+        finally
+        {
+            File.Delete(exe);
+            File.Delete(template);
         }
     }
 }

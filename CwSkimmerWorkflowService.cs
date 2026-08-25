@@ -157,16 +157,17 @@ public sealed class CwSkimmerWorkflowService
         };
         addStatus($"Launching CW Skimmer on ch {stream.DAXIQChannel} ({stream.SampleRate / 1000} kHz).");
 
-        var result = await _launcher.LaunchAsync(
+        var outcome = await _launcher.LaunchAsync(
             stream.DAXIQChannel, stream.SampleRate, centerFreqHz, config);
 
-        var status = result switch
+        var status = outcome.Result switch
         {
-            LaunchResult.Success => FormatLaunchSuccess(),
+            LaunchResult.Success => FormatLaunchSuccess(outcome.Diagnostics),
             LaunchResult.AlreadyRunning => "Already running.",
-            LaunchResult.ExeNotFound => "CW Skimmer exe not found — check the path.",
+            // No em dash: this is operator-facing prose (Codex audit, 2026-08-24).
+            LaunchResult.ExeNotFound => "CW Skimmer exe not found. Check the path.",
             LaunchResult.TemplateIniNotFound => FormatTemplateIniNotFound(),
-            LaunchResult.DeviceNotFound => FormatDeviceNotFound(stream.DAXIQChannel),
+            LaunchResult.ChannelIniWriteFailed => ChannelIniWriteFailedMessage,
             LaunchResult.ProcessStartFailed => "Failed to start CW Skimmer process.",
             _ => "Launch failed."
         };
@@ -180,7 +181,7 @@ public sealed class CwSkimmerWorkflowService
         addStatus($"Stopped CW Skimmer on channel {stream.DAXIQChannel}.");
     }
 
-    private string FormatLaunchSuccess()
+    private string FormatLaunchSuccess(string diag)
     {
         // Bug fix 2026-05-18: pre-fix line showed "Baseline WdmSignalDev/AudioDev"
         // because Contains() picked the first matching line in the diagnostic,
@@ -189,7 +190,10 @@ public sealed class CwSkimmerWorkflowService
         // the "Baseline " prefix) and tags the line with the active mode so the
         // operator can see at a glance which driver family the channel uses and
         // what indices were written to the channel INI.
-        var diag = _launcher.LastDiagnostics;
+        //
+        // Issue #75: the report now arrives with the launch result instead of
+        // being read back from a shared property, so a concurrent launch on
+        // another channel can no longer supply the lines formatted here.
         var wdmMode = IsWdmModeSelected();
         var signalLabel = wdmMode ? "WdmSignalDev" : "MmeSignalDev";
         var audioLabel  = wdmMode ? "WdmAudioDev"  : "MmeAudioDev";
@@ -202,36 +206,42 @@ public sealed class CwSkimmerWorkflowService
         return $"CW Skimmer running ({modeTag})  |  {loLine}  |  {signalLine}  |  {audioLine}";
     }
 
-    private string FormatTemplateIniNotFound()
+    /// <summary>
+    /// Turns a <see cref="LaunchResult.TemplateIniNotFound"/> into a message
+    /// naming what is actually wrong with the configured path.
+    /// </summary>
+    /// <remarks>
+    /// Issue #74 (2026-08-24): the operator had entered the CW Skimmer folder
+    /// instead of the CwSkimmer.ini file and the old generic message gave no
+    /// hint. Name the configured path and the folder-vs-file mistake directly.
+    /// Issue #75 (2026-08-24) added the fourth branch: the retired
+    /// DeviceNotFound result folded in here, and a file that exists but carries
+    /// no [Audio] calibration must not be reported as missing.
+    /// The variants are derived from the filesystem rather than from a second
+    /// enum member, which is what let that member be deleted.
+    /// </remarks>
+    internal static string FormatTemplateIniNotFound(string? path)
     {
-        // Issue #74 (2026-08-24): the operator had entered the CW Skimmer folder
-        // instead of the CwSkimmer.ini file and the old generic message gave no
-        // hint. Name the configured path and the folder-vs-file mistake directly.
-        var path = _settings.CwSkimmerIniPath;
         if (string.IsNullOrWhiteSpace(path))
             return "CW Skimmer INI path is not set. Point the Config tab's cwskimmer.ini field at your CwSkimmer.ini file.";
         if (Directory.Exists(path))
             return $"CW Skimmer INI path '{path}' is a folder. Select the CwSkimmer.ini file inside it on the Config tab.";
+        if (File.Exists(path))
+            return $"CW Skimmer INI at '{path}' has no usable [Audio] calibration. Re-run the Set Up Wizard on the CW Config tab. (Device log: artifacts\\cwskimmer\\ini\\device-diagnostic.txt)";
         return $"CW Skimmer INI not found at '{path}'. Check the cwskimmer.ini path on the Config tab.";
     }
 
-    private string FormatDeviceNotFound(int channel)
-    {
-        var diag = _launcher.LastDiagnostics;
-        if (string.IsNullOrEmpty(diag))
-            return $"DAX IQ {channel} audio device not found.";
+    private string FormatTemplateIniNotFound() =>
+        FormatTemplateIniNotFound(_settings.CwSkimmerIniPath);
 
-        var lines = diag.Split('\n')
-            .SkipWhile(l => !l.Contains("WinMM WaveIn"))
-            .Take(12)
-            .ToArray();
-        // Issue #74 (2026-08-24): the old header claimed the device was missing
-        // from WinMM even when the real failure was an unreadable calibration,
-        // sending the reporter down the wrong trail. State what is known (the
-        // resolution failed) and show the list instead of interpreting it.
-        return $"Could not resolve an MME device for DAX IQ {channel}. WinMM devices seen:\n{string.Join("\n", lines)}\n" +
-               "(Full log: artifacts\\cwskimmer\\ini\\device-diagnostic.txt)";
-    }
+    /// <summary>
+    /// The master INI was readable; writing the per-channel copy is what failed.
+    /// Kept distinct from the template message so a locked or unwritable
+    /// artifacts folder is not reported as a calibration problem (Codex deep
+    /// audit of issue #75, 2026-08-24).
+    /// </summary>
+    internal const string ChannelIniWriteFailedMessage =
+        "Could not write the per-channel CW Skimmer INI. Check that artifacts\\cwskimmer\\ini is writable and that CW Skimmer is not holding the file.";
 
     private bool IsWdmModeSelected() =>
         string.Equals(_settings.SkimmerSoundcardDriverMode, "WDM", StringComparison.OrdinalIgnoreCase);

@@ -145,6 +145,15 @@ public sealed record SliceInfo(
     /// </summary>
     public int AgcThreshold { get; init; }
 
+    /// <summary>
+    /// True when this is the slice the radio will transmit on (issue #69).
+    /// Radio-reported and exactly one slice carries it. Says nothing about
+    /// whether the radio is keyed right now: that is
+    /// <see cref="IRadioConnection.IsTransmitting"/>, which is radio-scoped.
+    /// It takes both to know that <em>this</em> slice is on the air.
+    /// </summary>
+    public bool IsTransmitSlice { get; init; }
+
     public string DisplayLabel
     {
         get

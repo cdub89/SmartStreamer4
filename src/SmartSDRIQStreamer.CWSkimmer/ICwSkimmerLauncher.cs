@@ -5,10 +5,53 @@ public enum LaunchResult
     Success,
     AlreadyRunning,
     ExeNotFound,
+
+    /// <summary>
+    /// The master cwskimmer.ini could not be used: absent, unset, a folder
+    /// rather than a file, or present but carrying no usable [Audio]
+    /// calibration. Issue #75 folded the former <c>DeviceNotFound</c> into
+    /// this: after the issue #74 fix its gate could only fire for the
+    /// no-calibration case, which is a template problem, and the caller
+    /// distinguishes the variants from the filesystem rather than from a
+    /// second enum member.
+    /// </summary>
     TemplateIniNotFound,
-    DeviceNotFound,
+
+    /// <summary>
+    /// The master INI was fine but the per-channel INI could not be written:
+    /// the artifacts directory could not be created, the target was locked, or
+    /// the copy was denied.
+    /// </summary>
+    /// <remarks>
+    /// Codex deep audit of issue #75, 2026-08-24. Folding the old
+    /// <c>DeviceNotFound</c> into <see cref="TemplateIniNotFound"/> made the
+    /// template message specific ("no usable [Audio] calibration"), which then
+    /// misreported this case: a perfectly calibrated master plus an unwritable
+    /// artifacts folder told the operator to re-run the Setup Wizard for what
+    /// is a file I/O failure. Separated so each message is true.
+    /// </remarks>
+    ChannelIniWriteFailed,
     ProcessStartFailed
 }
+
+/// <summary>
+/// The result of a launch attempt together with the device-enumeration report
+/// built during it.
+/// </summary>
+/// <remarks>
+/// Issue #75: the diagnostics used to live in a single mutable
+/// <c>LastDiagnostics</c> property that every channel overwrote. Two
+/// overlapping launches could leave the caller formatting channel 1's status
+/// from channel 2's capture. Returning it with the result makes that
+/// impossible rather than merely unlikely.
+/// </remarks>
+/// <param name="Result">How the launch attempt ended.</param>
+/// <param name="Diagnostics">
+/// Human-readable device enumeration report: the full WinMM capture device list
+/// plus the selected indices. Empty when the attempt returned before the report
+/// was built.
+/// </param>
+public sealed record LaunchOutcome(LaunchResult Result, string Diagnostics);
 
 /// <summary>
 /// Manages the CW Skimmer process lifecycle: write INI, launch, monitor, and stop.
@@ -21,13 +64,6 @@ public interface ICwSkimmerLauncher
 
     /// <summary>Whether any channel telnet client is currently connected to CW Skimmer.</summary>
     bool TelnetConnected { get; }
-
-    /// <summary>
-    /// Human-readable device enumeration report from the most recent launch attempt.
-    /// Contains the full WinMM capture device list plus the selected indices.
-    /// Empty string before the first launch attempt.
-    /// </summary>
-    string LastDiagnostics { get; }
 
     /// <summary>
     /// Returns the WinMM capture device name and CW-Skimmer index for the given DAX-IQ channel,
@@ -71,7 +107,7 @@ public interface ICwSkimmerLauncher
     /// Connects the telnet client in the background after
     /// <see cref="CwSkimmerConfig.ConnectDelaySeconds"/>.
     /// </summary>
-    Task<LaunchResult> LaunchAsync(
+    Task<LaunchOutcome> LaunchAsync(
         int             daxIqChannel,
         int             sampleRateHz,
         long            centerFreqHz,

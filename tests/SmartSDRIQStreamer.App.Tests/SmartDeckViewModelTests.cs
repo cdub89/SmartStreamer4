@@ -23,14 +23,16 @@ public class SmartDeckViewModelTests
         string txAnt = "ANT1",
         double freqMhz = 14.050,
         int agcThreshold = 50,
-        int tuneStepHz = 0) =>
+        int tuneStepHz = 0,
+        bool isTransmitSlice = false) =>
         new(letter, mode, freqMhz, false, 0, tuneStepHz, PanadapterStreamId: 100, ClientStation: station)
         {
             RxAntenna = rxAnt,
             TxAntenna = txAnt,
             AgcThreshold = agcThreshold,
             RxAntennaOptions = ["ANT1", "ANT2", "RX_A"],
-            TxAntennaOptions = ["ANT1", "ANT2"]
+            TxAntennaOptions = ["ANT1", "ANT2"],
+            IsTransmitSlice = isTransmitSlice
         };
 
     // ── Absent renders as dashes ─────────────────────────────────────────────
@@ -877,7 +879,14 @@ public class SmartDeckViewModelTests
         Assert.Equal(["ANT1", "ANT2"], viewModel.TxAntennaButtons.Select(button => button.Label));
     }
 
-    // ── QRP toggle (issue #64) ───────────────────────────────────────────────
+    // ── TX power presets (issues #64, #70) ────────────────────────
+
+    // Issue #70, second pass (operator, 2026-08-25): the button no longer saves
+    // and restores the power in use. It sets one of two presets, and any other
+    // power is set by hand. The tests that pinned the saved-power behaviour went
+    // with it, including the ones guarding a stale saved power surviving a
+    // reconnect: with nothing remembered, that whole class of bug is gone rather
+    // than being defended against. Do not reintroduce a remembered power.
 
     private static (FakeTelemetryConnection Connection, SmartDeckViewModel ViewModel) DeckAtPower(int? watts)
     {
@@ -890,63 +899,84 @@ public class SmartDeckViewModelTests
     }
 
     [Fact]
-    public void QRP_drops_to_five_watts_and_the_second_press_restores_the_power_it_replaced()
+    public void The_first_press_from_an_operating_power_goes_to_QRP()
     {
         var (connection, viewModel) = DeckAtPower(75);
+
+        Assert.Equal("QRP", viewModel.TxPresetText);
 
         viewModel.ToggleQrpCommand.Execute(null);
 
         Assert.Equal(5, Assert.Single(connection.RfPowerWrites));
-        Assert.True(viewModel.IsQrp);
         Assert.Equal("5 W", viewModel.TxPowerText);
-
-        viewModel.ToggleQrpCommand.Execute(null);
-
-        Assert.Equal([5, 75], connection.RfPowerWrites);
-        Assert.False(viewModel.IsQrp);
-        Assert.Equal("75 W", viewModel.TxPowerText);
+        Assert.Equal("QRO", viewModel.TxPresetText);   // now offers the other one
     }
 
     [Fact]
-    public void Changing_power_elsewhere_while_QRP_is_engaged_stands_the_toggle_down()
+    public void Presses_alternate_between_QRP_and_QRO_and_never_restore_a_saved_power()
     {
-        // The radio wins. The operator moved the slider in SmartSDR, so the
-        // power we saved is stale and releasing QRP must not overwrite what
-        // they just chose.
+        // The correction that produced this design: the old build handed back
+        // the operating power on every other press, so the button could read
+        // "QRP" while the radio sat at 75 W. Now every press lands on a preset.
         var (connection, viewModel) = DeckAtPower(75);
+
+        viewModel.ToggleQrpCommand.Execute(null);
+        viewModel.ToggleQrpCommand.Execute(null);
+        viewModel.ToggleQrpCommand.Execute(null);
         viewModel.ToggleQrpCommand.Execute(null);
 
-        connection.ReportRfPower(30);
+        Assert.Equal([5, 100, 5, 100], connection.RfPowerWrites);
+        Assert.DoesNotContain(75, connection.RfPowerWrites);
+        Assert.Equal("100 W", viewModel.TxPowerText);
+        Assert.Equal("QRP", viewModel.TxPresetText);
+    }
 
-        Assert.False(viewModel.IsQrp);
+    [Fact]
+    public void The_label_follows_the_radio_rather_than_any_state_of_its_own()
+    {
+        // The label is a pure function of the reported power, so a change made
+        // anywhere (SmartSDR, another client) re-aims the button with no
+        // stand-down logic involved.
+        var (_, viewModel) = DeckAtPower(75);
+
+        Assert.Equal("QRP", viewModel.TxPresetText);
+
+        viewModel.ToggleQrpCommand.Execute(null);
+        Assert.Equal("QRO", viewModel.TxPresetText);
+    }
+
+    [Fact]
+    public void A_radio_already_sitting_at_five_watts_offers_QRO_immediately()
+    {
+        // Nothing is remembered, so arriving at 5 W by any route reads the same
+        // as pressing QRP to get there.
+        var (connection, viewModel) = DeckAtPower(5);
+
+        Assert.Equal("QRO", viewModel.TxPresetText);
+
+        viewModel.ToggleQrpCommand.Execute(null);
+
+        Assert.Equal(100, Assert.Single(connection.RfPowerWrites));
+    }
+
+    [Fact]
+    public void A_power_change_from_elsewhere_re_aims_the_button()
+    {
+        var (connection, viewModel) = DeckAtPower(75);
+        viewModel.ToggleQrpCommand.Execute(null);
+        Assert.Equal("QRO", viewModel.TxPresetText);
+
+        connection.ReportRfPower(30);          // operator moved it in SmartSDR
+
+        Assert.Equal("QRP", viewModel.TxPresetText);
         Assert.Equal("30 W", viewModel.TxPowerText);
 
         viewModel.ToggleQrpCommand.Execute(null);
-
-        // Engages afresh against 30 W rather than restoring the discarded 75.
         Assert.Equal([5, 5], connection.RfPowerWrites);
-        Assert.True(viewModel.IsQrp);
-
-        viewModel.ToggleQrpCommand.Execute(null);
-
-        Assert.Equal([5, 5, 30], connection.RfPowerWrites);
     }
 
     [Fact]
-    public void The_radios_own_echo_of_the_QRP_write_does_not_stand_the_toggle_down()
-    {
-        var (connection, viewModel) = DeckAtPower(100);
-
-        viewModel.ToggleQrpCommand.Execute(null);
-
-        // The fake echoes the write as FlexLib does; 5 W is the value we asked
-        // for, so it is not somebody else changing power.
-        Assert.True(viewModel.IsQrp);
-        Assert.Equal(5, connection.RfPowerWatts);
-    }
-
-    [Fact]
-    public void The_QRP_toggle_is_unavailable_until_the_radio_reports_a_power()
+    public void The_preset_button_is_unavailable_until_the_radio_reports_a_power()
     {
         var (connection, viewModel) = DeckAtPower(null);
 
@@ -956,75 +986,26 @@ public class SmartDeckViewModelTests
         viewModel.ToggleQrpCommand.Execute(null);
 
         Assert.Empty(connection.RfPowerWrites);
-        Assert.False(viewModel.IsQrp);
     }
 
     [Fact]
-    public void A_disconnect_drops_the_saved_power_rather_than_restoring_it_later()
+    public void A_disconnect_leaves_nothing_behind_to_write_into_the_next_session()
     {
         var (connection, viewModel) = DeckAtPower(75);
         viewModel.ToggleQrpCommand.Execute(null);
 
         connection.ReportRfPower(null);
 
-        Assert.False(viewModel.IsQrp);
         Assert.False(viewModel.CanToggleQrp);
         Assert.Equal("---", viewModel.TxPowerText);
+        Assert.Equal("QRP", viewModel.TxPresetText);
 
-        // Reconnecting at whatever the radio now holds must not resurrect 75.
+        // Reconnecting writes only presets, never a number carried over.
         connection.ReportRfPower(50);
         viewModel.ToggleQrpCommand.Execute(null);
-        viewModel.ToggleQrpCommand.Execute(null);
 
-        Assert.Equal([5, 5, 50], connection.RfPowerWrites);
-    }
-
-    [Fact]
-    public void A_radio_side_drop_clears_the_saved_power_before_the_next_session_can_use_it()
-    {
-        // Regression, Codex deep audit 2026-08-04: a FlexLib-side drop raises
-        // ConnectionStateChanged alone, so QRP stayed lit holding a power from
-        // the dropped session and the next press wrote it to the new one.
-        var (connection, viewModel) = DeckAtPower(75);
-        viewModel.ToggleQrpCommand.Execute(null);
-
-        connection.RaiseConnectionStateChanged(false);
-
-        Assert.False(viewModel.IsQrp);
-        Assert.False(viewModel.CanToggleQrp);
-        Assert.Equal("---", viewModel.TxPowerText);
-
-        connection.RaiseConnectionStateChanged(true);
-        connection.ReportRfPower(40);
-        viewModel.ToggleQrpCommand.Execute(null);
-        viewModel.ToggleQrpCommand.Execute(null);
-
-        Assert.Equal([5, 5, 40], connection.RfPowerWrites);
-    }
-
-    [Fact]
-    public void QRP_lights_for_a_power_it_is_holding_rather_than_for_the_radio_reading_five_watts()
-    {
-        // A deliberate exception to the deck's usual "lit means the value the
-        // radio holds": QRP is a toggle, not a value. Lit means SmartDeck has a
-        // power to give back, so a radio already sitting at 5 W reads unlit and
-        // the first press is still the one that saves something. The
-        // alternative, lighting on 5 W, produces a lit button whose press has
-        // nothing to restore.
-        var (connection, viewModel) = DeckAtPower(5);
-
-        Assert.False(viewModel.IsQrp);
-        Assert.Equal("5 W", viewModel.TxPowerText);
-
-        viewModel.ToggleQrpCommand.Execute(null);
-
-        Assert.True(viewModel.IsQrp);
-
-        viewModel.ToggleQrpCommand.Execute(null);
-
-        Assert.False(viewModel.IsQrp);
-        Assert.Equal("5 W", viewModel.TxPowerText);
-        Assert.Equal(5, connection.RfPowerWatts);
+        Assert.Equal([5, 5], connection.RfPowerWrites);
+        Assert.DoesNotContain(75, connection.RfPowerWrites);
     }
 
     [Fact]
@@ -1704,12 +1685,11 @@ public class SmartDeckViewModelTests
     }
 
     [Fact]
-    public async Task Wheeling_off_qrp_stands_the_toggle_down_and_drops_the_saved_power()
+    public async Task Wheeling_off_five_watts_re_aims_the_button_at_QRP()
     {
-        // Operator decision, 2026-08-05: wheeling away from 5 W is a manual
-        // power change like any other, so it loses the cached pre-QRP power
-        // exactly as changing power in SmartSDR does. The wheel is deliberately
-        // not special-cased to preserve it.
+        // Issue #70, second pass: wheeling away from a preset used to discard a
+        // saved power and darken the button. There is no saved power now, so
+        // all that happens is the label pointing back at QRP.
         var connection = new FakeTelemetryConnection();
         connection.SetSlices(Slice("A"));
         connection.ReportRfPower(75);
@@ -1718,30 +1698,22 @@ public class SmartDeckViewModelTests
         viewModel.Start();
 
         await viewModel.ToggleQrpCommand.ExecuteAsync(null);
-        Assert.True(viewModel.IsQrp);
+        Assert.Equal("QRO", viewModel.TxPresetText);
 
         viewModel.NudgeTxPower(-1);
 
-        Assert.False(viewModel.IsQrp);
+        Assert.Equal("QRP", viewModel.TxPresetText);
         Assert.Equal("4 W", viewModel.TxPowerText);
         Assert.Equal([5, 4], connection.RfPowerWrites);
-
-        // The 75 W is gone, so re-engaging QRP saves the 4 W the radio now
-        // holds rather than climbing back to a stale number.
-        await viewModel.ToggleQrpCommand.ExecuteAsync(null);
-        await viewModel.ToggleQrpCommand.ExecuteAsync(null);
-
-        Assert.Equal([5, 4, 5, 4], connection.RfPowerWrites);
     }
 
     [Fact]
-    public async Task Wheeling_back_up_to_five_watts_does_not_relight_the_qrp_toggle()
+    public async Task Wheeling_back_up_to_five_watts_offers_QRO_again()
     {
-        // Engage QRP, wheel down one watt and back up. The radio ends exactly
-        // where QRP put it, but the stand-down already fired on the way down,
-        // so the toggle stays dark and the saved 75 W stays gone. Pinned
-        // because it reads like a bug and is the documented consequence of the
-        // rule above: the toggle tracks the saved power, not the number 5.
+        // The old build pinned the opposite of this as a documented wart: the
+        // toggle stayed dark after a round trip because it tracked a saved
+        // power rather than the number on the radio. Dropping the saved power
+        // fixed it as a side effect, so the wart is pinned as gone.
         var connection = new FakeTelemetryConnection();
         connection.SetSlices(Slice("A"));
         connection.ReportRfPower(75);
@@ -1753,13 +1725,12 @@ public class SmartDeckViewModelTests
         viewModel.NudgeTxPower(-1);
         viewModel.NudgeTxPower(1);
 
-        Assert.False(viewModel.IsQrp);
         Assert.Equal("5 W", viewModel.TxPowerText);
+        Assert.Equal("QRO", viewModel.TxPresetText);
 
-        // And pressing QRP now saves 5 W rather than restoring the lost 75 W.
         await viewModel.ToggleQrpCommand.ExecuteAsync(null);
 
-        Assert.Equal([5, 4, 5, 5], connection.RfPowerWrites);
+        Assert.Equal([5, 4, 5, 100], connection.RfPowerWrites);
     }
 
     [Fact]
@@ -1782,5 +1753,122 @@ public class SmartDeckViewModelTests
         Assert.Empty(connection.RfPowerWrites);
         Assert.Empty(connection.RfGainWrites);
         Assert.Empty(connection.AgcThresholdWrites);
+    }
+
+    // ── TX indication (issue #69) ────────────────────────────────────────────
+
+    private static (FakeTelemetryConnection Connection, SmartDeckViewModel ViewModel) DeckWithTwoSlices()
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", isTransmitSlice: true), Slice("B"));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+        viewModel.Start();
+        return (connection, viewModel);
+    }
+
+    private static DeckOption Chip(SmartDeckViewModel viewModel, string letter) =>
+        viewModel.SliceOptions.Single(option => option.Label == letter);
+
+    [Fact]
+    public void Only_the_transmit_slice_reddens_and_only_while_the_radio_is_keyed()
+    {
+        // Red needs both halves: the radio is keyed (radio-scoped) and this is
+        // the slice it transmits on (slice-scoped). Either alone would redden
+        // the wrong chip, or every chip.
+        var (connection, viewModel) = DeckWithTwoSlices();
+
+        Assert.False(Chip(viewModel, "A").IsTransmitting);
+        Assert.False(Chip(viewModel, "B").IsTransmitting);
+
+        connection.ReportTransmitting(true);
+
+        Assert.True(Chip(viewModel, "A").IsTransmitting);
+        Assert.False(Chip(viewModel, "B").IsTransmitting);
+
+        connection.ReportTransmitting(false);
+
+        Assert.False(Chip(viewModel, "A").IsTransmitting);
+        Assert.False(Chip(viewModel, "B").IsTransmitting);
+    }
+
+    [Fact]
+    public void Keying_with_no_transmit_slice_reddens_nothing()
+    {
+        // A station whose slices are all receive-only must not light up just
+        // because the radio keyed for someone else.
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A"), Slice("B"));
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+        viewModel.Start();
+
+        connection.ReportTransmitting(true);
+
+        Assert.All(viewModel.SliceOptions, option => Assert.False(option.IsTransmitting));
+    }
+
+    [Fact]
+    public void Moving_the_transmit_slice_while_keyed_moves_the_red()
+    {
+        var (connection, viewModel) = DeckWithTwoSlices();
+        connection.ReportTransmitting(true);
+        Assert.True(Chip(viewModel, "A").IsTransmitting);
+
+        // The operator moved TX to slice B in SmartSDR mid-transmission.
+        // SetSlices only swaps the backing list, so raise the update the radio
+        // would send; that event is what the property filter in
+        // FlexLibRadioConnection was widened to let through for IsTransmitSlice.
+        var slices = new[] { Slice("A"), Slice("B", isTransmitSlice: true) };
+        connection.SetSlices(slices);
+        connection.RaiseSliceUpdated(slices[1]);
+
+        Assert.False(Chip(viewModel, "A").IsTransmitting);
+        Assert.True(Chip(viewModel, "B").IsTransmitting);
+    }
+
+    [Fact]
+    public void The_selected_slice_can_be_both_selected_and_transmitting()
+    {
+        // Both classes land on one chip, which is why the tx style has to be
+        // declared after the lit style in the markup. Pinned here so the
+        // ViewModel half of that pairing is not quietly narrowed later.
+        var (connection, viewModel) = DeckWithTwoSlices();
+        viewModel.SelectSliceCommand.Execute("A");
+
+        connection.ReportTransmitting(true);
+
+        var chip = Chip(viewModel, "A");
+        Assert.True(chip.IsCurrent);
+        Assert.True(chip.IsTransmitting);
+    }
+
+    [Fact]
+    public void A_deck_opened_mid_transmission_shows_the_red_immediately()
+    {
+        // Start() adopts current state rather than waiting for the next
+        // transition, which for CW keying might never come while the window is
+        // open.
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A", isTransmitSlice: true));
+        connection.ReportTransmitting(true);
+
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+        viewModel.Start();
+
+        Assert.True(viewModel.IsTransmitting);
+        Assert.True(Chip(viewModel, "A").IsTransmitting);
+    }
+
+    [Fact]
+    public void SWR_stays_gated_on_forward_power_rather_than_on_transmit_state()
+    {
+        // Deliberate: issue #69 plumbed real transmit state, and the plan said
+        // to retire this power threshold with it. That would have been a
+        // regression. The radio is keyed between CW elements and on SSB with no
+        // audio, while no RF is going out, and the SWR meter floors at 1.0 --
+        // so gating SWR on MOX would put a fake 1:1 match back on screen, which
+        // is the bug the threshold was added to fix (2026-08-02). Keep them
+        // separate: transmit state says "keyed", forward power says "RF".
+        Assert.Equal("---", SmartDeckViewModel.FormatSwr(1.0, powerWatts: 0));
+        Assert.Equal("1.0", SmartDeckViewModel.FormatSwr(1.0, powerWatts: 50));
     }
 }

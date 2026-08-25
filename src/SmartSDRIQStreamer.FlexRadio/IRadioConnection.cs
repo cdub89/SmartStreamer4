@@ -190,6 +190,29 @@ public interface IRadioConnection
     /// </remarks>
     Task SetRfPowerAsync(int watts);
 
+    // ── Transmit state (issue #69, SmartDeck TX indication) ──────────────────
+
+    /// <summary>
+    /// True while the radio is keyed. Radio-scoped, not slice-scoped: pair it
+    /// with <see cref="SliceInfo.IsTransmitSlice"/> to know which slice is on
+    /// the air. False while disconnected.
+    /// </summary>
+    /// <remarks>
+    /// Derived from FlexLib's <c>Radio.Mox</c>, which follows the interlock
+    /// state, so CW key-down raises it and not just the MOX button. It says the
+    /// radio is keyed, not that RF is leaving it: between CW elements, or on
+    /// SSB with no audio, this is true while forward power is nil. Anything
+    /// that needs "RF is actually going out" must gate on forward power
+    /// instead, as the SWR readout does.
+    /// </remarks>
+    bool IsTransmitting { get; }
+
+    /// <summary>
+    /// Fires on a change of transmit state. May fire off the UI thread, and
+    /// fires per transition, so a CW keying burst raises it repeatedly.
+    /// </summary>
+    event Action<bool> TransmitStateChanged;
+
     /// <summary>
     /// Reset session network status display values.
     /// Subsequent FlexLib updates repopulate current and max RTT values.

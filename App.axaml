@@ -50,6 +50,12 @@
                     <SolidColorBrush x:Key="AppOkBrush"           Color="#008000"/>
                     <SolidColorBrush x:Key="AppWarnBrush"         Color="#CC6600"/>
                     <SolidColorBrush x:Key="AppErrorBrush"        Color="#C00000"/>
+
+                    <!-- Transmitting (issue #69). Its own token rather than
+                         reusing AppErrorBrush: being on the air is a state, not
+                         a fault, and sharing the token would tie the two
+                         together the next time either colour is retuned. -->
+                    <SolidColorBrush x:Key="AppTxBrush"           Color="#C00000"/>
                     <SolidColorBrush x:Key="AppInfoBrush"         Color="#008B8B"/>
                     <SolidColorBrush x:Key="AppLinkBrush"         Color="#4169E1"/>
 
@@ -92,6 +98,12 @@
                     <SolidColorBrush x:Key="AppOkBrush"           Color="#4CC26A"/>
                     <SolidColorBrush x:Key="AppWarnBrush"         Color="#FFB25C"/>
                     <SolidColorBrush x:Key="AppErrorBrush"        Color="#FF6B6B"/>
+
+                    <!-- Transmitting (issue #69). Deeper than the dark-theme
+                         error red, which is lightened for legibility as text;
+                         this one is a chip fill behind white, so it needs the
+                         contrast the other way round. -->
+                    <SolidColorBrush x:Key="AppTxBrush"           Color="#D13438"/>
                     <SolidColorBrush x:Key="AppInfoBrush"         Color="#4FC3C7"/>
                     <SolidColorBrush x:Key="AppLinkBrush"         Color="#6FA8FF"/>
 
