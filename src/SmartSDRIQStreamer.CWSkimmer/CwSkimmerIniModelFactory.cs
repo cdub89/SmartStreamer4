@@ -27,10 +27,10 @@ using System.Globalization;
 ///   is no reliable way to predict CW Skimmer's WDM slot for a given DAX-IQ
 ///   channel from outside the app. The operator must enter WDM indices into
 ///   the Setup Wizard by reading them off CW Skimmer's own Audio tab. When
-///   <see cref="CwSkimmerConfig.OperatorWdmSignalDevIndex"/> is set the
-///   factory emits a WDM-mode INI with that value (converted 1-based UI to
-///   0-based INI); without an operator override the WDM fields from the
-///   master INI are propagated inertly under MME mode.
+///   <see cref="CwSkimmerConfig.OperatorWdmSignalDevIndex"/> is set and the
+///   master INI carries WDM audio calibration, the factory emits a WDM-mode
+///   INI with that value (converted 1-based UI to 0-based INI); otherwise the
+///   WDM fields from the master INI are propagated inertly under MME mode.
 /// </summary>
 public sealed class CwSkimmerIniModelFactory
 {
@@ -83,17 +83,23 @@ public sealed class CwSkimmerIniModelFactory
         // channel, write a WDM-mode INI with that index. This is the only
         // reliable way to drive multi-channel WDM (see issue #19). When null,
         // fall back to MME mode and copy the master WDM index inertly.
+        // WDM opt-in additionally requires a WDM-calibrated master (wdmAudio
+        // present): an MME-only master passes calibration since issue #74, and
+        // honoring the opt-in without a real WdmAudioDev would fabricate a
+        // device index. Without it the channel stays MME, the preferred family.
         var useWdm = false;
         var wdmSignal = wdmIQ1;
-        if (config.OperatorWdmSignalDevIndex is int operatorWdmUi && operatorWdmUi > 0)
+        if (config.OperatorWdmSignalDevIndex is int operatorWdmUi && operatorWdmUi > 0 && wdmAudio >= 0)
         {
             useWdm = true;
             wdmSignal = operatorWdmUi - 1;
         }
 
         return new CwSkimmerIniModel(
-            WdmSignalDevIndex:          wdmSignal,
-            WdmAudioDevIndex:           wdmAudio,      // copied from master verbatim
+            // WDM keys may be absent from an MME-only master (-1 sentinel);
+            // clamp the inert copies so a fresh channel INI never carries -1.
+            WdmSignalDevIndex:          Math.Max(0, wdmSignal),
+            WdmAudioDevIndex:           Math.Max(0, wdmAudio), // copied from master verbatim
             MmeSignalDevIndex:          mmeSignal,
             MmeAudioDevIndex:           mmeAudio,
             UseWdm:                     useWdm,
@@ -119,6 +125,9 @@ public sealed class CwSkimmerIniModelFactory
         if (string.IsNullOrWhiteSpace(templateIniPath) || !File.Exists(templateIniPath))
             return false;
 
+        // Presence flag, not a sentinel: MmeAudioDev=0 is a real device index,
+        // so "key found" must be tracked separately from the parsed value.
+        bool mmeAudioFound = false;
         bool inAudio = false;
         foreach (var raw in File.ReadLines(templateIniPath))
         {
@@ -148,12 +157,18 @@ public sealed class CwSkimmerIniModelFactory
             else if (key.Equals("MmeSignalDev", StringComparison.OrdinalIgnoreCase))
                 mmeIQ1 = parsed;
             else if (key.Equals("MmeAudioDev", StringComparison.OrdinalIgnoreCase))
+            {
                 mmeAudio = parsed;
+                mmeAudioFound = true;
+            }
         }
 
         // Master INI must be calibrated to at least know the user's audio output.
-        // We accept the calibration if WDM fields are present (legacy users) OR
-        // if MmeAudioDev is set (post-pivot users who calibrated in MME mode).
-        return wdmIQ1 >= 0 && wdmAudio >= 0;
+        // MME is the preferred driver family, so an MME-calibrated master INI is
+        // accepted on its own; WDM keys alone also suffice (legacy calibrations).
+        // Issue #74 (2026-08-24): the old check required the WDM keys, so an
+        // MME-only master failed calibration and surfaced downstream as a bogus
+        // "device not found in WinMM enumeration" launch block.
+        return mmeAudioFound || (wdmIQ1 >= 0 && wdmAudio >= 0);
     }
 }

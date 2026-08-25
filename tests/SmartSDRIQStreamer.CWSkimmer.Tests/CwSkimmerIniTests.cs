@@ -519,6 +519,82 @@ UseWdm=1
         finally { File.Delete(path); }
     }
 
+    [Fact]
+    public void Build_AcceptsMmeOnlyCalibration_WhenWdmKeysAbsent()
+    {
+        // Issue #74 (2026-08-24): MME is the preferred driver family, so a master
+        // INI calibrated purely in MME mode (no Wdm* keys) must pass calibration.
+        var path = WriteIni("""
+[Audio]
+MmeSignalDev=12
+MmeAudioDev=3
+UseWdm=0
+""");
+        try
+        {
+            var factory = new CwSkimmerIniModelFactory(DaxV2Finder());
+            var model   = factory.Build(1, 48000, 14_048_441L, new CwSkimmerConfig { SkimmerIniPath = path });
+
+            Assert.Equal(12, model.MmeSignalDevIndex);  // UI 13 → INI 12 via name lookup
+            Assert.Equal(3,  model.MmeAudioDevIndex);   // copied verbatim from master
+            Assert.False(model.UseWdm);
+            Assert.Equal(0, model.WdmSignalDevIndex);   // absent WDM keys clamp to 0, never -1
+            Assert.Equal(0, model.WdmAudioDevIndex);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public void Build_IgnoresWdmOptIn_WhenMasterHasNoWdmCalibration()
+    {
+        // Codex audit of issue #74: an MME-only master now passes calibration,
+        // but honoring a WDM opt-in against it would fabricate WdmAudioDev=0.
+        // The channel must stay MME instead.
+        var path = WriteIni("""
+[Audio]
+MmeSignalDev=12
+MmeAudioDev=3
+UseWdm=0
+""");
+        try
+        {
+            var factory = new CwSkimmerIniModelFactory(DaxV2Finder());
+            var model   = factory.Build(
+                1, 48000, 14_048_441L,
+                new CwSkimmerConfig
+                {
+                    SkimmerIniPath            = path,
+                    OperatorWdmSignalDevIndex = 19,
+                });
+
+            Assert.False(model.UseWdm);
+            Assert.Equal(12, model.MmeSignalDevIndex);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public void Build_AcceptsMmeAudioDevZero_AsRealCalibration()
+    {
+        // MmeAudioDev=0 is a real device index; key presence, not value,
+        // decides whether the MME calibration is accepted.
+        var path = WriteIni("""
+[Audio]
+MmeSignalDev=12
+MmeAudioDev=0
+UseWdm=0
+""");
+        try
+        {
+            var factory = new CwSkimmerIniModelFactory(DaxV2Finder());
+            var model   = factory.Build(1, 48000, 14_048_441L, new CwSkimmerConfig { SkimmerIniPath = path });
+
+            Assert.Equal(12, model.MmeSignalDevIndex);
+            Assert.Equal(0,  model.MmeAudioDevIndex);
+        }
+        finally { File.Delete(path); }
+    }
+
     // ── Fallback and error cases ──────────────────────────────────────────────
 
     [Fact]
@@ -557,6 +633,83 @@ UseWdm=1
             Assert.Equal(14, model.WdmAudioDevIndex);    // verbatim from master
         }
         finally { File.Delete(path); }
+    }
+}
+
+/// <summary>
+/// Tests for the launch gate ordering in CwSkimmerLauncher.LaunchAsync.
+/// Channel numbers 97/98 are outside the real 1-4 range so the managed INI
+/// paths under artifacts/cwskimmer/ini never collide with real runs.
+/// </summary>
+public sealed class CwSkimmerLauncherGateTests
+{
+    private static CwSkimmerLauncher MakeLauncher(IAudioDeviceFinder finder) =>
+        new(new CwSkimmerIniModelFactory(finder),
+            new CwSkimmerIniWriter(),
+            finder,
+            () => throw new InvalidOperationException("telnet must not be created in gate tests"));
+
+    private static FakeAudioDeviceFinder NoDevicesFinder() => new(new Dictionary<string, int>());
+
+    [Fact]
+    public async Task LaunchAsync_BadTemplatePath_ReportsTemplateNotFound_NotDeviceNotFound()
+    {
+        // Issue #74 (2026-08-24): a folder path in the cwskimmer.ini field used to
+        // surface as DeviceNotFound ("not found in WinMM enumeration") even though
+        // the DAX device was present. Template validation must run first.
+        const int channel = 97;
+        var iniPath = Path.Combine(RuntimePathResolver.ResolveCwSkimmerIniDir(), $"CwSkimmer-ch{channel}.ini");
+        if (File.Exists(iniPath))
+            File.Delete(iniPath);   // ensure the fresh-channel-INI branch
+
+        var exe    = Path.GetTempFileName();
+        var folder = Path.GetDirectoryName(exe)!;   // a real folder, not an INI file
+        try
+        {
+            using var launcher = MakeLauncher(NoDevicesFinder());
+            var result = await launcher.LaunchAsync(channel, 48000, 14_000_000L,
+                new CwSkimmerConfig { ExePath = exe, SkimmerIniPath = folder, LaunchDelaySeconds = 0 });
+
+            Assert.Equal(LaunchResult.TemplateIniNotFound, result);
+        }
+        finally { File.Delete(exe); }
+    }
+
+    [Fact]
+    public async Task LaunchAsync_ExistingChannelIni_SkipsDeviceGate()
+    {
+        // With an existing channel INI the model is never written, so an
+        // unresolvable device must not block the launch. The temp-file "exe" is
+        // not executable, so the attempt fails at process start instead, which
+        // proves both the template and device gates were passed.
+        const int channel = 98;
+        var iniDir = RuntimePathResolver.ResolveCwSkimmerIniDir();
+        Directory.CreateDirectory(iniDir);
+        var iniPath = Path.Combine(iniDir, $"CwSkimmer-ch{channel}.ini");
+        File.WriteAllText(iniPath, """
+[Telnet]
+Port=7399
+""");
+
+        var exe = Path.GetTempFileName();
+        try
+        {
+            using var launcher = MakeLauncher(NoDevicesFinder());
+            var result = await launcher.LaunchAsync(channel, 48000, 14_000_000L,
+                new CwSkimmerConfig
+                {
+                    ExePath = exe,
+                    SkimmerIniPath = @"C:\does-not-exist\cwskimmer.ini",
+                    LaunchDelaySeconds = 0,
+                });
+
+            Assert.Equal(LaunchResult.ProcessStartFailed, result);
+        }
+        finally
+        {
+            File.Delete(exe);
+            File.Delete(iniPath);
+        }
     }
 }
 

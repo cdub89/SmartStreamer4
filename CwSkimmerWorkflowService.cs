@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using SDRIQStreamer.CWSkimmer;
@@ -164,7 +165,7 @@ public sealed class CwSkimmerWorkflowService
             LaunchResult.Success => FormatLaunchSuccess(),
             LaunchResult.AlreadyRunning => "Already running.",
             LaunchResult.ExeNotFound => "CW Skimmer exe not found — check the path.",
-            LaunchResult.TemplateIniNotFound => "CW Skimmer INI template not found — set a valid cwskimmer.ini path.",
+            LaunchResult.TemplateIniNotFound => FormatTemplateIniNotFound(),
             LaunchResult.DeviceNotFound => FormatDeviceNotFound(stream.DAXIQChannel),
             LaunchResult.ProcessStartFailed => "Failed to start CW Skimmer process.",
             _ => "Launch failed."
@@ -201,6 +202,19 @@ public sealed class CwSkimmerWorkflowService
         return $"CW Skimmer running ({modeTag})  |  {loLine}  |  {signalLine}  |  {audioLine}";
     }
 
+    private string FormatTemplateIniNotFound()
+    {
+        // Issue #74 (2026-08-24): the operator had entered the CW Skimmer folder
+        // instead of the CwSkimmer.ini file and the old generic message gave no
+        // hint. Name the configured path and the folder-vs-file mistake directly.
+        var path = _settings.CwSkimmerIniPath;
+        if (string.IsNullOrWhiteSpace(path))
+            return "CW Skimmer INI path is not set. Point the Config tab's cwskimmer.ini field at your CwSkimmer.ini file.";
+        if (Directory.Exists(path))
+            return $"CW Skimmer INI path '{path}' is a folder. Select the CwSkimmer.ini file inside it on the Config tab.";
+        return $"CW Skimmer INI not found at '{path}'. Check the cwskimmer.ini path on the Config tab.";
+    }
+
     private string FormatDeviceNotFound(int channel)
     {
         var diag = _launcher.LastDiagnostics;
@@ -211,7 +225,11 @@ public sealed class CwSkimmerWorkflowService
             .SkipWhile(l => !l.Contains("WinMM WaveIn"))
             .Take(12)
             .ToArray();
-        return $"DAX IQ {channel} not found in WinMM list:\n{string.Join("\n", lines)}\n" +
+        // Issue #74 (2026-08-24): the old header claimed the device was missing
+        // from WinMM even when the real failure was an unreadable calibration,
+        // sending the reporter down the wrong trail. State what is known (the
+        // resolution failed) and show the list instead of interpreting it.
+        return $"Could not resolve an MME device for DAX IQ {channel}. WinMM devices seen:\n{string.Join("\n", lines)}\n" +
                "(Full log: artifacts\\cwskimmer\\ini\\device-diagnostic.txt)";
     }
 

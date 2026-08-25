@@ -108,11 +108,24 @@ public sealed class CwSkimmerLauncher : ICwSkimmerLauncher, IDisposable
         LastDiagnostics = BuildDiagnostics(daxIqChannel, model, config.SkimmerIniPath, channelIniExists, _deviceFinder);
         WriteDiagnosticLog(LastDiagnostics);
 
+        // Issue #74 (2026-08-24): an invalid cwskimmer.ini path (the operator had
+        // entered the CW Skimmer folder, not the file) failed the calibration read
+        // and surfaced as DeviceNotFound ("not found in WinMM enumeration") even
+        // though the DAX device was present. Validate the template first so path
+        // problems report as path problems, and only gate on the device when a
+        // fresh channel INI is about to be written; an existing channel INI
+        // already carries its audio settings and the model is never written.
+        if (!channelIniExists && string.IsNullOrWhiteSpace(ResolveTemplateIniPath(config)))
+            return LaunchResult.TemplateIniNotFound;
+
         // Generated channel INIs always use MME — only MmeSignalDev gates launch.
-        if (model.MmeSignalDevIndex < 0)
+        if (!channelIniExists && model.MmeSignalDevIndex < 0)
         {
+            // With a readable template this index is never negative (the sequential
+            // fallback anchors at the master's MmeSignalDev), so reaching here means
+            // the template INI exists but carries no usable [Audio] calibration.
             EmitLauncherStatus(daxIqChannel,
-                $"Launch blocked: MME signal device for DAX IQ {daxIqChannel} not found in WinMM enumeration.");
+                $"Launch blocked: could not resolve an MME signal device for DAX IQ {daxIqChannel} (check the cwskimmer.ini calibration).");
             return LaunchResult.DeviceNotFound;
         }
 
