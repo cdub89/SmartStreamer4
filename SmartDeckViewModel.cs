@@ -537,8 +537,19 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
     // Doing that in SmartSDR means finding the slider and remembering the number
     // to return to, which is the whole reason this button exists.
 
-    /// <summary>The power a QRP contact runs at, in watts.</summary>
+    /// <summary>
+    /// The power the QRP preset sets, and the top of the QRP range: 5 W or less
+    /// is QRP by convention, so the button reads QRP anywhere at or below this,
+    /// not only at exactly this value (operator, 2026-08-25).
+    /// </summary>
     private const int QrpWatts = 5;
+
+    /// <summary>
+    /// Lowest power that counts as operating QRP. Below it the radio is not
+    /// meaningfully transmitting, so the button still reads QRP but does not
+    /// light: lit marks a power being run, not merely a number below 5.
+    /// </summary>
+    private const int QrpMinWatts = 1;
 
     /// <summary>The power the QRO preset returns to, in watts (issue #70).</summary>
     private const int QroWatts = 100;
@@ -572,13 +583,47 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
     /// now a pure function of the radio's own power, so it cannot disagree with
     /// the radio at all. Do not reintroduce a remembered power here.
     /// </remarks>
-    public string TxPresetText => _lastKnownWatts == QrpWatts ? "QRO" : "QRP";
+    /// <remarks>
+    /// A state readout, not a promise about the press. The operator's model is
+    /// two states, QRP and not-QRP, and "QRO" names the second one (operator,
+    /// 2026-08-25), so at 54 W it reads QRO because that is true: you are not
+    /// at QRP. Pressing toggles the state rather than delivering the label.
+    /// An earlier pass made the label name what the press would do, which put
+    /// "QRP" on a button while the radio sat at the operating power. That is
+    /// the thing to avoid: the label must never claim a state the radio is not
+    /// in.
+    /// </remarks>
+    public string TxPresetText => IsQrpPower ? "QRP" : "QRO";
+
+    /// <summary>
+    /// True when the radio is running QRP, which is a range and not a single
+    /// value: anything at or below <see cref="QrpWatts"/> counts.
+    /// </summary>
+    private bool IsQrpPower => _lastKnownWatts is int watts && watts <= QrpWatts;
+
+    /// <summary>
+    /// True while the radio sits on one of the two presets, which lights the
+    /// button (issue #70).
+    /// </summary>
+    /// <remarks>
+    /// Restored 2026-08-25 after the operator live-tested its absence. The
+    /// first pass dropped the lit state on the grounds that the readout beside
+    /// the button already shows the power, but every other control on the deck
+    /// lights for the value the radio holds, and this one stopped. The real
+    /// fault was the label: it named the <em>next</em> press, so lighting it
+    /// would have claimed QRO was current while the radio sat at 5 W. Naming
+    /// the preset the radio is on fixes both at once, and restores the deck's
+    /// one meaning of lit: this is the value in force.
+    /// </remarks>
+    public bool IsPresetActive => _lastKnownWatts is int watts
+        && (watts is >= QrpMinWatts and <= QrpWatts || watts == QroWatts);
 
     private void SetLastKnownWatts(int? watts)
     {
         if (_lastKnownWatts == watts) return;
         _lastKnownWatts = watts;
         OnPropertyChanged(nameof(TxPresetText));
+        OnPropertyChanged(nameof(IsPresetActive));
     }
 
     /// <summary>False until the radio has reported a power, so the button cannot aim at an unknown one.</summary>
@@ -594,10 +639,11 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
             return;
         }
 
-        // At QRP the button offers QRO; from anywhere else it offers QRP. That
-        // makes the first press from any operating power the low one, and the
-        // pair alternate from there.
-        var target = _lastKnownWatts == QrpWatts ? QroWatts : QrpWatts;
+        // The button toggles between QRP and not-QRP, so anywhere in the QRP
+        // range goes up to QRO and anywhere above it drops to QRP. The first
+        // press from an ordinary operating power therefore drops to QRP, which
+        // is the habit the original QRP button taught (operator, 2026-08-25).
+        var target = IsQrpPower ? QroWatts : QrpWatts;
 
         _logStatus($"{(target == QrpWatts ? "QRP" : "QRO")} selected: setting {target} W.");
         SetLastKnownWatts(target);

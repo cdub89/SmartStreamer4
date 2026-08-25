@@ -511,19 +511,24 @@
                                VerticalAlignment="Center"
                                MinWidth="38"
                                Margin="2,0"/>
-                    <!-- Issue #70: two presets, and the label names the one the
-                         next press will set. No lit state, deliberately: the
-                         button is an action, not a value, and the readout
-                         immediately to its left already says which power the
-                         radio holds. Lighting it as well would encode the same
-                         fact twice, and would have to light while the label
-                         named the other preset. MinWidth covers both words,
-                         which are the same length, so the row does not shift. -->
+                    <!-- Issue #70, operator-specified 2026-08-25. Two states,
+                         QRP and not-QRP, the latter labelled QRO. The label is
+                         a state readout, so 54 W reads QRO (you are not at
+                         QRP); lit keeps the deck's one meaning and marks the
+                         two exact preset powers, 5 W and 100 W. Pressing
+                         toggles the state, so the first press from an ordinary
+                         power drops to QRP as the original button did. A first
+                         pass shipped with no lit state at all and the operator
+                         caught it in live test: every other control on the deck
+                         lights and this one had stopped. MinWidth covers both
+                         words, which are the same length, so the row does not
+                         shift. -->
                     <Button Grid.Column="1"
                             Classes="deck-button"
+                            Classes.lit="{Binding IsPresetActive}"
                             Content="{Binding TxPresetText}"
                             MinWidth="40"
-                            ToolTip.Tip="Set transmit power to the preset shown. Presses alternate between QRP (5 W) and QRO (100 W); any other power is set on the readout wheel or in SmartSDR."
+                            ToolTip.Tip="Transmit power presets. Lit shows the preset in force; pressing moves to the other one. QRP is 5 W and QRO is 100 W; any other power is set on the readout wheel or in SmartSDR."
                             Command="{Binding ToggleQrpCommand}"/>
                 </Grid>
             </StackPanel>

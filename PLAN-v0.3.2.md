@@ -411,23 +411,54 @@ The socket call itself — **skip**, needs a listener; covered by live smoke.
 
 ## 5. Issue #70 — QRP/QRO power presets (built, and simplified twice)
 
-**Final design (operator, 2026-08-25): two presets, no saved power.** The button
-sets QRP (5 W) or QRO (100 W); presses alternate between them, and any other
-power is set on the TX power wheel or in SmartSDR. The label always names the
-preset the next press will set, and there is no lit state, because the readout
-beside the button already says which power the radio holds.
+**Final design (operator, 2026-08-25): two states, no saved power.** The
+operator's model is QRP and not-QRP, the latter labelled QRO. The label is a
+**state readout**, not a promise about the press: at 54 W it reads QRO because
+that is true, you are not at QRP. Lit marks the two exact preset powers and
+keeps the deck's single meaning of lit, the value in force. Pressing toggles the
+state, so the first press from an ordinary operating power drops to QRP, the
+habit the original button taught. Any other power is set on the TX power wheel
+or in SmartSDR.
+
+**QRP is a range, not a value** (operator, 2026-08-25): 5 W and under is QRP by
+convention, so the button reads QRP across it rather than only at exactly 5 W.
+Treating it as a single value was the last thing making this feel wrong on the
+air, because trimming 5 W to 4 W with the wheel darkened the button and flipped
+the label to QRO while the operator was plainly still running QRP.
+
+| radio power | label | lit | press gives |
+|-------------|-------|-----|-------------|
+| 0 W | QRP | no | 100 W |
+| 1 to 5 W | QRP | yes | 100 W |
+| 6 to 99 W | QRO | no | 5 W |
+| 100 W | QRO | yes | 5 W |
+
+Lit marks a preset power actually being run, which is why 0 W reads QRP but
+stays dark: it is below the range rather than in it.
+
+**The invariant, pinned by test:** the label must never claim a state the radio
+is not in. Both interim designs broke it and the operator caught both in live
+test, the second time as a missing blue rather than a wrong word.
 
 Recorded so it does not read as drift: a QRO preset was explicitly declined
 during issue #59 on the grounds that the QRP button already saves and restores.
 The operator filed #70 himself on 2026-08-05, reversing that.
 
-**How it got here, because the discarded design is the interesting part.** The
+**How it got here, because the discarded designs are the interesting part.** The
 first build kept the existing save-and-restore and alternated which preset the
 next press engaged, giving four positions: QRP, saved, QRO, saved. Bench-tested
 2026-08-25, the operator hit the incoherence directly: the button could read
 "QRP" while the radio sat at the saved power, so the label and the radio
 disagreed. The fix was not a better cycle, it was deleting the saved power
 altogether.
+
+The second build then over-corrected, dropping the lit state on the grounds that
+the readout beside the button already shows the power. Live test caught that too:
+every other control on the deck lights for the value in force and this one had
+stopped. The root cause was the same one as the first failure, wearing different
+clothes. The label named the *next press*, which is what made lighting it
+impossible without lying. Making the label a state readout fixed the lit state
+and the wording together.
 
 What that bought, beyond a simpler button:
 
