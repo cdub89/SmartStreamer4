@@ -100,6 +100,22 @@ public partial class SmartDeckWindow : Window
     private void OnTxPowerWheel(object? sender, PointerWheelEventArgs e) =>
         Nudge(sender, e, _viewModel.NudgeTxPower);
 
+    // Issue #73. RIT and XIT are the one pair with two gestures on one target:
+    // the wheel moves the offset, a click engages or releases. Kept separate on
+    // purpose, so spinning the wheel never turns the function on behind the
+    // operator's back.
+    private void OnRitWheel(object? sender, PointerWheelEventArgs e) =>
+        Nudge(sender, e, _viewModel.NudgeRit);
+
+    private void OnXitWheel(object? sender, PointerWheelEventArgs e) =>
+        Nudge(sender, e, _viewModel.NudgeXit);
+
+    private void OnRitTapped(object? sender, TappedEventArgs e) =>
+        _viewModel.ToggleRitCommand.Execute(null);
+
+    private void OnXitTapped(object? sender, TappedEventArgs e) =>
+        _viewModel.ToggleXitCommand.Execute(null);
+
     /// <summary>
     /// Marks the event handled whenever a step was delivered, so a wheel over a
     /// control never also scrolls something behind it.

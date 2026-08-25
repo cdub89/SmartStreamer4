@@ -478,6 +478,44 @@ public sealed class FlexLibRadioConnection : IRadioConnection
         return Task.CompletedTask;
     }
 
+    // ── RIT and XIT (issue #73) ──────────────────────────────────────────────
+
+    public Task SetSliceRitEnabledAsync(SliceInfo slice, bool enabled)
+    {
+        if (FindFlexSlice(slice) is { } target && target.RITOn != enabled)
+        {
+            target.RITOn = enabled;
+            EmitDiag($"Slice {slice.Letter}: RIT {(enabled ? "on" : "off")}.");
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task SetSliceRitOffsetAsync(SliceInfo slice, int offsetHz)
+    {
+        var clamped = RitXitRange.Clamp(offsetHz);
+        if (FindFlexSlice(slice) is { } target && target.RITFreq != clamped)
+            target.RITFreq = clamped;
+        return Task.CompletedTask;
+    }
+
+    public Task SetSliceXitEnabledAsync(SliceInfo slice, bool enabled)
+    {
+        if (FindFlexSlice(slice) is { } target && target.XITOn != enabled)
+        {
+            target.XITOn = enabled;
+            EmitDiag($"Slice {slice.Letter}: XIT {(enabled ? "on" : "off")}.");
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task SetSliceXitOffsetAsync(SliceInfo slice, int offsetHz)
+    {
+        var clamped = RitXitRange.Clamp(offsetHz);
+        if (FindFlexSlice(slice) is { } target && target.XITFreq != clamped)
+            target.XITFreq = clamped;
+        return Task.CompletedTask;
+    }
+
     // ── Transmit power (issue #64) ───────────────────────────────────────────
 
     // FlexLib initialises Radio.RFPower to 0, which is also a power the operator
@@ -1020,7 +1058,9 @@ public sealed class FlexLibRadioConnection : IRadioConnection
             RxAntennaOptions = slc.RXAntList ?? [],
             TxAntennaOptions = slc.TXAntList ?? [],
             AgcThreshold = slc.AGCThreshold,
-            IsTransmitSlice = slc.IsTransmitSlice
+            IsTransmitSlice = slc.IsTransmitSlice,
+            XitEnabled = slc.XITOn,
+            XitOffsetHz = slc.XITFreq
         };
 
     private static bool ShouldPublishSliceUpdate(string? propertyName)
@@ -1049,7 +1089,13 @@ public sealed class FlexLibRadioConnection : IRadioConnection
             return true;
 
         // FlexLib variants expose RIT state/offset and tune-step with different names.
+        //
+        // Issue #73: XIT has to be admitted explicitly. "XITOn" and "XITFreq"
+        // do not contain "RIT", so before this the radio's XIT changes were
+        // dropped here and never reached the UI. A build that adds the XIT
+        // readout without this line looks correct and simply never updates.
         return propertyName.Contains("RIT", StringComparison.OrdinalIgnoreCase)
+            || propertyName.Contains("XIT", StringComparison.OrdinalIgnoreCase)
             || propertyName.Contains("Step", StringComparison.OrdinalIgnoreCase);
     }
 

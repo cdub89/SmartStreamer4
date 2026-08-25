@@ -118,6 +118,28 @@ public interface IRadioConnection
     /// </summary>
     Task SetSliceModeAsync(SliceInfo slice, SliceMode mode);
 
+    // ── RIT and XIT (issue #73) ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Engage or release RIT on the slice. Independent of the offset: the radio
+    /// keeps the two separately, so turning RIT off leaves the offset stored and
+    /// turning it back on restores it rather than starting from zero.
+    /// </summary>
+    Task SetSliceRitEnabledAsync(SliceInfo slice, bool enabled);
+
+    /// <summary>
+    /// Set the slice's RIT offset in Hz. Clamped to the radio's range by the
+    /// implementation, because FlexLib silently drops an out-of-range write
+    /// rather than clamping it.
+    /// </summary>
+    Task SetSliceRitOffsetAsync(SliceInfo slice, int offsetHz);
+
+    /// <summary>Engage or release XIT on the slice. See <see cref="SetSliceRitEnabledAsync"/>.</summary>
+    Task SetSliceXitEnabledAsync(SliceInfo slice, bool enabled);
+
+    /// <summary>Set the slice's XIT offset in Hz. See <see cref="SetSliceRitOffsetAsync"/>.</summary>
+    Task SetSliceXitOffsetAsync(SliceInfo slice, int offsetHz);
+
     /// <summary>
     /// Set the slice's AGC threshold (AGC-T), 0-100. FlexLib clamps the value
     /// itself, so callers need not. No-op if the slice is not found or already

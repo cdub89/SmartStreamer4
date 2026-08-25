@@ -91,6 +91,10 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
     [NotifyPropertyChangedFor(nameof(HasSelectedSlice))]
     [NotifyPropertyChangedFor(nameof(FrequencyText))]
     [NotifyPropertyChangedFor(nameof(ModeText))]
+    [NotifyPropertyChangedFor(nameof(RitText))]
+    [NotifyPropertyChangedFor(nameof(XitText))]
+    [NotifyPropertyChangedFor(nameof(IsRitEnabled))]
+    [NotifyPropertyChangedFor(nameof(IsXitEnabled))]
     private SliceInfo? _selectedSlice;
 
     [ObservableProperty]
@@ -122,6 +126,135 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
     public string ModeText => CurrentMode is { } mode
         ? mode.ToRadioValue()
         : SelectedSlice?.Mode.Trim() ?? string.Empty;
+
+    // ── RIT and XIT (issue #73) ───────────────────────────────────
+
+    // The control this feature exists for: a Maestro and a FlexControl have a
+    // RIT knob and SmartStreamer had no equivalent anywhere, so an operator
+    // running headless or on a remote seat simply could not set it.
+    //
+    // Both are shown at once rather than one behind a toggle, so XIT engaged
+    // from the Maestro can never be hidden while the operator looks at RIT.
+    // Click a readout to engage or release it; wheel over it to move the offset.
+    // The wheel deliberately does not engage as a side effect: one gesture each.
+
+    /// <summary>Hz per wheel detent, matching the Maestro and FlexControl.</summary>
+    /// <remarks>
+    /// Deliberately not the slice's own TuneStepHz, which the frequency wheel
+    /// uses: a slice sitting on a 500 Hz SSB step would move RIT 500 Hz a click.
+    /// Fixed, and not configurable, because matching the hardware is the point.
+    /// </remarks>
+    internal const int RitXitStepHz = 10;
+
+    public string RitText => FormatOffset(SelectedSlice?.RitOffsetHz);
+    public string XitText => FormatOffset(SelectedSlice?.XitOffsetHz);
+
+    /// <summary>True while RIT is engaged on the selected slice, which lights the readout.</summary>
+    public bool IsRitEnabled => SelectedSlice?.RitEnabled ?? false;
+
+    /// <summary>True while XIT is engaged on the selected slice.</summary>
+    public bool IsXitEnabled => SelectedSlice?.XitEnabled ?? false;
+
+    /// <summary>
+    /// A signed offset in whole Hz, or dashes with no slice selected. Signed
+    /// always, including at zero, so the readout reads as an offset rather than
+    /// as a frequency.
+    /// </summary>
+    internal static string FormatOffset(double? offsetHz) =>
+        offsetHz is { } hz
+            ? ((int)Math.Round(hz)).ToString("+0;-0;0", CultureInfo.InvariantCulture)
+            : Absent;
+
+    [RelayCommand]
+    private async Task ToggleRitAsync()
+    {
+        if (SelectedSlice is not { } slice) return;
+        await _connection.SetSliceRitEnabledAsync(slice, !IsRitEnabled);
+    }
+
+    [RelayCommand]
+    private async Task ToggleXitAsync()
+    {
+        if (SelectedSlice is not { } slice) return;
+        await _connection.SetSliceXitEnabledAsync(slice, !IsXitEnabled);
+    }
+
+    /// <summary>
+    /// Steps the selected slice's RIT offset by <paramref name="notches"/>
+    /// detents. Does not engage RIT: see the note above.
+    /// </summary>
+    public void NudgeRit(int notches) => NudgeOffset(notches, xit: false);
+
+    /// <summary>Steps the selected slice's XIT offset. See <see cref="NudgeRit"/>.</summary>
+    public void NudgeXit(int notches) => NudgeOffset(notches, xit: true);
+
+    private void NudgeOffset(int notches, bool xit)
+    {
+        if (!_started || notches == 0 || SelectedSlice is not { } slice) return;
+
+        var pending = xit ? _wheelTargetXitHz : _wheelTargetRitHz;
+        var from = _wheelTargetOffsetSliceLetter == slice.Letter && pending is { } held
+            ? held
+            : (int)Math.Round(xit ? slice.XitOffsetHz : slice.RitOffsetHz);
+
+        var target = RitXitRange.Clamp(from + (notches * RitXitStepHz));
+        if (target == from) return;   // already against the rail
+
+        if (xit) _wheelTargetXitHz = target; else _wheelTargetRitHz = target;
+        _wheelTargetOffsetSliceLetter = slice.Letter;
+
+        // Echoed locally so the readout moves with the wheel; the radio's own
+        // report re-applies the same number a moment later.
+        OnPropertyChanged(xit ? nameof(XitText) : nameof(RitText));
+        ScheduleOffsetWrite(xit);
+    }
+
+    private void ScheduleOffsetWrite(bool xit)
+    {
+        if (xit)
+        {
+            if (_xitWriteScheduled) return;
+            _xitWriteScheduled = true;
+        }
+        else
+        {
+            if (_ritWriteScheduled) return;
+            _ritWriteScheduled = true;
+        }
+        _ = FlushOffsetAsync(xit);
+    }
+
+    // Coalesced behind the same settle window as frequency rather than written
+    // per detent. RIT is folded into the effective RX frequency the CW Skimmer
+    // sync tracker publishes (MainWindowViewModel.GetEffectiveRxFrequencyMHz),
+    // so an unthrottled spin would put a SKIMMER/QSY burst into Skimmer for
+    // every notch, exactly as an unthrottled frequency spin would.
+    private async Task FlushOffsetAsync(bool xit)
+    {
+        await _settle(WheelWriteWindow);
+        if (xit) _xitWriteScheduled = false; else _ritWriteScheduled = false;
+
+        var target = xit ? _wheelTargetXitHz : _wheelTargetRitHz;
+        if (target is not { } offset) return;
+
+        // Dropped if the gesture belonged to a slice that is gone or no longer
+        // selected, for the same reason the frequency wheel drops it.
+        if (SelectedSlice is not { } slice || slice.Letter != _wheelTargetOffsetSliceLetter)
+        {
+            _wheelTargetRitHz = null;
+            _wheelTargetXitHz = null;
+            _wheelTargetOffsetSliceLetter = null;
+            return;
+        }
+
+        if (xit)
+            await _connection.SetSliceXitOffsetAsync(slice, offset);
+        else
+            await _connection.SetSliceRitOffsetAsync(slice, offset);
+
+        if (xit && _wheelTargetXitHz == offset) _wheelTargetXitHz = null;
+        if (!xit && _wheelTargetRitHz == offset) _wheelTargetRitHz = null;
+    }
 
     /// <summary>
     /// Groups a frequency as MHz.kHz.Hz, so 14.05 MHz reads "14.050.000". The
@@ -713,6 +846,11 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
     // Null between gestures, so the next notch re-seeds from what the radio
     // actually holds.
     private double? _wheelTargetFreqMHz;
+    private int? _wheelTargetRitHz;
+    private int? _wheelTargetXitHz;
+    private string? _wheelTargetOffsetSliceLetter;
+    private bool _ritWriteScheduled;
+    private bool _xitWriteScheduled;
     private int? _wheelTargetWatts;
     private int? _wheelTargetRfGain;
     private int? _wheelTargetAgcThreshold;

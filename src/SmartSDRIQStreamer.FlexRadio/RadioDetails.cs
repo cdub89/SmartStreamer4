@@ -84,6 +84,28 @@ public static class SteppedRange
     }
 }
 
+/// <summary>
+/// The radio's accepted range for a RIT or XIT offset (issue #73).
+/// </summary>
+/// <remarks>
+/// Lives here rather than on the connection because it is a fact about the
+/// radio that both the write path and the UI need: the wheel has to know where
+/// the rail is to stop pretending it moved.
+///
+/// FlexLib does not clamp an out-of-range write, it <em>drops</em> it. The
+/// setter raises PropertyChanged and returns without sending a command
+/// (<c>Slice.cs:1500-1505</c> for RIT, <c>1537-1542</c> for XIT), so a value
+/// past the limit produces no command on the wire and no error. Clamping on
+/// this side is what keeps that from looking like a dead control.
+/// </remarks>
+public static class RitXitRange
+{
+    /// <summary>Widest offset the radio accepts, in Hz, either direction.</summary>
+    public const int LimitHz = 99_999;
+
+    public static int Clamp(int offsetHz) => Math.Clamp(offsetHz, -LimitHz, LimitHz);
+}
+
 public static class SliceModes
 {
     /// <summary>The string FlexLib sends as <c>slice set N mode=X</c>.</summary>
@@ -144,6 +166,19 @@ public sealed record SliceInfo(
     /// range-request round trip and no "not yet known" state.
     /// </summary>
     public int AgcThreshold { get; init; }
+
+    /// <summary>
+    /// True when XIT is engaged on this slice (issue #73). Independent of RIT:
+    /// the radio allows both, one, or neither.
+    /// </summary>
+    public bool XitEnabled { get; init; }
+
+    /// <summary>
+    /// The XIT offset in Hz, whether or not <see cref="XitEnabled"/> is set.
+    /// The radio stores the offset and the on/off flag separately, so turning
+    /// XIT off leaves this value in place.
+    /// </summary>
+    public double XitOffsetHz { get; init; }
 
     /// <summary>
     /// True when this is the slice the radio will transmit on (issue #69).

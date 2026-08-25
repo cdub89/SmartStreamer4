@@ -24,15 +24,21 @@ public class SmartDeckViewModelTests
         double freqMhz = 14.050,
         int agcThreshold = 50,
         int tuneStepHz = 0,
-        bool isTransmitSlice = false) =>
-        new(letter, mode, freqMhz, false, 0, tuneStepHz, PanadapterStreamId: 100, ClientStation: station)
+        bool isTransmitSlice = false,
+        bool ritEnabled = false,
+        double ritOffsetHz = 0,
+        bool xitEnabled = false,
+        double xitOffsetHz = 0) =>
+        new(letter, mode, freqMhz, ritEnabled, ritOffsetHz, tuneStepHz, PanadapterStreamId: 100, ClientStation: station)
         {
             RxAntenna = rxAnt,
             TxAntenna = txAnt,
             AgcThreshold = agcThreshold,
             RxAntennaOptions = ["ANT1", "ANT2", "RX_A"],
             TxAntennaOptions = ["ANT1", "ANT2"],
-            IsTransmitSlice = isTransmitSlice
+            IsTransmitSlice = isTransmitSlice,
+            XitEnabled = xitEnabled,
+            XitOffsetHz = xitOffsetHz
         };
 
     // ── Absent renders as dashes ─────────────────────────────────────────────
@@ -1937,5 +1943,170 @@ public class SmartDeckViewModelTests
         // separate: transmit state says "keyed", forward power says "RF".
         Assert.Equal("---", SmartDeckViewModel.FormatSwr(1.0, powerWatts: 0));
         Assert.Equal("1.0", SmartDeckViewModel.FormatSwr(1.0, powerWatts: 50));
+    }
+
+    // ── RIT and XIT (issue #73) ─────────────────────────────────────
+
+    private static (FakeTelemetryConnection Connection, SmartDeckViewModel ViewModel) DeckWithSlice(
+        SliceInfo slice)
+    {
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(slice);
+        var viewModel = new SmartDeckViewModel(
+            connection, TestStation, postToUi: action => action(), settle: ImmediateSettle);
+        viewModel.Start();
+        return (connection, viewModel);
+    }
+
+    [Theory]
+    [InlineData(0, "0")]
+    [InlineData(120, "+120")]
+    [InlineData(-50, "-50")]
+    [InlineData(99_999, "+99999")]
+    public void An_offset_reads_signed_so_it_cannot_be_mistaken_for_a_frequency(int hz, string expected)
+    {
+        Assert.Equal(expected, SmartDeckViewModel.FormatOffset(hz));
+    }
+
+    [Fact]
+    public void With_no_slice_the_offsets_read_as_absent()
+    {
+        Assert.Equal("---", SmartDeckViewModel.FormatOffset(null));
+    }
+
+    [Fact]
+    public void Both_offsets_are_readable_at_once_so_neither_can_hide()
+    {
+        // The reason there is no view toggle: XIT engaged from the Maestro must
+        // never sit hidden behind a RIT view.
+        var (_, viewModel) = DeckWithSlice(
+            Slice("A", ritEnabled: true, ritOffsetHz: 120, xitEnabled: true, xitOffsetHz: -50));
+
+        Assert.Equal("+120", viewModel.RitText);
+        Assert.Equal("-50", viewModel.XitText);
+        Assert.True(viewModel.IsRitEnabled);
+        Assert.True(viewModel.IsXitEnabled);
+    }
+
+    [Fact]
+    public void RIT_and_XIT_engage_independently()
+    {
+        // The radio allows both, one, or neither. An earlier design made them
+        // mutually exclusive, which would have removed a state the radio
+        // legitimately supports.
+        var (_, viewModel) = DeckWithSlice(Slice("A", ritEnabled: true, xitEnabled: false));
+
+        Assert.True(viewModel.IsRitEnabled);
+        Assert.False(viewModel.IsXitEnabled);
+    }
+
+    [Fact]
+    public async Task Clicking_engages_and_releases_without_touching_the_offset()
+    {
+        var (connection, viewModel) = DeckWithSlice(Slice("A", ritOffsetHz: 120));
+
+        await viewModel.ToggleRitCommand.ExecuteAsync(null);
+
+        Assert.Equal(("A", true), Assert.Single(connection.RitEnableWrites));
+        Assert.Empty(connection.RitOffsetWrites);   // engaging is not a retune
+    }
+
+    [Fact]
+    public async Task Wheeling_moves_the_offset_ten_hertz_a_notch_without_engaging()
+    {
+        // One gesture each, deliberately: the wheel must not turn RIT on behind
+        // the operator. The cost is that wheeling a released RIT changes a
+        // stored offset with no on-air effect, which the muted colour is the
+        // cue for. Pinned because it reads like a bug and is the chosen design.
+        var (connection, viewModel) = DeckWithSlice(Slice("A"));
+
+        viewModel.NudgeRit(3);
+        await Task.Yield();
+
+        Assert.Equal(("A", 30), Assert.Single(connection.RitOffsetWrites));
+        Assert.Empty(connection.RitEnableWrites);
+    }
+
+    [Fact]
+    public async Task The_step_is_ten_hertz_and_not_the_slices_tune_step()
+    {
+        // A slice on a 500 Hz SSB step would otherwise move RIT 500 Hz a click.
+        var (connection, viewModel) = DeckWithSlice(Slice("A", mode: "USB", tuneStepHz: 500));
+
+        viewModel.NudgeRit(1);
+        await Task.Yield();
+
+        Assert.Equal(("A", 10), Assert.Single(connection.RitOffsetWrites));
+    }
+
+    [Fact]
+    public void A_spin_is_coalesced_into_one_write_and_accumulates_across_notches()
+    {
+        // Coalesced for the same reason the frequency wheel is: RIT is folded
+        // into the effective RX frequency the CW Skimmer sync tracker
+        // publishes, so a write per notch would put a SKIMMER/QSY burst into
+        // Skimmer for every detent of the spin.
+        //
+        // Each notch also advances a local target rather than re-reading the
+        // slice, so none of a fast spin is lost to an echo that has not arrived.
+        var connection = new FakeTelemetryConnection();
+        connection.SetSlices(Slice("A"));
+        var (settle, gate) = HeldSettle();
+        var viewModel = new SmartDeckViewModel(
+            connection, TestStation, postToUi: action => action(), settle: settle);
+        viewModel.Start();
+
+        viewModel.NudgeRit(1);
+        viewModel.NudgeRit(1);
+        viewModel.NudgeRit(2);
+        Assert.Empty(connection.RitOffsetWrites);
+
+        gate.SetResult();
+
+        Assert.Equal(("A", 40), Assert.Single(connection.RitOffsetWrites));
+    }
+
+    [Fact]
+    public async Task The_offset_clamps_at_the_radios_rail_rather_than_going_silent()
+    {
+        // FlexLib drops an out-of-range write instead of clamping it, so without
+        // this the wheel would stop moving with nothing on the wire.
+        var (connection, viewModel) = DeckWithSlice(Slice("A", ritOffsetHz: RitXitRange.LimitHz - 5));
+
+        viewModel.NudgeRit(10);   // would reach +100089 unclamped
+        await Task.Yield();
+
+        Assert.Equal(RitXitRange.LimitHz, connection.RitOffsetWrites[^1].OffsetHz);
+    }
+
+    [Fact]
+    public async Task XIT_wheels_and_toggles_on_its_own_path()
+    {
+        var (connection, viewModel) = DeckWithSlice(Slice("A"));
+
+        viewModel.NudgeXit(-2);
+        await viewModel.ToggleXitCommand.ExecuteAsync(null);
+        await Task.Yield();
+
+        Assert.Equal(("A", -20), Assert.Single(connection.XitOffsetWrites));
+        Assert.Equal(("A", true), Assert.Single(connection.XitEnableWrites));
+        Assert.Empty(connection.RitOffsetWrites);
+        Assert.Empty(connection.RitEnableWrites);
+    }
+
+    [Fact]
+    public void Wheeling_with_no_slice_selected_does_nothing()
+    {
+        var connection = new FakeTelemetryConnection();
+        var viewModel = new SmartDeckViewModel(
+            connection, TestStation, postToUi: action => action(), settle: ImmediateSettle);
+        viewModel.Start();
+
+        viewModel.NudgeRit(5);
+        viewModel.NudgeXit(5);
+
+        Assert.Empty(connection.RitOffsetWrites);
+        Assert.Empty(connection.XitOffsetWrites);
+        Assert.Equal("---", viewModel.RitText);
     }
 }

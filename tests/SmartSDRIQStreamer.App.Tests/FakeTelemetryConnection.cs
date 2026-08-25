@@ -103,6 +103,39 @@ internal sealed class FakeTelemetryConnection : IRadioConnection
     /// <summary>Sets the slice list the ViewModel reads on refresh.</summary>
     public void SetSlices(params SliceInfo[] slices) => _slices = slices;
 
+    // ── RIT and XIT (issue #73) ──────────────────────────────────────────────
+
+    public List<(string Letter, bool Enabled)> RitEnableWrites { get; } = [];
+    public List<(string Letter, int OffsetHz)> RitOffsetWrites { get; } = [];
+    public List<(string Letter, bool Enabled)> XitEnableWrites { get; } = [];
+    public List<(string Letter, int OffsetHz)> XitOffsetWrites { get; } = [];
+
+    public Task SetSliceRitEnabledAsync(SliceInfo slice, bool enabled)
+    {
+        RitEnableWrites.Add((slice.Letter, enabled));
+        return Task.CompletedTask;
+    }
+
+    public Task SetSliceRitOffsetAsync(SliceInfo slice, int offsetHz)
+    {
+        // Clamped as the real connection does, so a test driving the wheel past
+        // the rail sees the same value the radio would have been sent.
+        RitOffsetWrites.Add((slice.Letter, RitXitRange.Clamp(offsetHz)));
+        return Task.CompletedTask;
+    }
+
+    public Task SetSliceXitEnabledAsync(SliceInfo slice, bool enabled)
+    {
+        XitEnableWrites.Add((slice.Letter, enabled));
+        return Task.CompletedTask;
+    }
+
+    public Task SetSliceXitOffsetAsync(SliceInfo slice, int offsetHz)
+    {
+        XitOffsetWrites.Add((slice.Letter, RitXitRange.Clamp(offsetHz)));
+        return Task.CompletedTask;
+    }
+
     public List<(SliceInfo Slice, int Threshold)> AgcThresholdWrites { get; } = [];
 
     public Task SetSliceAgcThresholdAsync(SliceInfo slice, int threshold)

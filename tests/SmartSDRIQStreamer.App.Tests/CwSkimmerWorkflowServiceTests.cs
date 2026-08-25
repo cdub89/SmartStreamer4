@@ -245,6 +245,12 @@ public sealed class CwSkimmerWorkflowServiceTests
         public Task SetSliceTxAntennaAsync(SliceInfo slice, string antenna)        => Task.CompletedTask;
         public Task SetPanadapterRfGainAsync(PanadapterInfo pan, int rfGain)      => Task.CompletedTask;
         public Task SetSliceAgcThresholdAsync(SliceInfo slice, int threshold)     => Task.CompletedTask;
+
+        // Issue #73: the CW Skimmer workflow does not drive RIT or XIT.
+        public Task SetSliceRitEnabledAsync(SliceInfo slice, bool enabled)       => Task.CompletedTask;
+        public Task SetSliceRitOffsetAsync(SliceInfo slice, int offsetHz)        => Task.CompletedTask;
+        public Task SetSliceXitEnabledAsync(SliceInfo slice, bool enabled)       => Task.CompletedTask;
+        public Task SetSliceXitOffsetAsync(SliceInfo slice, int offsetHz)        => Task.CompletedTask;
         public string ControlStation { get; set; } = string.Empty;
         public int? RfPowerWatts => null;
         public Task SetRfPowerAsync(int watts)                                    => Task.CompletedTask;

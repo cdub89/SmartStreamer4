@@ -98,7 +98,15 @@
                  layout pass). Still well below the button labels, so the
                  headings name the group without competing with it. -->
             <Setter Property="Foreground" Value="{DynamicResource AppMutedBrush}"/>
-            <Setter Property="Margin" Value="1,0,0,1"/>
+            <!-- Negative top reclaims the line box's leading (operator, after
+                 live test). At 10px the label gets roughly a 13px line box for
+                 9px of glyph, measured off a screenshot, and that difference is
+                 invisible padding above every group heading in the window. The
+                 bottom 1px went at the same time; the buttons below already
+                 pull up 2px with their own negative margin. Pulling harder than
+                 2 starts closing the gap that separates a heading from the
+                 control group above it. -->
+            <Setter Property="Margin" Value="1,-2,0,0"/>
         </Style>
 
         <!-- Centred variant, for a heading captioning one compact control rather
@@ -156,6 +164,45 @@
             <Setter Property="Background" Value="{DynamicResource AppAccentHoverBrush}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource AppAccentHoverBrush}"/>
             <Setter Property="TextElement.Foreground" Value="{DynamicResource AppOnAccentBrush}"/>
+        </Style>
+
+        <!-- RIT and XIT offsets (issue #73). Label and value share one type
+             treatment, 10px, bottom-aligned, 3px apart (operator, after live
+             test): the pair reads as a single quiet unit rather than a caption
+             plus a reading, which is right for a line that is glanced at rather
+             than dialled by eye. The value started a size up and looked like
+             two different things stuck together.
+
+             Deliberately well below the frequency above it. At the header's 17
+             an offset reads as visually equal to the frequency the radio is
+             tuned to, which is the mistake the telemetry footer already found
+             and reverted one tier up, and two readouts that size do not fit the
+             centre column with four slices running.
+
+             Colour carries the engaged state, so ".on" MUST stay declared after
+             the base styles: Avalonia resolves competing setters by declaration
+             order, not selector specificity. -->
+        <Style Selector="TextBlock.offset-label">
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="Foreground" Value="{DynamicResource AppMutedBrush}"/>
+            <Setter Property="VerticalAlignment" Value="Bottom"/>
+        </Style>
+        <!-- No bottom margin on either. The 2px they carried was copied from the
+             header, where "MHz" and "Mode" are lifted off a 17px baseline beside
+             a much larger value. Here label and value are the same size, so it
+             was not alignment, it was dead space under the line (operator
+             reported the gap after live test). -->
+        <Style Selector="TextBlock.offset-value">
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="Foreground" Value="{DynamicResource AppMutedBrush}"/>
+            <Setter Property="VerticalAlignment" Value="Bottom"/>
+            <Setter Property="Margin" Value="3,0,0,0"/>
+        </Style>
+        <Style Selector="TextBlock.offset-label.on">
+            <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}"/>
+        </Style>
+        <Style Selector="TextBlock.offset-value.on">
+            <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}"/>
         </Style>
 
         <!-- On the air (issue #69). The transmitting slice is usually also the
@@ -229,7 +276,12 @@
         </Style>
     </Window.Styles>
 
-    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="6" Margin="10,8">
+    <!-- 6 originally. Tried at 4 alone and the operator could not see the
+         difference, which is the useful lesson: 2px is below the threshold that
+         registers, so spacing has to be reclaimed from several places at once
+         or not at all. Paired here with the group labels giving back their line
+         leading, for about 5px at every group boundary rather than 2. -->
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="4" Margin="10,8">
 
         <!-- Header. Answers slice, frequency and mode without opening anything;
              before the layout pass that state lived inside the slice dropdown's
@@ -245,10 +297,31 @@
                  layouts differ by about a pixel, and this one cannot collide.
                  Still declared first so the chips and the pin draw over it if a
                  station ever runs enough slices to squeeze the column anyway. -->
+            <!-- Issue #73 wrapped this in a vertical stack to hang the RIT and
+                 XIT line beneath the readout. The inner row is untouched: its
+                 baseline alignment took three passes to get right (see the
+                 comments inside it), and wrapping a panel around it does not
+                 disturb that, whereas editing it would. -->
+            <!-- Operator-tuned, 2026-08-25. The block is centred and measures
+                 centred, but does not read that way: two thirds of its ink is
+                 the big frequency at the top with a small dim line hanging
+                 below, and the eye centres on the numerals, which measured
+                 about 11px above the row centre against the slice chip.
+
+                 A top pad counterweights that. Mirroring the offsets line
+                 exactly (14) centres the numerals properly but reads as a gap
+                 above the readout, which the operator rejected on sight. Half
+                 of it moves the numerals most of the way down while staying
+                 below the threshold where the space itself becomes visible.
+                 Deliberately not exact centring: the operator chose the look
+                 over the arithmetic, and this comment is here so a later pass
+                 does not "correct" it back to 14. -->
             <StackPanel Grid.Column="1"
-                        Orientation="Horizontal"
                         HorizontalAlignment="Center"
-                        VerticalAlignment="Center">
+                        VerticalAlignment="Center"
+                        Margin="0,6,0,0">
+            <StackPanel Orientation="Horizontal"
+                        HorizontalAlignment="Center">
                 <!-- Bottom-aligned explicitly rather than left on the default
                      Stretch. Stretched, it filled whatever height the mode
                      button claimed and drew its text at the top of that box,
@@ -298,7 +371,51 @@
                 </Button>
             </StackPanel>
 
-            <ItemsControl Grid.Column="0" ItemsSource="{Binding SliceOptions}" Margin="-2">
+            <!-- RIT and XIT, both always visible. An earlier design put one
+                 behind a toggle to save width; showing both is what makes it
+                 impossible for XIT engaged on the Maestro to sit hidden while
+                 the operator looks at RIT. Goes vertical rather than widening
+                 the centre column, so it cannot worsen the slice-chip collision
+                 the comment above describes.
+
+                 Wheel moves the offset, click engages or releases. Both live on
+                 the label and the value so the target is the whole pair rather
+                 than four characters. Background="Transparent" is what makes a
+                 TextBlock hit-testable in Avalonia; it is not a visual change.
+                 Wheel-only would be undiscoverable, hence the tooltips, the
+                 same call TX power already made. -->
+            <StackPanel Orientation="Horizontal"
+                        HorizontalAlignment="Center"
+                        IsVisible="{Binding HasSelectedSlice}"
+                        Margin="0,1,0,0">
+                <StackPanel Orientation="Horizontal"
+                            Background="Transparent"
+                            PointerWheelChanged="OnRitWheel"
+                            Tapped="OnRitTapped"
+                            ToolTip.Tip="RIT. Click to engage or release, mouse wheel to shift the receive offset 10 Hz a step.">
+                    <TextBlock Classes="offset-label" Classes.on="{Binding IsRitEnabled}" Text="RIT"/>
+                    <TextBlock Classes="offset-value" Classes.on="{Binding IsRitEnabled}" Text="{Binding RitText}"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal"
+                            Background="Transparent"
+                            Margin="12,0,0,0"
+                            PointerWheelChanged="OnXitWheel"
+                            Tapped="OnXitTapped"
+                            ToolTip.Tip="XIT. Click to engage or release, mouse wheel to shift the transmit offset 10 Hz a step.">
+                    <TextBlock Classes="offset-label" Classes.on="{Binding IsXitEnabled}" Text="XIT"/>
+                    <TextBlock Classes="offset-value" Classes.on="{Binding IsXitEnabled}" Text="{Binding XitText}"/>
+                </StackPanel>
+            </StackPanel>
+            </StackPanel>
+
+            <!-- Centred on the row, like the readout and the pin (operator,
+                 2026-08-25). Without this the chips take the cell's default
+                 top alignment, which only showed once the RIT/XIT line made the
+                 centre column taller than they are: the chips and the pin stayed
+                 level with the frequency while the readout grew downward past
+                 them, so the row read as top-aligned rather than centred. -->
+            <ItemsControl Grid.Column="0" ItemsSource="{Binding SliceOptions}" Margin="-2"
+                          VerticalAlignment="Center">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
                         <StackPanel Orientation="Horizontal"/>
@@ -320,6 +437,7 @@
             <ToggleButton Grid.Column="2"
                           Name="AlwaysOnTopCheck"
                           Classes="pin"
+                          VerticalAlignment="Center"
                           ToolTip.Tip="Keep SmartDeck above other windows"
                           IsCheckedChanged="OnAlwaysOnTopChanged">
                 <!-- Thumbtack seen head-on: cap, shaft, flange, needle. The
