@@ -516,21 +516,34 @@ series is retired — issue #56):
 
 - `vMAJOR.MINOR.PATCH` — general availability release (e.g. `v0.2.1`).
   Bump PATCH for a fixes-only release, MINOR when a feature lands.
-- **Do not add a `bN` suffix.** The convention retired with the beta
-  series; GA left it behind at v0.2.1 and it stopped being used after
-  the v0.3.0b1-b5 tester builds (operator decision, 2026-08-05). A
-  tester build now carries the plain release tag it is a candidate
-  for: the next one is `v0.3.1`, built with phase 1 only. What makes a
-  build a tester build is not running phase 2, not the tag.
-- Consequence, accepted deliberately: with no suffix to burn, a tester
-  build that fails its live test means retracting the real tag rather
-  than a throwaway one (`git push origin :refs/tags/<tag>`, delete
-  locally, fix, retag). That is the documented retract path already;
-  it just gets used more often now.
-- The tooling still ranks `a`/`alpha`, `b`/`bN` and `rc` suffixes, and
-  a suffix-free tag outranks any suffixed tag at the same numeric
-  version. That support stays for reading old tags, not for minting
-  new ones.
+- `vMAJOR.MINOR.PATCH-previewN` — numbered tester build (e.g.
+  `v0.3.2-preview1`), adopted 2026-09-08 from the SKCCLogger convention.
+  The base is pinned across a line: every preview leading to a release
+  carries the same numeric version and only N advances (`-preview1`,
+  `-preview2`, then the clean `v0.3.2` at GA). Annotated tag, phase 1
+  only, zip handed to testers by hand. The suffix is embedded in the
+  exe, so About and bug reports say which preview a tester is on, and
+  the updater ranks every preview below the clean GA tag at the same
+  version, so preview testers are prompted when GA ships.
+- **Never publish a preview.** Phase 2 refuses a `-preview` tag. The
+  updater in every build fielded before 2026-09-08 reads the releases
+  list without skipping GitHub pre-releases, and numeric version wins
+  before channel, so a pre-release `v0.3.2-preview1` on GitHub would
+  prompt every operator on `v0.3.1`. Builds from this date on skip
+  pre-releases, but that only becomes a safe channel once no earlier
+  build is still in the field.
+- **Do not use the `bN` suffix.** It retired with the beta series
+  (operator decision, 2026-08-05) and the script no longer accepts it.
+  Between that date and 2026-09-08 a tester build carried the plain GA
+  tag; `v0.3.2` at `aabd5ed` is the one build minted that way. Its
+  testers report the same version as GA will, and their updater will
+  say "Up to date" against GA, so they need a manual nudge when GA
+  ships. If a fix build precedes GA, retract that tag
+  (`git push origin :refs/tags/v0.3.2`, delete locally) and tag the fix
+  `v0.3.2-preview2`.
+- The tooling still ranks `a`/`alpha`, `b`/`bN` and `rc` suffixes when
+  reading old tags; `preview` shares the rank `b` held. A suffix-free
+  tag outranks any suffixed tag at the same numeric version.
 
 **No release without operator-facing benefit**: No release ships unless
 it carries at least one change an existing operator would actually
@@ -551,14 +564,13 @@ Release publishing flow. Two automated phases bracket the manual
 gates. The script does not pause for human input — gates happen between
 script invocations, so a hung session can never strand a release.
 
-**Two destinations, one phase 1.** A **tester build** stops after phase 1
-and the zip is handed out by hand; a **published release** continues into
-phase 2. `v0.3.0b1` through `b5` were all tester builds: tagged, pushed
-and zipped, never `gh release create`d. Since the `bN` suffix was retired
-a tester build carries the plain release tag, so the tag no longer tells
-you which one you are looking at; only whether phase 2 ever ran does.
-Decide which you are doing before tagging, because phase 2 hard-codes
-`--latest` (see below).
+**Two destinations, one phase 1.** A **tester build** (`-previewN` tag)
+stops after phase 1 and the zip is handed out by hand; a **published
+release** (clean tag) continues into phase 2. `v0.3.0b1` through `b5`
+and `v0.3.2` were tester builds under the two earlier conventions:
+tagged, pushed and zipped, never `gh release create`d. The tag now says
+which kind a build is, and phase 2 enforces it: it refuses a preview
+tag and hard-codes `--latest` for a clean one (see below).
 
 ### Phase 1 — tag, push, build (`.\publish-release.ps1`)
 
@@ -647,21 +659,21 @@ Only for a published release. A tester build stops at the live test.
 
 ### Phase 2 — publish (`.\publish-release.ps1 -Publish`)
 
-Skip this entirely for a tester build. **`--latest` is hard-coded**, so
-publishing any tag, `b` suffix included, makes it the current release
-and prompts every operator whose version it outranks. A `v0.3.0b2`
-published this way would be pushed at everyone still on `v0.2.1`.
+Skip this entirely for a tester build; the script refuses a `-preview`
+tag. **`--latest` is hard-coded**, so publishing any clean tag makes it
+the current release and prompts every operator whose version it
+outranks.
 
 1. Run `.\publish-release.ps1 -Publish`. The script:
-   - Fails fast on any missing precondition: tag on `origin`, zip
-     present, `SHA256SUMS.txt` line matches the zip, notes file
-     present + non-empty.
+   - Fails fast on any missing precondition: tag is not a preview, tag
+     on `origin`, zip present, `SHA256SUMS.txt` line matches the zip,
+     notes file present + non-empty.
    - Runs `gh release create $tag $zip SHA256SUMS.txt --title ...
      --notes-file ... --latest`, attaching the sidecar as a release
      asset. Nothing is committed, so `origin/main` HEAD stays equal to
      the tag commit. `--latest` is hard-coded; the script does not expose
-     `--prerelease` (the `b` suffix has caused that wrong-flag mistake
-     before).
+     `--prerelease` (the retired `b` suffix caused that wrong-flag
+     mistake before; the preview guard removes the temptation).
    - Attaches the zip, not a raw `.exe` (browsers block `.exe`
      downloads from GitHub Releases).
 2. Post-publish (manual). Re-launch a clean install of the prior
@@ -729,7 +741,8 @@ Where to look first for common tasks:
   the API got here, not as a supported configuration.
 - Release versioning: the csproj `<Version>` stays at a clean numeric
   default; the release version comes from the git tag at HEAD
-  (`vMAJOR.MINOR.PATCH`, e.g. `v0.2.1` — see Build & Release).
+  (`vMAJOR.MINOR.PATCH` for GA, `vMAJOR.MINOR.PATCH-previewN` for a
+  tester build — see Build & Release).
 - Changelogs/release notes: always analyze actual code diffs between
   tags/commits, never summarize from commit messages alone.
 - Ask questions and present decisions in prose dialog, not

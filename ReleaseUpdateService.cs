@@ -57,72 +57,7 @@ public sealed class ReleaseUpdateService : IReleaseUpdateService
 
             var payload = await response.Content.ReadAsStringAsync(ct);
             using var doc = JsonDocument.Parse(payload);
-            if (doc.RootElement.ValueKind != JsonValueKind.Array)
-            {
-                return new ReleaseCheckResult(
-                    Succeeded: false,
-                    IsUpdateAvailable: false,
-                    CurrentTag: normalizedCurrent,
-                    LatestTag: string.Empty,
-                    LatestReleaseUrl: string.Empty,
-                    StatusMessage: "GitHub update response format was unexpected.");
-            }
-
-            foreach (var release in doc.RootElement.EnumerateArray())
-            {
-                if (release.ValueKind != JsonValueKind.Object)
-                    continue;
-
-                if (release.TryGetProperty("draft", out var draftProp) &&
-                    draftProp.ValueKind == JsonValueKind.True)
-                {
-                    continue;
-                }
-
-                var latestTag = release.TryGetProperty("tag_name", out var tagProp)
-                    ? tagProp.GetString() ?? string.Empty
-                    : string.Empty;
-                var latestUrl = release.TryGetProperty("html_url", out var urlProp)
-                    ? urlProp.GetString() ?? string.Empty
-                    : string.Empty;
-
-                var normalizedLatest = NormalizeTag(latestTag);
-                if (string.IsNullOrWhiteSpace(normalizedLatest))
-                    continue;
-
-                var compare = CompareTags(normalizedLatest, normalizedCurrent);
-                if (!compare.HasValue)
-                {
-                    return new ReleaseCheckResult(
-                        Succeeded: false,
-                        IsUpdateAvailable: false,
-                        CurrentTag: normalizedCurrent,
-                        LatestTag: normalizedLatest,
-                        LatestReleaseUrl: latestUrl,
-                        StatusMessage: $"Unable to compare versions ({normalizedCurrent} vs {normalizedLatest}).");
-                }
-
-                var updateAvailable = compare.Value > 0;
-                var status = updateAvailable
-                    ? $"Update available: {normalizedLatest} (current: {normalizedCurrent})."
-                    : $"Up to date ({normalizedCurrent}).";
-
-                return new ReleaseCheckResult(
-                    Succeeded: true,
-                    IsUpdateAvailable: updateAvailable,
-                    CurrentTag: normalizedCurrent,
-                    LatestTag: normalizedLatest,
-                    LatestReleaseUrl: latestUrl,
-                    StatusMessage: status);
-            }
-
-            return new ReleaseCheckResult(
-                Succeeded: false,
-                IsUpdateAvailable: false,
-                CurrentTag: normalizedCurrent,
-                LatestTag: string.Empty,
-                LatestReleaseUrl: string.Empty,
-                StatusMessage: "No published GitHub releases were found.");
+            return EvaluateReleases(doc.RootElement, normalizedCurrent);
         }
         catch (OperationCanceledException)
         {
@@ -139,6 +74,89 @@ public sealed class ReleaseUpdateService : IReleaseUpdateService
                 StatusMessage: $"GitHub update check failed: {ex.Message}");
         }
     }
+
+    /// <summary>
+    /// Walks the GitHub releases list (newest first) and reports whether the
+    /// first publishable entry outranks <paramref name="normalizedCurrent"/>.
+    /// Internal so the selection rules are unit-testable without HTTP.
+    /// </summary>
+    internal static ReleaseCheckResult EvaluateReleases(JsonElement releases, string normalizedCurrent)
+    {
+        if (releases.ValueKind != JsonValueKind.Array)
+        {
+            return new ReleaseCheckResult(
+                Succeeded: false,
+                IsUpdateAvailable: false,
+                CurrentTag: normalizedCurrent,
+                LatestTag: string.Empty,
+                LatestReleaseUrl: string.Empty,
+                StatusMessage: "GitHub update response format was unexpected.");
+        }
+
+        foreach (var release in releases.EnumerateArray())
+        {
+            if (release.ValueKind != JsonValueKind.Object)
+                continue;
+
+            if (IsFlagSet(release, "draft"))
+                continue;
+
+            // Pre-releases are skipped so a GitHub pre-release can never prompt
+            // GA operators. Builds fielded before 2026-09-08 lack this check, so
+            // the release script still refuses to publish preview tags at all;
+            // this guard only makes a future pre-release channel safe once every
+            // client has moved past those builds.
+            if (IsFlagSet(release, "prerelease"))
+                continue;
+
+            var latestTag = release.TryGetProperty("tag_name", out var tagProp)
+                ? tagProp.GetString() ?? string.Empty
+                : string.Empty;
+            var latestUrl = release.TryGetProperty("html_url", out var urlProp)
+                ? urlProp.GetString() ?? string.Empty
+                : string.Empty;
+
+            var normalizedLatest = NormalizeTag(latestTag);
+            if (string.IsNullOrWhiteSpace(normalizedLatest))
+                continue;
+
+            var compare = CompareTags(normalizedLatest, normalizedCurrent);
+            if (!compare.HasValue)
+            {
+                return new ReleaseCheckResult(
+                    Succeeded: false,
+                    IsUpdateAvailable: false,
+                    CurrentTag: normalizedCurrent,
+                    LatestTag: normalizedLatest,
+                    LatestReleaseUrl: latestUrl,
+                    StatusMessage: $"Unable to compare versions ({normalizedCurrent} vs {normalizedLatest}).");
+            }
+
+            var updateAvailable = compare.Value > 0;
+            var status = updateAvailable
+                ? $"Update available: {normalizedLatest} (current: {normalizedCurrent})."
+                : $"Up to date ({normalizedCurrent}).";
+
+            return new ReleaseCheckResult(
+                Succeeded: true,
+                IsUpdateAvailable: updateAvailable,
+                CurrentTag: normalizedCurrent,
+                LatestTag: normalizedLatest,
+                LatestReleaseUrl: latestUrl,
+                StatusMessage: status);
+        }
+
+        return new ReleaseCheckResult(
+            Succeeded: false,
+            IsUpdateAvailable: false,
+            CurrentTag: normalizedCurrent,
+            LatestTag: string.Empty,
+            LatestReleaseUrl: string.Empty,
+            StatusMessage: "No published GitHub releases were found.");
+    }
+
+    private static bool IsFlagSet(JsonElement release, string propertyName) =>
+        release.TryGetProperty(propertyName, out var prop) && prop.ValueKind == JsonValueKind.True;
 
     private static HttpClient BuildHttpClient()
     {
@@ -166,7 +184,7 @@ public sealed class ReleaseUpdateService : IReleaseUpdateService
         return $"v{trimmed[1..]}";
     }
 
-    private static int? CompareTags(string left, string right)
+    internal static int? CompareTags(string left, string right)
     {
         if (!TryParseTag(left, out var leftVersion) || !TryParseTag(right, out var rightVersion))
             return null;
@@ -216,6 +234,14 @@ public sealed class ReleaseUpdateService : IReleaseUpdateService
         var betaMatch = Regex.Match(suffix, @"^(b|beta)(?<n>\d*)$");
         if (betaMatch.Success)
             return (1, ParseOptionalNumber(betaMatch.Groups["n"].Value));
+
+        // Numbered tester builds (vX.Y.Z-previewN, adopted 2026-09-08) take the
+        // rank the retired bN suffix held: below the clean GA tag at the same
+        // numeric version so preview testers are prompted when GA ships, and
+        // ordered among themselves by N so preview2 outranks preview1.
+        var previewMatch = Regex.Match(suffix, @"^preview(?<n>\d*)$");
+        if (previewMatch.Success)
+            return (1, ParseOptionalNumber(previewMatch.Groups["n"].Value));
 
         var rcMatch = Regex.Match(suffix, @"^(rc)(?<n>\d*)$");
         if (rcMatch.Success)

@@ -31,8 +31,9 @@ $ErrorActionPreference = "Stop"
 # snapshot of cumulative release hashes and is no longer updated by this script.
 # This keeps the release commit == tag commit (no "1 commit ahead").
 #
-# Version source: the git tag at HEAD (e.g. v0.2.1, or v0.2.1b1 for a
-# prerelease patch; the v0.1.Xb beta series is retired as of GA). csproj
+# Version source: the git tag at HEAD (e.g. v0.2.1 for GA, or v0.3.2-preview1
+# for a numbered tester build; the v0.1.Xb beta series and the bN suffix are
+# both retired). csproj
 # <Version> stays at a clean numeric default; MSBuild's condition evaluator
 # OOMs on any non-numeric character in <Version> (trailing 'b', '-b', etc.),
 # so release labels are kept out of the csproj entirely.
@@ -55,10 +56,15 @@ if (-not $tag) {
     Write-Host "  .\publish-release.ps1" -ForegroundColor White
     exit 1
 }
-if ($tag -notmatch '^v\d+\.\d+\.\d+(b\d*)?$') {
-    Write-Host "`nERROR: tag '$tag' does not match v<major>.<minor>.<patch>[b[<patch-num>]] (e.g. v0.2.1, v0.2.1b1)." -ForegroundColor Red
+# Two tag shapes are minted: a clean vX.Y.Z for GA, or vX.Y.Z-previewN for a
+# numbered tester build (convention adopted 2026-09-08, mirroring SKCCLogger).
+# The retired bN suffix is still parsed by ReleaseUpdateService for old tags
+# but is no longer accepted here, so it cannot be minted by accident.
+if ($tag -notmatch '^v\d+\.\d+\.\d+(-preview\d+)?$') {
+    Write-Host "`nERROR: tag '$tag' does not match v<major>.<minor>.<patch>[-preview<N>] (e.g. v0.2.1, v0.3.2-preview1)." -ForegroundColor Red
     exit 1
 }
+$isPreview = $tag -match '-preview\d+$'
 $releaseLabel = $tag.Substring(1)   # strip leading 'v' for the embedded version string (SemVer convention)
 $sha = (& git rev-parse HEAD).Substring(0, 8).ToLowerInvariant()
 $infoVersion = "${releaseLabel}+${sha}"
@@ -76,6 +82,17 @@ Write-Host "Notes file:     RELEASE_NOTES-${tag}.md"
 # -----------------------------------------------------------------------------
 if ($Publish) {
     Write-Host "`n[1/2] Checking preconditions..." -ForegroundColor Yellow
+
+    # A preview never reaches GitHub Releases. Phase 2 hard-codes --latest, and
+    # the in-app updater in every build fielded before 2026-09-08 reads the
+    # releases list without skipping pre-releases, so publishing a preview tag
+    # in any form would prompt every operator on the previous GA. Previews are
+    # handed to testers as the phase 1 zip.
+    if ($isPreview) {
+        Write-Host "  ERROR: '$tag' is a preview tag. Previews are never published; hand out the phase 1 zip instead." -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "  Tag is a GA tag:         OK"
 
     $remoteTag = (& git ls-remote --tags origin "refs/tags/$tag" 2>$null)
     if (-not $remoteTag) {
@@ -110,8 +127,9 @@ if ($Publish) {
     Write-Host "  Release notes present:   OK"
 
     Write-Host "`n[2/2] Creating GitHub release..." -ForegroundColor Yellow
-    # --latest is hard-coded. The 'b' suffix on beta tags has tricked the wrong-flag
-    # mistake (--prerelease) twice before; this script does not expose that choice.
+    # --latest is hard-coded. The 'b' suffix on beta tags tricked the wrong-flag
+    # mistake (--prerelease) twice before; this script does not expose that choice,
+    # and the preview guard above refuses the only tags that could tempt it.
     # SHA256SUMS.txt is attached alongside the zip; nothing is committed here, so
     # origin/main HEAD == tag commit after publish.
     & gh release create $tag $zipPath $sumsPath `
