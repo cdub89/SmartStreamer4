@@ -254,6 +254,11 @@ public sealed class CwSkimmerWorkflowServiceTests
         public string ControlStation { get; set; } = string.Empty;
         public int? RfPowerWatts => null;
         public int? MaxRfPowerWatts => null;
+        public bool DiversityIsAllowed => false;
+        public Task SetSliceApfEnabledAsync(SliceInfo slice, bool enabled)        => Task.CompletedTask;
+        public Task SetSliceNrEnabledAsync(SliceInfo slice, bool enabled)         => Task.CompletedTask;
+        public Task SetSliceNbEnabledAsync(SliceInfo slice, bool enabled)         => Task.CompletedTask;
+        public Task SetSliceDiversityEnabledAsync(SliceInfo slice, bool enabled)  => Task.CompletedTask;
         public Task SetRfPowerAsync(int watts)                                    => Task.CompletedTask;
 
         public event Action<int?>? RfPowerChanged;

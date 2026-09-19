@@ -173,6 +173,32 @@ public sealed record SliceInfo(
     /// </summary>
     public bool XitEnabled { get; init; }
 
+    /// <summary>Audio peaking filter, on or off (issue #76).</summary>
+    /// <remarks>
+    /// State only, deliberately. FlexLib also exposes <c>APFLevel</c>, but
+    /// SmartSDR dropped the NR, NB and APF sliders in 4.1/4.2 and neither the
+    /// Maestro nor the SmartSDR client offers them, because the radio adapts
+    /// these itself. Driving the level from here would fight that adaptation.
+    /// The same reasoning covers <see cref="NrOn"/> and <see cref="NbOn"/>.
+    /// </remarks>
+    public bool ApfOn { get; init; }
+
+    /// <summary>Noise reduction, on or off. State only; see <see cref="ApfOn"/>.</summary>
+    public bool NrOn { get; init; }
+
+    /// <summary>Noise blanker, on or off. State only; see <see cref="ApfOn"/>.</summary>
+    public bool NbOn { get; init; }
+
+    /// <summary>
+    /// True when this slice is running diversity reception (issue #76).
+    /// </summary>
+    /// <remarks>
+    /// Only meaningful on a radio that allows it: see
+    /// <c>IRadioConnection.DiversityIsAllowed</c>, which is false on the 6300,
+    /// 6400, 6400M and 6500.
+    /// </remarks>
+    public bool DiversityOn { get; init; }
+
     /// <summary>
     /// The XIT offset in Hz, whether or not <see cref="XitEnabled"/> is set.
     /// The radio stores the offset and the on/off flag separately, so turning

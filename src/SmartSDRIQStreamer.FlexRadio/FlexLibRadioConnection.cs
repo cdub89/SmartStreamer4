@@ -467,6 +467,56 @@ public sealed class FlexLibRadioConnection : IRadioConnection
         return Task.CompletedTask;
     }
 
+    // ── Receive-chain toggles (issue #76) ────────────────────────────────────
+    //
+    // Four states, no levels. FlexLib exposes APFLevel, NRLevel and NBLevel too,
+    // but SmartSDR removed those sliders in 4.1/4.2 and the radio adapts them
+    // itself; writing them from here would fight that. Do not add level setters
+    // without checking whether SmartSDR has started exposing them again.
+    public Task SetSliceApfEnabledAsync(SliceInfo slice, bool enabled) =>
+        SetSliceFlagAsync(slice, enabled, static (s, v) => s.APFOn = v, static s => s.APFOn, "APF");
+
+    public Task SetSliceNrEnabledAsync(SliceInfo slice, bool enabled) =>
+        SetSliceFlagAsync(slice, enabled, static (s, v) => s.NROn = v, static s => s.NROn, "NR");
+
+    public Task SetSliceNbEnabledAsync(SliceInfo slice, bool enabled) =>
+        SetSliceFlagAsync(slice, enabled, static (s, v) => s.NBOn = v, static s => s.NBOn, "NB");
+
+    /// <inheritdoc/>
+    public Task SetSliceDiversityEnabledAsync(SliceInfo slice, bool enabled)
+    {
+        // Guarded rather than attempted-and-ignored: on a radio that does not
+        // allow diversity the write is meaningless, and the deck hides the
+        // button there anyway, so reaching this is a bug worth not masking.
+        if (!DiversityIsAllowed)
+        {
+            EmitDiag($"Slice {slice.Letter}: diversity ignored, radio does not allow it.");
+            return Task.CompletedTask;
+        }
+
+        return SetSliceFlagAsync(slice, enabled, static (s, v) => s.DiversityOn = v, static s => s.DiversityOn, "Diversity");
+    }
+
+    /// <inheritdoc/>
+    public bool DiversityIsAllowed => _radio is { Connected: true } radio && radio.DiversityIsAllowed;
+
+    // One shape for all four: no-op when the radio already holds the value, so
+    // our own echo does not loop, and one diagnostic line per real change.
+    private Task SetSliceFlagAsync(
+        SliceInfo slice,
+        bool enabled,
+        Action<Slice, bool> write,
+        Func<Slice, bool> read,
+        string label)
+    {
+        if (FindFlexSlice(slice) is { } target && read(target) != enabled)
+        {
+            write(target, enabled);
+            EmitDiag($"Slice {slice.Letter}: {label} {(enabled ? "on" : "off")}.");
+        }
+        return Task.CompletedTask;
+    }
+
     public Task SetPanadapterRfGainAsync(PanadapterInfo panadapter, int rfGain)
     {
         if (_flexPanadapters.TryGetValue(panadapter.StreamId, out var target) && target.RFGain != rfGain)
@@ -1131,7 +1181,12 @@ public sealed class FlexLibRadioConnection : IRadioConnection
             AgcThreshold = slc.AGCThreshold,
             IsTransmitSlice = slc.IsTransmitSlice,
             XitEnabled = slc.XITOn,
-            XitOffsetHz = slc.XITFreq
+            XitOffsetHz = slc.XITFreq,
+            // Issue #76. State only, no levels: see the remarks on SliceInfo.ApfOn.
+            ApfOn = slc.APFOn,
+            NrOn = slc.NROn,
+            NbOn = slc.NBOn,
+            DiversityOn = slc.DiversityOn
         };
 
     private static bool ShouldPublishSliceUpdate(string? propertyName)
@@ -1157,6 +1212,14 @@ public sealed class FlexLibRadioConnection : IRadioConnection
         // down, so a change of TX slice has to reach the UI even when nothing
         // else about the slice moved.
         if (propertyName is "IsTransmitSlice")
+            return true;
+
+        // Issue #76: the four receive-chain toggles. Named explicitly for the
+        // same reason XIT had to be (see below): none of them contains "RIT",
+        // so the fall-through would drop them and the buttons would light only
+        // for our own presses, never for a change made on the Maestro or in
+        // SmartSDR.
+        if (propertyName is "APFOn" or "NROn" or "NBOn" or "DiversityOn")
             return true;
 
         // FlexLib variants expose RIT state/offset and tune-step with different names.

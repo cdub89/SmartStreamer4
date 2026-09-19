@@ -28,7 +28,11 @@ public class SmartDeckViewModelTests
         bool ritEnabled = false,
         double ritOffsetHz = 0,
         bool xitEnabled = false,
-        double xitOffsetHz = 0) =>
+        double xitOffsetHz = 0,
+        bool apfOn = false,
+        bool nrOn = false,
+        bool nbOn = false,
+        bool diversityOn = false) =>
         new(letter, mode, freqMhz, ritEnabled, ritOffsetHz, tuneStepHz, PanadapterStreamId: 100, ClientStation: station)
         {
             RxAntenna = rxAnt,
@@ -38,7 +42,11 @@ public class SmartDeckViewModelTests
             TxAntennaOptions = ["ANT1", "ANT2"],
             IsTransmitSlice = isTransmitSlice,
             XitEnabled = xitEnabled,
-            XitOffsetHz = xitOffsetHz
+            XitOffsetHz = xitOffsetHz,
+            ApfOn = apfOn,
+            NrOn = nrOn,
+            NbOn = nbOn,
+            DiversityOn = diversityOn
         };
 
     // ── Absent renders as dashes ─────────────────────────────────────────────

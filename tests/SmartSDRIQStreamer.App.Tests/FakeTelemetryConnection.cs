@@ -103,6 +103,18 @@ internal sealed class FakeTelemetryConnection : IRadioConnection
     /// <summary>Sets the slice list the ViewModel reads on refresh.</summary>
     public void SetSlices(params SliceInfo[] slices) => _slices = slices;
 
+    /// <summary>
+    /// Replaces a slice by letter and announces it, as the radio does when any
+    /// client changes something on that slice.
+    /// </summary>
+    public void UpdateSlice(SliceInfo updated)
+    {
+        _slices = _slices
+            .Select(s => string.Equals(s.Letter, updated.Letter, StringComparison.Ordinal) ? updated : s)
+            .ToArray();
+        SliceUpdated?.Invoke(updated);
+    }
+
     // ── RIT and XIT (issue #73) ──────────────────────────────────────────────
 
     public List<(string Letter, bool Enabled)> RitEnableWrites { get; } = [];
@@ -141,6 +153,50 @@ internal sealed class FakeTelemetryConnection : IRadioConnection
     public Task SetSliceAgcThresholdAsync(SliceInfo slice, int threshold)
     {
         AgcThresholdWrites.Add((slice, threshold));
+        return Task.CompletedTask;
+    }
+
+    // ── Receive-chain toggles (issue #76) ────────────────────────────────────
+
+    /// <summary>Every toggle write, in order, so a test can assert what the deck asked for.</summary>
+    public List<(string Control, string Letter, bool Enabled)> ToggleWrites { get; } = [];
+
+    /// <summary>
+    /// Whether this stand-in radio allows diversity. False by default, matching
+    /// the 6300/6400/6500; set it true for a 6600 or Aurora.
+    /// </summary>
+    public bool DiversityIsAllowed { get; set; }
+
+    public Task SetSliceApfEnabledAsync(SliceInfo slice, bool enabled) => RecordToggle("APF", slice, enabled);
+    public Task SetSliceNrEnabledAsync(SliceInfo slice, bool enabled) => RecordToggle("NR", slice, enabled);
+    public Task SetSliceNbEnabledAsync(SliceInfo slice, bool enabled) => RecordToggle("NB", slice, enabled);
+
+    public Task SetSliceDiversityEnabledAsync(SliceInfo slice, bool enabled)
+    {
+        // Mirrors the real connection, which refuses the write on a radio that
+        // does not allow diversity rather than letting it through.
+        if (!DiversityIsAllowed) return Task.CompletedTask;
+        return RecordToggle("DIV", slice, enabled);
+    }
+
+    /// <summary>
+    /// Records the write and echoes the new state back on the slice, as the
+    /// radio does: FlexLib raises the slice property for our own writes as well
+    /// as another client's, which is what lets the buttons follow the Maestro.
+    /// </summary>
+    private Task RecordToggle(string control, SliceInfo slice, bool enabled)
+    {
+        ToggleWrites.Add((control, slice.Letter, enabled));
+
+        var updated = control switch
+        {
+            "APF" => slice with { ApfOn = enabled },
+            "NR"  => slice with { NrOn = enabled },
+            "NB"  => slice with { NbOn = enabled },
+            _     => slice with { DiversityOn = enabled },
+        };
+
+        UpdateSlice(updated);
         return Task.CompletedTask;
     }
 

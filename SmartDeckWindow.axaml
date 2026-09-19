@@ -1,4 +1,4 @@
-<Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -109,20 +109,6 @@
             <Setter Property="Margin" Value="1,-2,0,0"/>
         </Style>
 
-        <!-- Centred variant, for a heading captioning one compact control rather
-             than naming a wide grid of them (operator-reported, issue #59 live
-             feedback). The section headings (Band, RX and TX antenna) stay left:
-             over a full-width button grid a centred heading floats away from the
-             edge the grid starts at. Left margin drops to zero, since the 1px
-             inset that keeps a left-aligned heading off the edge would otherwise
-             bias the centring. Must stay declared after the base style above:
-             Avalonia resolves competing setters by declaration order, not by
-             selector specificity, so the base Margin would win from up there. -->
-        <Style Selector="TextBlock.group-label.control-caption">
-            <Setter Property="HorizontalAlignment" Value="Center"/>
-            <Setter Property="Margin" Value="0,0,0,1"/>
-        </Style>
-
         <!-- Uniform margin rather than a trailing one, so a row of buttons ends
              flush with the group above it instead of 4px short. The host panel
              cancels the outer edge with a matching negative margin. -->
@@ -164,6 +150,29 @@
             <Setter Property="Background" Value="{DynamicResource AppAccentHoverBrush}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource AppAccentHoverBrush}"/>
             <Setter Property="TextElement.Foreground" Value="{DynamicResource AppOnAccentBrush}"/>
+        </Style>
+
+        <!-- A disabled deck button, declared after both the base rule and the
+             lit ones on purpose: Avalonia resolves competing setters by
+             declaration order, not selector specificity. The base rule above
+             pins this same content presenter's ink at full strength, which is
+             how Fluent's own disabled grey was being overridden, and that is
+             what left DIV looking live on a radio that cannot do diversity
+             (operator-reported on a 6400M, 2026-09-19). The button was really
+             disabled and ignoring clicks the whole time; only the rendering
+             lied. The grey therefore has to be restated here rather than
+             dropped above, where the lit styles still need it.
+
+             Opacity as well as ink, so a button that is lit and disabled fades
+             its accent fill too rather than showing muted text on a
+             full-strength accent. Applies to every deck button that can
+             disable, not just DIV: the power button greys on a radio that
+             cannot report power the same way. -->
+        <Style Selector="Button.deck-button:disabled">
+            <Setter Property="Opacity" Value="0.5"/>
+        </Style>
+        <Style Selector="Button.deck-button:disabled /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="TextElement.Foreground" Value="{DynamicResource AppMutedBrush}"/>
         </Style>
 
         <!-- RIT and XIT offsets (issue #73). Label and value share one type
@@ -384,9 +393,22 @@
                  TextBlock hit-testable in Avalonia; it is not a visual change.
                  Wheel-only would be undiscoverable, hence the tooltips, the
                  same call TX power already made. -->
+            <!-- Issue #76: RF gain and AGC-T joined this row in the same inline
+                 style, and their -/+ steppers below were deleted. Nothing was
+                 lost with them: F1-F4 are still bound to RF gain and AGC-T
+                 up/down, and the wheel already worked across the whole group,
+                 so only a click target went. That is what paid for the four
+                 receive-chain buttons on the strip below.
+
+                 IsEnabled, not IsVisible (changed 2026-09-19). Collapsing this
+                 row moved the deck's height at runtime, and now that RF gain
+                 lives here it would also hide a panadapter control that stays
+                 valid with no slice selected. Greying holds one fixed height in
+                 every state, which is what the band and antenna rows already
+                 do. Do not switch this back to IsVisible. -->
             <StackPanel Orientation="Horizontal"
                         HorizontalAlignment="Center"
-                        IsVisible="{Binding HasSelectedSlice}"
+                        IsEnabled="{Binding HasSelectedSlice}"
                         Margin="0,1,0,0">
                 <StackPanel Orientation="Horizontal"
                             Background="Transparent"
@@ -398,12 +420,33 @@
                 </StackPanel>
                 <StackPanel Orientation="Horizontal"
                             Background="Transparent"
-                            Margin="12,0,0,0"
+                            Margin="10,0,0,0"
                             PointerWheelChanged="OnXitWheel"
                             Tapped="OnXitTapped"
                             ToolTip.Tip="XIT. Click to engage or release, mouse wheel to shift the transmit offset 10 Hz a step.">
                     <TextBlock Classes="offset-label" Classes.on="{Binding IsXitEnabled}" Text="XIT"/>
                     <TextBlock Classes="offset-value" Classes.on="{Binding IsXitEnabled}" Text="{Binding XitText}"/>
+                </StackPanel>
+                <!-- No Tapped handler on these two: they carry a value but no
+                     state, so a click has nothing to mean. The deck's rule is
+                     that a control answers whatever it actually has, which is
+                     why DIV below is the mirror image, a click with no wheel. -->
+                <StackPanel Orientation="Horizontal"
+                            Background="Transparent"
+                            Margin="10,0,0,0"
+                            IsEnabled="{Binding CanAdjustRfGain}"
+                            PointerWheelChanged="OnRfGainWheel"
+                            ToolTip.Tip="RF gain. Mouse wheel to change, or F1 and F2.">
+                    <TextBlock Classes="offset-label" Text="RF"/>
+                    <TextBlock Classes="offset-value" Text="{Binding RfGainText}"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal"
+                            Background="Transparent"
+                            Margin="10,0,0,0"
+                            PointerWheelChanged="OnAgcThresholdWheel"
+                            ToolTip.Tip="AGC-T. Mouse wheel to change, or F3 and F4.">
+                    <TextBlock Classes="offset-label" Text="AGC-T"/>
+                    <TextBlock Classes="offset-value" Text="{Binding AgcThresholdText}"/>
                 </StackPanel>
             </StackPanel>
             </StackPanel>
@@ -532,124 +575,89 @@
             </StackPanel>
         </Grid>
 
-        <!-- RF gain is a panadapter property with a radio-reported range; AGC-T
-             is slice-scoped with a protocol-fixed one. They pair here because
-             both step an integer, and both carry their FRStack accelerator.
-             TX power joins them as a readout with one button rather than a
-             third stepper, so it takes only the width it needs.
+        <!-- Issue #76: the receive-chain strip, which replaced the RF gain and
+             AGC-T steppers. Those two moved up to the RIT/XIT row as inline
+             pairs and their -/+ buttons were deleted; F1-F4 still drive them
+             and the wheel already covered the whole group, so only a click
+             target went. That is what paid for these four controls, and the
+             deck comes out a line shorter than before rather than taller.
 
-             Each stepper brackets its own readout: minus, value, plus. The
-             previous shape put both buttons after the value, which meant every
-             group's "+" ended up flush against the *next* group's number, and
-             the three groups overflowed their columns badly enough that the
-             gutter between them collapsed to nothing. The value read as
-             belonging to the buttons on its left rather than its right
-             (operator-reported, issue #59 live feedback). Bracketing makes the
-             grouping true at any spacing, so it cannot regress into the same
-             ambiguity if a readout grows a digit. Do not move the buttons back
-             to one side.
+             APF, NR and NB are on/off only. FlexLib carries a level for each,
+             but SmartSDR removed those sliders in 4.1/4.2 and the radio adapts
+             them itself (operator, 2026-09-19), so the wheel does nothing on
+             them. Do not add level steppers here.
 
-             Readouts keep a minimum width, now sized per group to its own
-             widest real value rather than a shared 44px, so the buttons hold
-             still as the number changes without the leftover slack reopening
-             the gap this fixed. The min is a floor, not a cap: a wider value
-             grows its Auto column instead of clipping. -->
-        <Grid Grid.Row="3" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-            <!-- Wheel handlers sit on the whole group, caption and buttons
-                 included, so the target is the largest sane one: the operator
-                 puts the pointer near the number, not on a 30px button. The
-                 buttons ignore the wheel themselves, so it bubbles up to here.
-                 IsEnabled already gates each group, and a disabled control
-                 receives no pointer input, so the wheel is gated with it. -->
-            <StackPanel Grid.Column="0" IsEnabled="{Binding CanAdjustRfGain}"
-                        Background="Transparent"
-                        PointerWheelChanged="OnRfGainWheel">
-                <TextBlock Classes="group-label control-caption" Text="RF gain"/>
-                <Grid ColumnDefinitions="Auto,Auto,Auto">
-                    <Button Grid.Column="0" Classes="deck-button" Content="&#x2212;" MinWidth="30"
-                            Command="{Binding RfGainDownCommand}"/>
-                    <TextBlock Grid.Column="1"
-                               Text="{Binding RfGainText}"
-                               FontSize="13"
-                               FontWeight="SemiBold"
-                               TextAlignment="Center"
-                               VerticalAlignment="Center"
-                               MinWidth="44"
-                               Margin="2,0"/>
-                    <Button Grid.Column="2" Classes="deck-button" Content="+" MinWidth="30"
-                            Command="{Binding RfGainUpCommand}"/>
-                </Grid>
-            </StackPanel>
+             DIV greys out rather than hiding on a radio that does not allow
+             diversity (operator, 2026-09-19; his own 6400M is one). Hiding it
+             would change the strip's width and alignment between radios, and
+             the deck's whole geometry constraint is that nothing moves. A
+             disabled button holds its cell and reads as "this radio cannot".
 
-            <!-- Centred in the slack column so the two gutters either side of it
-                 come out even, rather than piling all the leftover width on one
-                 side of the row. -->
-            <StackPanel Grid.Column="1" HorizontalAlignment="Center" IsEnabled="{Binding HasSelectedSlice}"
-                        Background="Transparent"
-                        PointerWheelChanged="OnAgcThresholdWheel">
-                <TextBlock Classes="group-label control-caption" Text="AGC-T"/>
-                <Grid ColumnDefinitions="Auto,Auto,Auto">
-                    <Button Grid.Column="0" Classes="deck-button" Content="&#x2212;" MinWidth="30"
-                            Command="{Binding AgcThresholdDownCommand}"/>
-                    <TextBlock Grid.Column="1"
-                               Text="{Binding AgcThresholdText}"
-                               FontSize="13"
-                               FontWeight="SemiBold"
-                               TextAlignment="Center"
-                               VerticalAlignment="Center"
-                               MinWidth="24"
-                               Margin="2,0"/>
-                    <Button Grid.Column="2" Classes="deck-button" Content="+" MinWidth="30"
-                            Command="{Binding AgcThresholdUpCommand}"/>
-                </Grid>
-            </StackPanel>
+             IsEnabled rather than IsVisible, same as the header row: the deck
+             holds one height in every state. -->
+        <!-- Five equal columns so the strip fills the deck's fixed 360px width
+             rather than packing left and leaving a hole before the power button
+             (operator, after live test 2026-09-19). Equal rather than weighted:
+             at this width every column lands near 64px, comfortably past the
+             widest label ("QRO" and a three-digit wattage), so nothing needs a
+             bigger share. Matches the telemetry footer's own *,*,*,* row.
+             Spacing comes from the deck-button style's uniform 2px margin, the
+             same as every other button on the deck: do not add per-button
+             margins back here, they were what made the gutters uneven. -->
+        <Grid Grid.Row="3" ColumnDefinitions="*,*,*,*,*"
+              IsEnabled="{Binding HasSelectedSlice}">
+            <Button Grid.Column="0"
+                    Classes="deck-button"
+                    Classes.lit="{Binding IsDiversityOn}"
+                    IsEnabled="{Binding IsDiversityAvailable}"
+                    Content="DIV"
+                    MinWidth="42"
+                    ToolTip.Tip="Diversity reception. Greyed out on radios that do not support it."
+                    Command="{Binding ToggleDiversityCommand}"/>
+            <Button Grid.Column="1"
+                    Classes="deck-button"
+                    Classes.lit="{Binding IsApfOn}"
+                    Content="APF"
+                    MinWidth="42"
+                    ToolTip.Tip="Audio peaking filter. The radio sets its own level."
+                    Command="{Binding ToggleApfCommand}"/>
+            <Button Grid.Column="2"
+                    Classes="deck-button"
+                    Classes.lit="{Binding IsNbOn}"
+                    Content="NB"
+                    MinWidth="42"
+                    ToolTip.Tip="Noise blanker. The radio sets its own level."
+                    Command="{Binding ToggleNbCommand}"/>
+            <Button Grid.Column="3"
+                    Classes="deck-button"
+                    Classes.lit="{Binding IsNrOn}"
+                    Content="NR"
+                    MinWidth="42"
+                    ToolTip.Tip="Noise reduction. The radio sets its own level."
+                    Command="{Binding ToggleNrCommand}"/>
 
-            <!-- The readout is the setting the radio will transmit at, which is
-                 what the operator needs to see to know what QRP will give back.
-                 The "Fwd" telemetry above is the measured forward power, a
-                 different number. QRP lights while the deck is holding a power
-                 to return to, and stands down on its own if the power changes
-                 elsewhere. One labelled button rather than a stepper, so there
-                 is no bracketing to do here. -->
-            <!-- The only group whose wheel is not an accelerator for a button:
-                 TX power has no stepper, so the wheel is its fine adjustment,
-                 one watt a notch (operator request, issue #65). Wheel-only
-                 means undiscoverable, hence the tooltip on the readout. -->
-            <StackPanel Grid.Column="2" IsEnabled="{Binding CanToggleQrp}"
-                        Background="Transparent"
-                        PointerWheelChanged="OnTxPowerWheel">
-                <TextBlock Classes="group-label control-caption" Text="TX power"/>
-                <Grid ColumnDefinitions="Auto,Auto">
-                    <TextBlock Grid.Column="0"
-                               ToolTip.Tip="Mouse wheel adjusts transmit power one watt at a time."
-                               Text="{Binding TxPowerText}"
-                               FontSize="13"
-                               FontWeight="SemiBold"
-                               TextAlignment="Right"
-                               VerticalAlignment="Center"
-                               MinWidth="38"
-                               Margin="2,0"/>
-                    <!-- Issue #70, operator-specified 2026-08-25. Two states,
-                         QRP and not-QRP, the latter labelled QRO. The label is
-                         a state readout, so 54 W reads QRO (you are not at
-                         QRP); lit keeps the deck's one meaning and marks the
-                         two exact preset powers, 5 W and 100 W. Pressing
-                         toggles the state, so the first press from an ordinary
-                         power drops to QRP as the original button did. A first
-                         pass shipped with no lit state at all and the operator
-                         caught it in live test: every other control on the deck
-                         lights and this one had stopped. MinWidth covers both
-                         words, which are the same length, so the row does not
-                         shift. -->
-                    <Button Grid.Column="1"
-                            Classes="deck-button"
-                            Classes.lit="{Binding IsPresetActive}"
-                            Content="{Binding TxPresetText}"
-                            MinWidth="40"
-                            ToolTip.Tip="Transmit power presets. Lit shows the preset in force; pressing moves to the other one. QRP is 5 W and QRO is 100 W; any other power is set on the readout wheel or in SmartSDR."
-                            Command="{Binding ToggleQrpCommand}"/>
-                </Grid>
-            </StackPanel>
+            <!-- One button for power now, not a readout plus a button: a bare
+                 number sitting beside four toggles read as odd (operator,
+                 2026-09-19). It names the state at rest and shows the wattage
+                 while the wheel moves it, lingering two seconds afterwards so a
+                 single detent is readable. That makes this the only place the
+                 power *setting* appears; "Fwd" in the footer is measured
+                 forward power and reads zero on receive, a different number.
+
+                 Lit still means the deck's one thing, the value in force: here,
+                 sitting on one of the two presets. The label can no longer
+                 shift the strip at all now that the column is a fixed share of
+                 the width; MinWidth stays only as a floor covering "QRP", "QRO"
+                 and a three-digit wattage if the deck is ever narrowed. -->
+            <Button Grid.Column="4"
+                    Classes="deck-button"
+                    Classes.lit="{Binding IsPresetActive}"
+                    Content="{Binding TxButtonText}"
+                    IsEnabled="{Binding CanToggleQrp}"
+                    MinWidth="54"
+                    PointerWheelChanged="OnTxPowerWheel"
+                    ToolTip.Tip="Transmit power. Click toggles QRP and QRO; mouse wheel sets the watts, shown here while you turn it."
+                    Command="{Binding ToggleQrpCommand}"/>
         </Grid>
 
         <!-- Telemetry stays the footer, spread across the full width above its

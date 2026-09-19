@@ -147,6 +147,38 @@ public interface IRadioConnection
     /// </summary>
     Task SetSliceAgcThresholdAsync(SliceInfo slice, int threshold);
 
+    // ── Receive-chain toggles (issue #76) ────────────────────────────────────
+    //
+    // On/off only. FlexLib also carries APFLevel, NRLevel and NBLevel, but
+    // SmartSDR removed those sliders in 4.1/4.2 and the radio adapts the levels
+    // itself, so the deck does not drive them.
+
+    /// <summary>Turn the audio peaking filter on or off for the slice.</summary>
+    Task SetSliceApfEnabledAsync(SliceInfo slice, bool enabled);
+
+    /// <summary>Turn noise reduction on or off for the slice.</summary>
+    Task SetSliceNrEnabledAsync(SliceInfo slice, bool enabled);
+
+    /// <summary>Turn the noise blanker on or off for the slice.</summary>
+    Task SetSliceNbEnabledAsync(SliceInfo slice, bool enabled);
+
+    /// <summary>
+    /// Turn diversity reception on or off for the slice. No-op when
+    /// <see cref="DiversityIsAllowed"/> is false.
+    /// </summary>
+    Task SetSliceDiversityEnabledAsync(SliceInfo slice, bool enabled);
+
+    /// <summary>
+    /// True when this radio supports diversity reception (issue #76).
+    /// </summary>
+    /// <remarks>
+    /// Radio-reported, with a FlexLib model fallback for older firmware. False
+    /// on the 6300, 6400, 6400M and 6500, so a diversity control has to hide
+    /// rather than sit dead on those radios. Read this rather than testing the
+    /// model name: the radio knows and the model list goes stale.
+    /// </remarks>
+    bool DiversityIsAllowed { get; }
+
     /// <summary>
     /// Set the panadapter's RF gain, in dB. Callers clamp to the panadapter's
     /// radio-reported range first (see <see cref="SteppedRange.Next"/>); this
