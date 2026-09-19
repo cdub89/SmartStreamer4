@@ -216,6 +216,12 @@ public sealed class FlexLibRadioConnection : IRadioConnection
                 _rfPowerReported = true;
                 RfPowerChanged?.Invoke(RfPowerWatts);
                 break;
+            // The PA rating scales every watt figure we report (issue #77), and
+            // it can land after the first RFPower status, so a late arrival has
+            // to re-publish or the deck keeps showing the pre-rating number.
+            case "MaxInternalPaPowerWatts":
+                if (_rfPowerReported) RfPowerChanged?.Invoke(RfPowerWatts);
+                break;
             case "NetworkPing":
             case "RemoteNetworkQuality":
                 PublishNetworkStatus();
@@ -528,12 +534,56 @@ public sealed class FlexLibRadioConnection : IRadioConnection
     // Written from the binding path, read on FlexLib event threads.
     private volatile bool _boundToStation;
 
+    // Bug fix 2026-09-19 (issue #77, reported by an Aurora operator 2026-09-10:
+    // "TX power indicator times 5 for the Aurora 500 Watt transceiver").
+    // Symptom: on a 500 W radio the deck read 100 W at full power and QRP set
+    // 25 W, not 5 W. Root cause: Radio.RFPower is a 0-100 *percentage* of the
+    // radio's rated output, not watts, despite FlexLib's own comment calling it
+    // "Watts, from 0 to 100" (Radio.cs:8368). On a 100 W radio the two numbers
+    // coincide, which is why every earlier radio read correctly by accident.
+    // Fixed here rather than in the ViewModel so this class stays the only code
+    // that knows RFPower is a percentage; everything above it is in watts and
+    // is now true rather than true-by-coincidence. A per-model watts table was
+    // rejected: the radio reports its own rating, so there is nothing to keep.
+    // Codex deep audit 2026-09-19 raised this as High: FlexLib initialises
+    // MaxInternalPaPowerWatts to 100 (Radio.cs:11993), so a default is
+    // indistinguishable from a reported 100 W rating, and an Aurora whose
+    // rfpower status beat its max_internal_pa_power status would scale against
+    // 100 and put 25 W behind a QRP press. Read and rejected, for two reasons.
+    //
+    // It is not reachable: the issue #64 bind sequence below clears
+    // _rfPowerReported *after* binding and publishes null, and the connect-time
+    // status burst lands before the bind (see the comment at BindToStation).
+    // Nothing is published until the radio reports RFPower again in the bound
+    // context, by which time the rating from that earlier burst is already in
+    // hand. The MaxInternalPaPowerWatts case in the property handler covers the
+    // remaining case of a rating that genuinely changes later.
+    //
+    // And the proposed fix would be worse than the bug. Gating on a "rating
+    // reported" flag set from the property path cannot work: FlexLib's setter
+    // returns early when the value is unchanged, so a 100 W radio reporting its
+    // true 100 W raises no PropertyChanged at all. The flag would stay false on
+    // every FLEX-6000 and 8000 ever made, leaving RfPowerWatts permanently null
+    // and SmartDeck's power control dead for almost every operator.
+    //
+    // Do not add that flag. If this ever does need hardening, the signal has to
+    // come from the status text, not the property.
+    private int? MaxPaWattsOrNull =>
+        _boundToStation && _radio is { Connected: true } radio && radio.MaxInternalPaPowerWatts > 0
+            ? radio.MaxInternalPaPowerWatts
+            : null;
+
+    /// <inheritdoc/>
+    public int? MaxRfPowerWatts => MaxPaWattsOrNull;
+
     // Absent until the radio has reported a power *in the station's context*.
     // The bind requirement is the whole lesson of issue #64: an unbound client
     // is told a fictional 100 W, and SmartDeck saving that as the power to
     // return to would write it over the operator's real setting.
     public int? RfPowerWatts =>
-        _boundToStation && _rfPowerReported && _radio is { Connected: true } radio ? radio.RFPower : null;
+        _boundToStation && _rfPowerReported && _radio is { Connected: true } radio && MaxPaWattsOrNull is { } max
+            ? PercentToWatts(radio.RFPower, max)
+            : null;
 
     public event Action<int?>? RfPowerChanged;
 
@@ -546,10 +596,31 @@ public sealed class FlexLibRadioConnection : IRadioConnection
         // naming what it saved or restored, which says more than a bare write
         // would, and a slider drag would otherwise put a line on the log per
         // step (same reasoning as the band-restore summary line).
-        if (_radio is { Connected: true } radio && radio.RFPower != watts)
-            radio.RFPower = watts;
+        if (_radio is { Connected: true } radio && MaxPaWattsOrNull is { } max)
+        {
+            var percent = WattsToPercent(watts, max);
+            if (radio.RFPower != percent)
+                radio.RFPower = percent;
+        }
         return Task.CompletedTask;
     }
+
+    /// <summary>Watts the radio delivers at <paramref name="percent"/> of a <paramref name="maxWatts"/> PA.</summary>
+    /// <remarks>
+    /// Truncating rather than rounding, so the reported watts never overstate
+    /// what the radio will actually transmit. Exact on a 100 W radio, where the
+    /// percentage and the wattage are the same integer.
+    /// </remarks>
+    internal static int PercentToWatts(int percent, int maxWatts) => percent * maxWatts / 100;
+
+    /// <summary>The 0-100 setting that gets closest to <paramref name="watts"/> on a <paramref name="maxWatts"/> PA.</summary>
+    /// <remarks>
+    /// Rounds to nearest because the radio's granularity is one percent of
+    /// rated output: 5 W of a 500 W PA is reachable exactly (1%), 7 W is not
+    /// and lands on 5 W. Clamped so a caller cannot write past the PA.
+    /// </remarks>
+    internal static int WattsToPercent(int watts, int maxWatts) =>
+        Math.Clamp((int)Math.Round(watts * 100.0 / maxWatts, MidpointRounding.AwayFromZero), 0, 100);
 
     // No MOX guard on either antenna setter: the radio itself refuses antenna
     // changes while transmitting, so a guard here would be app-side code

@@ -7,6 +7,13 @@
     <RootNamespace>SDRIQStreamer.FlexRadio</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <!-- This module has no test project of its own: almost everything in it
+         needs a live Radio and is covered by the live-radio smoke instead. The
+         few pure helpers that are unit-testable (the issue #77 power
+         conversions) are tested from App.Tests, which already references this
+         assembly transitively. Same pattern the CWSkimmer and Digital modules
+         use for their own test projects. -->
+    <InternalsVisibleTo Include="SmartSDRIQStreamer.App.Tests" />
     <ProjectReference Include="..\..\FlexLib_API_v4.2.20.41343\FlexLib\FlexLib.csproj" />
   </ItemGroup>
 </Project>

@@ -253,6 +253,7 @@ public sealed class CwSkimmerWorkflowServiceTests
         public Task SetSliceXitOffsetAsync(SliceInfo slice, int offsetHz)        => Task.CompletedTask;
         public string ControlStation { get; set; } = string.Empty;
         public int? RfPowerWatts => null;
+        public int? MaxRfPowerWatts => null;
         public Task SetRfPowerAsync(int watts)                                    => Task.CompletedTask;
 
         public event Action<int?>? RfPowerChanged;

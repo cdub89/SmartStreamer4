@@ -196,16 +196,34 @@ public interface IRadioConnection
     int? RfPowerWatts { get; }
 
     /// <summary>
+    /// The radio's rated PA output in watts, or <c>null</c> until the radio has
+    /// reported it in the station's context.
+    /// </summary>
+    /// <remarks>
+    /// Issue #77. This is the ceiling <see cref="RfPowerWatts"/> is measured
+    /// against, and it is not always 100: a FLEX-6000 or 8000 reports 100, an
+    /// Aurora (AU-520) reports 500. Callers that offer a full-power preset or
+    /// step the power should read the ceiling from here rather than assuming
+    /// one, which is the bug this property exists to prevent.
+    /// </remarks>
+    int? MaxRfPowerWatts { get; }
+
+    /// <summary>
     /// Fires when the radio reports a new transmit power, whether we asked for
     /// it or another client did. May fire off the UI thread.
     /// </summary>
     event Action<int?> RfPowerChanged;
 
     /// <summary>
-    /// Set the radio's transmit power, in watts. FlexLib clamps to 0-100
-    /// itself, so callers need not. No-op while disconnected or when the radio
-    /// already holds the value.
+    /// Set the radio's transmit power, in watts. Clamped to the radio's rated
+    /// output, so callers need not. No-op while disconnected, before the radio
+    /// has reported its rating, or when it already holds the value.
     /// </summary>
+    /// <remarks>
+    /// Watts are converted to the radio's 0-100 setting on the way down, so a
+    /// value the radio cannot represent lands on the nearest one it can: on a
+    /// 500 W PA the granularity is 5 W (issue #77).
+    /// </remarks>
     /// <remarks>
     /// This changes what a subsequent transmission will do; it does not key the
     /// radio.

@@ -152,6 +152,12 @@ internal sealed class FakeTelemetryConnection : IRadioConnection
 
     public int? RfPowerWatts { get; private set; }
 
+    /// <summary>
+    /// Rated PA output (issue #77). Defaults to 100 so existing tests read the
+    /// same numbers they always did; set it to 500 to stand in for an Aurora.
+    /// </summary>
+    public int? MaxRfPowerWatts { get; set; } = 100;
+
     public event Action<int?>? RfPowerChanged;
 
     /// <summary>

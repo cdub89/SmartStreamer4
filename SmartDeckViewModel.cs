@@ -684,8 +684,20 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
     /// </summary>
     private const int QrpMinWatts = 1;
 
-    /// <summary>The power the QRO preset returns to, in watts (issue #70).</summary>
-    private const int QroWatts = 100;
+    /// <summary>
+    /// The power the QRO preset returns to, in watts: the radio's full rated
+    /// output (issue #70, corrected for issue #77).
+    /// </summary>
+    /// <remarks>
+    /// Was a hard-coded 100, which made QRO mean one fifth of full power on a
+    /// 500 W Aurora. The radio reports its own rating, so read it rather than
+    /// assume it. Falls back to 100 only when the radio has not reported yet,
+    /// and in that state every power control is already disabled.
+    /// </remarks>
+    private int QroWatts => _connection.MaxRfPowerWatts ?? FallbackMaxWatts;
+
+    /// <summary>Rated output assumed before the radio reports one. Every power control is disabled here.</summary>
+    private const int FallbackMaxWatts = 100;
 
     /// <summary>
     /// The power the deck last saw the radio at, or last wrote to it. Decides
@@ -830,12 +842,15 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
     /// </summary>
     private const int FallbackTuneStepHz = 50;
 
-    // FlexLib clamps RF power to 0-100 in its own setter (Radio.cs:8377-8379),
-    // and on a 100 W radio one unit is one watt. Sub-watt output is not
-    // expressible through this API at all: below 1 W the only value is 0.
+    // The radio's power setting is a 0-100 percentage of its rated output
+    // (issue #77), so both the ceiling and the step size scale with the radio:
+    // 100 W in 1 W steps on a FLEX-6000, 500 W in 5 W steps on an Aurora.
+    // Finer than one percent is not expressible through this API at all, so a
+    // 1 W step on a 500 W PA would silently quantise back to 5 W and the wheel
+    // would look stuck for four notches out of five.
     private const int TxPowerLow = 0;
-    private const int TxPowerHigh = 100;
-    private const int TxPowerStep = 1;
+    private int TxPowerHigh => QroWatts;
+    private int TxPowerStep => Math.Max(1, QroWatts / 100);
 
     // The value the wheel is steering towards, held locally while a write is in
     // flight. Every control needs one: the radio's echo of notch N has not

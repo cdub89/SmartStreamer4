@@ -895,13 +895,79 @@ public class SmartDeckViewModelTests
     // than being defended against. Do not reintroduce a remembered power.
 
     private static (FakeTelemetryConnection Connection, SmartDeckViewModel ViewModel) DeckAtPower(int? watts)
+        => DeckAtPower(watts, maxWatts: 100);
+
+    /// <summary>
+    /// A deck on a radio rated <paramref name="maxWatts"/>. Issue #77: every
+    /// test above this one runs at 100 W, where the radio's percentage setting
+    /// and its wattage are the same integer. Pass 500 for an Aurora, where they
+    /// are not, which is the case the old hard-coded ceiling got wrong.
+    /// </summary>
+    private static (FakeTelemetryConnection Connection, SmartDeckViewModel ViewModel) DeckAtPower(int? watts, int maxWatts)
     {
-        var connection = new FakeTelemetryConnection();
+        var connection = new FakeTelemetryConnection { MaxRfPowerWatts = maxWatts };
         connection.SetSlices(Slice("A"));
         connection.ReportRfPower(watts);
         var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
         viewModel.Start();
         return (connection, viewModel);
+    }
+
+    [Fact]
+    public void QRO_on_a_500W_radio_returns_to_500W_not_100W()
+    {
+        // The reported bug (issue #77). QRO meant a hard-coded 100 W, which on
+        // an Aurora is one fifth of the radio rather than full power.
+        var (connection, viewModel) = DeckAtPower(5, maxWatts: 500);
+
+        Assert.Equal("QRP", viewModel.TxPresetText);
+
+        viewModel.ToggleQrpCommand.Execute(null);
+
+        Assert.Equal(500, Assert.Single(connection.RfPowerWrites));
+        Assert.Equal("500 W", viewModel.TxPowerText);
+        Assert.Equal("QRO", viewModel.TxPresetText);
+        Assert.True(viewModel.IsPresetActive);
+    }
+
+    [Fact]
+    public void QRP_still_means_five_watts_on_a_500W_radio()
+    {
+        // The other half of the report: QRP is a wattage, not a percentage, so
+        // it must not scale with the PA. 5 W is reachable exactly on a 500 W
+        // radio because the granularity is 1% of rated output.
+        var (connection, viewModel) = DeckAtPower(500, maxWatts: 500);
+
+        viewModel.ToggleQrpCommand.Execute(null);
+
+        Assert.Equal(5, Assert.Single(connection.RfPowerWrites));
+        Assert.Equal("5 W", viewModel.TxPowerText);
+        Assert.Equal("QRP", viewModel.TxPresetText);
+    }
+
+    [Fact]
+    public void The_wheel_steps_one_percent_of_the_radios_rating()
+    {
+        // A 1 W step on a 500 W PA is not expressible, so the radio would
+        // quantise four notches out of five back to where they started and the
+        // wheel would look stuck. Stepping 5 W keeps every notch a real move.
+        var (_, viewModel) = DeckAtPower(250, maxWatts: 500);
+
+        viewModel.NudgeTxPower(1);
+        Assert.Equal("255 W", viewModel.TxPowerText);
+
+        viewModel.NudgeTxPower(-3);
+        Assert.Equal("240 W", viewModel.TxPowerText);
+    }
+
+    [Fact]
+    public void The_wheel_cannot_steer_past_the_radios_rating()
+    {
+        var (_, viewModel) = DeckAtPower(490, maxWatts: 500);
+
+        viewModel.NudgeTxPower(50);
+
+        Assert.Equal("500 W", viewModel.TxPowerText);
     }
 
     [Fact]
