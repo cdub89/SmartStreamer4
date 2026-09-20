@@ -168,8 +168,7 @@
              Opacity as well as ink, so a button that is lit and disabled fades
              its accent fill too rather than showing muted text on a
              full-strength accent. Applies to every deck button that can
-             disable, not just DIV: the power button greys on a radio that
-             cannot report power the same way. -->
+             disable, not just DIV. -->
         <Style Selector="Button.deck-button:disabled">
             <Setter Property="Opacity" Value="0.5"/>
         </Style>
@@ -463,12 +462,15 @@
              The reverse order was tried the same day and put back; this is also
              the order the old footer used, less Ref.
 
-             Reflected power (issue #69) was shown here as a fifth cell and
-             dropped by the operator the same day, during this layout pass. The
-             reading is still produced: RefPowerText in the ViewModel, fed from
-             the radio's own REFPWR meter. It is unbound for now, NOT forgotten:
-             once this layout settles, either bring the cell back or remove the
-             plumbing end to end, so it does not linger as dead code. -->
+             Reflected power (issue #69) was a fifth cell here and was removed
+             end to end on 2026-09-20: it cluttered the line (operator), and SWR
+             beside Fwd already answers the question an operator asks mid-QSO.
+             The meter subscription, the accumulator channel, the record field
+             and their tests went with it, so nothing is left unbound. If it
+             ever comes back, the radio has its own REFPWR meter
+             (Radio.ReflectedPowerDataReady); do not compute it from Fwd and
+             SWR, which would read exactly 0 W on every good match because the
+             SWR meter floors at 1.0. -->
         <!-- Bottom margin 5: breathing room before the Band heading (operator,
              first pass 2026-09-20). On top of the grid's RowSpacing of 4. -->
         <Grid Grid.Row="1" ColumnDefinitions="*,*,*,*" Margin="0,0,0,5">
@@ -586,17 +588,18 @@
 
              IsEnabled rather than IsVisible, same as the header row: the deck
              holds one height in every state. -->
-        <!-- Five equal columns so the strip fills the deck's fixed 360px width
-             rather than packing left and leaving a hole before the power button
-             (operator, after live test 2026-09-19). Equal rather than weighted:
-             at this width every column lands near 64px, comfortably past the
-             widest label ("QRO" and a three-digit wattage), so nothing needs a
-             bigger share. The telemetry strip and the control row use the same
-             five equal columns, so all three line up.
+        <!-- Four equal columns filling the deck's fixed width, the same four the
+             telemetry strip above uses, so the two rows line up cell for cell.
+             A fifth column held the QRP/QRO power button until 2026-09-20, when
+             the operator removed the button and its preset logic outright (see
+             the TX power note in SmartDeckViewModel); a blank placeholder was
+             considered and dropped, since a button that does nothing is a
+             standing question on a control surface. Adding a column back is a
+             one-line change when a fifth control actually exists.
              Spacing comes from the deck-button style's uniform 2px margin, the
              same as every other button on the deck: do not add per-button
              margins back here, they were what made the gutters uneven. -->
-        <Grid Grid.Row="4" ColumnDefinitions="*,*,*,*,*"
+        <Grid Grid.Row="4" ColumnDefinitions="*,*,*,*"
               IsEnabled="{Binding HasSelectedSlice}">
             <Button Grid.Column="0"
                     Classes="deck-button"
@@ -623,30 +626,6 @@
                     Content="APF"
                     ToolTip.Tip="Audio peaking filter"
                     Command="{Binding ToggleApfCommand}"/>
-
-            <!-- One button for power now, not a readout plus a button: a bare
-                 number sitting beside four toggles read as odd (operator,
-                 2026-09-19). It names the preset while the radio sits on one
-                 and shows the wattage at any other level; see TxButtonText for
-                 why the earlier revert-after-two-seconds behaviour went. That
-                 left a preset hiding the number, which is what the PWR cell in
-                 the control row below now covers: it always shows the setting
-                 in watts. "Fwd" in the telemetry strip is measured forward
-                 power and reads zero on receive, a different number.
-
-                 Lit still means the deck's one thing, the value in force: here,
-                 sitting on one of the two presets. The label cannot shift the
-                 strip: the column is a fixed share of the deck's fixed width,
-                 which is also why no button on this strip carries a MinWidth
-                 (they were dead floors, removed 2026-09-20). -->
-            <Button Grid.Column="4"
-                    Classes="deck-button"
-                    Classes.lit="{Binding IsPresetActive}"
-                    Content="{Binding TxButtonText}"
-                    IsEnabled="{Binding CanToggleQrp}"
-                    PointerWheelChanged="OnTxPowerWheel"
-                    ToolTip.Tip="Click: QRP/QRO. Wheel: watts"
-                    Command="{Binding ToggleQrpCommand}"/>
         </Grid>
 
         <!-- The control row: RF gain, AGC-T, RIT, XIT and PWR, in the footer the
@@ -668,23 +647,23 @@
              undiscoverable, hence the tooltips. No hover cue, by the operator's
              choice for now; revisit if the cells read as read-only.
 
-             PWR is the transmit power SETTING, always in watts. The power button
-             above shows "QRP" or "QRO" while the radio sits on a preset, so this
-             is the one place the number is always on view. It is not "Fwd" in
-             the strip, which is measured output and reads zero on receive. The
-             QRP/QRO toggle stays on the button; a click here has nothing to
-             mean.
+             PWR is the transmit power SETTING, in watts, and the only power
+             control on the deck since the QRP/QRO button went (2026-09-20). One
+             percent of rated output a notch: 1 W on a FLEX, 5 W on an Aurora. It
+             is not "Fwd" in the strip, which is measured output and reads zero
+             on receive. No click and no modifier key, by the operator's choice:
+             a big change is made in SmartSDR or on the Maestro.
 
              IsEnabled, not IsVisible: the deck holds one height in every state.
              Do not switch this to IsVisible. -->
         <!-- No divider above this row (operator, 2026-09-20): the rule that
              fenced off the read-only telemetry footer made no sense once the
              row became controls, which belong with the buttons above them.
-             Top margin 6 is exactly what the divider occupied, its 1px line
-             plus its 5px pad, so the row sits where it did and only the line
-             is gone (operator: keep the padding). A margin rather than an
-             invisible border: same geometry, nothing hidden to maintain. -->
-        <Grid Grid.Row="5" ColumnDefinitions="*,*,*,*,*" IsEnabled="{Binding HasSelectedSlice}" Margin="0,6,0,0">
+             Top margin 2, on top of RowSpacing 4. It was 6, exactly what the
+             divider had occupied, and the operator tightened it on 2026-09-20
+             once the button row above lost its fifth button and the two rows
+             read as one group. -->
+        <Grid Grid.Row="5" ColumnDefinitions="*,*,*,*,*" IsEnabled="{Binding HasSelectedSlice}" Margin="0,2,0,0">
             <StackPanel Grid.Column="0"
                         Classes="control-cell"
                         Background="Transparent"
@@ -723,7 +702,7 @@
             <StackPanel Grid.Column="4"
                         Classes="control-cell"
                         Background="Transparent"
-                        IsEnabled="{Binding CanToggleQrp}"
+                        IsEnabled="{Binding CanAdjustTxPower}"
                         PointerWheelChanged="OnTxPowerWheel"
                         ToolTip.Tip="Wheel: watts">
                 <TextBlock Classes="control-label" Text="PWR"/>

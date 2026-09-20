@@ -73,10 +73,6 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string _powerText = Absent;
 
-    /// <summary>Reflected power, watts (issue #69).</summary>
-    [ObservableProperty]
-    private string _refPowerText = Absent;
-
     [ObservableProperty]
     private string _swrText = Absent;
 
@@ -709,183 +705,59 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
 
     internal static string FormatAgcThreshold(int threshold) => threshold.ToString(CultureInfo.InvariantCulture);
 
-    // ── TX power and the QRP toggle (issue #64) ──────────────────────────────
+    // ── TX power ─────────────────────────────────────────────────────────────
 
-    // The operator runs at whatever power the band and the amplifier want, then
-    // drops to QRP for a contact that qualifies and comes back up afterwards.
-    // Doing that in SmartSDR means finding the slider and remembering the number
-    // to return to, which is the whole reason this button exists.
-
-    /// <summary>
-    /// The power the QRP preset sets, and the top of the QRP range: 5 W or less
-    /// is QRP by convention, so the button reads QRP anywhere at or below this,
-    /// not only at exactly this value (operator, 2026-08-25).
-    /// </summary>
-    private const int QrpWatts = 5;
-
-    /// <summary>
-    /// Lowest power that counts as operating QRP. Below it the radio is not
-    /// meaningfully transmitting, so the button still reads QRP but does not
-    /// light: lit marks a power being run, not merely a number below 5.
-    /// </summary>
-    private const int QrpMinWatts = 1;
+    // The deck shows the transmit power SETTING in the PWR cell and steers it by
+    // wheel, one percent of rated output a notch. That is all it does.
+    //
+    // There used to be a QRP/QRO preset button here (issues #64 and #70): first a
+    // QRP toggle that saved and restored the operating power, then two presets,
+    // then a button that showed the preset name or the watts. The operator
+    // removed it outright on 2026-09-20. Each version needed state about what
+    // the radio was doing (a saved power, a last-known power, a lit rule, a
+    // label rule), and each of those went stale or disagreed with the radio in
+    // some corner; several bugs in this file's history are that state. With the
+    // PWR cell always showing the real number there is nothing left to get
+    // wrong. The accepted cost: a large change, 100 W down to 5 W, is 95 notches
+    // here, so it is made in SmartSDR or on the Maestro instead. Do not add a
+    // preset, a modifier key or a click action back without the operator asking.
 
     /// <summary>
-    /// The power the QRO preset returns to, in watts: the radio's full rated
-    /// output (issue #70, corrected for issue #77).
+    /// Top of the power range in watts: the radio's full rated output (issue
+    /// #77). 100 on a FLEX-6000 or 8000, 500 on an Aurora. The radio reports it,
+    /// so it is read rather than assumed; the fallback applies only before the
+    /// radio has reported, and the PWR cell is disabled in that state.
     /// </summary>
-    /// <remarks>
-    /// Was a hard-coded 100, which made QRO mean one fifth of full power on a
-    /// 500 W Aurora. The radio reports its own rating, so read it rather than
-    /// assume it. Falls back to 100 only when the radio has not reported yet,
-    /// and in that state every power control is already disabled.
-    /// </remarks>
-    private int QroWatts => _connection.MaxRfPowerWatts ?? FallbackMaxWatts;
+    private int MaxTxWatts => _connection.MaxRfPowerWatts ?? FallbackMaxWatts;
 
-    /// <summary>Rated output assumed before the radio reports one. Every power control is disabled here.</summary>
+    /// <summary>Rated output assumed before the radio reports one. The PWR cell is disabled here.</summary>
     private const int FallbackMaxWatts = 100;
-
-    /// <summary>
-    /// The power the deck last saw the radio at, or last wrote to it. Decides
-    /// which preset the button offers next, and is updated optimistically on a
-    /// press so the label flips with the readout instead of waiting for the
-    /// radio echo.
-    /// </summary>
-    private int? _lastKnownWatts;
 
     /// <summary>The radio's transmit power setting, or dashes until it reports one.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(TxButtonText))]
     private string _txPowerText = Absent;
 
-    /// <summary>
-    /// The button label, which is always the preset the next press will set.
-    /// </summary>
-    /// <remarks>
-    /// Issue #70, second pass (operator, 2026-08-25). The first build saved the
-    /// power in use and restored it on release, so the button had four
-    /// positions (QRP, saved, QRO, saved) and could sit reading "QRP" while the
-    /// radio was at the saved power, which is incoherent. The operator cut the
-    /// save/restore entirely: two presets, and any other power is set by hand.
-    ///
-    /// What that subtraction bought, beyond the simpler button: there is no
-    /// cached power left to go stale, so the "radio wins" stand-down and every
-    /// bug it existed to prevent are gone with it, including a saved power
-    /// leaking across a reconnect (Codex deep audit, 2026-08-04). The label is
-    /// now a pure function of the radio's own power, so it cannot disagree with
-    /// the radio at all. Do not reintroduce a remembered power here.
-    /// </remarks>
-    /// <remarks>
-    /// A state readout, not a promise about the press. Only ever displayed
-    /// while the radio sits on a preset (see <see cref="TxButtonText"/>), so
-    /// it names the preset in force: QRP at or below the QRP ceiling, QRO at
-    /// the radio's rated output (100 W on a FLEX, 500 W on an Aurora; issue
-    /// #77). Pressing toggles to the other one.
-    /// An earlier pass made the label name what the press would do, which put
-    /// "QRP" on a button while the radio sat at the operating power. That is
-    /// the thing to avoid: the label must never claim a state the radio is not
-    /// in.
-    /// </remarks>
-    public string TxPresetText => IsQrpPower ? "QRP" : "QRO";
-
-    /// <summary>
-    /// What the single power button shows: the preset name while the radio
-    /// sits on a preset, the actual wattage at any other level.
-    /// </summary>
-    /// <remarks>
-    /// Rewritten 2026-09-20 after the v0.3.3-preview1 live test. The first
-    /// pass showed the watts only while the wheel was turning and then reverted
-    /// to the preset label, so the button read "QRO" while the radio sat at
-    /// 54 W. "QRO" was defensible as a two-state readout, but on a button that
-    /// can show the real number it is strictly worse: the number is the whole
-    /// answer and never has to be interpreted. Lit still means a preset is in
-    /// force, so lit and unlit now carry the label/number distinction too.
-    ///
-    /// The power <em>setting</em> appears here and, always in watts, in the PWR
-    /// cell of the deck's control row (added 2026-09-20), which exists because
-    /// this button hides the number behind "QRP" or "QRO" while the radio sits
-    /// on a preset. Neither is the same number as the "Fwd" telemetry, which is
-    /// measured forward power and reads zero on receive.
-    ///
-    /// The reverting behaviour needed a linger timer and a generation counter
-    /// to keep a stale timer from clearing a fresh reading. Both are gone with
-    /// it: an always-correct display has nothing to time out. Do not reintroduce
-    /// a timer here.
-    /// </remarks>
-    public string TxButtonText => IsPresetActive ? TxPresetText : TxPowerText;
-
-    /// <summary>
-    /// True when the radio is running QRP, which is a range and not a single
-    /// value: anything at or below <see cref="QrpWatts"/> counts.
-    /// </summary>
-    private bool IsQrpPower => _lastKnownWatts is int watts && watts <= QrpWatts;
-
-    /// <summary>
-    /// True while the radio sits on one of the two presets, which lights the
-    /// button (issue #70).
-    /// </summary>
-    /// <remarks>
-    /// Restored 2026-08-25 after the operator live-tested its absence. The
-    /// first pass dropped the lit state on the grounds that the readout beside
-    /// the button already shows the power, but every other control on the deck
-    /// lights for the value the radio holds, and this one stopped. The real
-    /// fault was the label: it named the <em>next</em> press, so lighting it
-    /// would have claimed QRO was current while the radio sat at 5 W. Naming
-    /// the preset the radio is on fixes both at once, and restores the deck's
-    /// one meaning of lit: this is the value in force.
-    /// </remarks>
-    public bool IsPresetActive => _lastKnownWatts is int watts
-        && (watts is >= QrpMinWatts and <= QrpWatts || watts == QroWatts);
-
-    private void SetLastKnownWatts(int? watts)
-    {
-        if (_lastKnownWatts == watts) return;
-        _lastKnownWatts = watts;
-        OnPropertyChanged(nameof(TxPresetText));
-        OnPropertyChanged(nameof(TxButtonText));
-        OnPropertyChanged(nameof(IsPresetActive));
-    }
-
-    /// <summary>False until the radio has reported a power, so the button cannot aim at an unknown one.</summary>
+    /// <summary>False until the radio has reported a power, so the wheel cannot start from an unknown one.</summary>
     [ObservableProperty]
-    private bool _canToggleQrp;
-
-    [RelayCommand]
-    private async Task ToggleQrpAsync()
-    {
-        if (!CanToggleQrp)
-        {
-            _logStatus("Power preset press ignored: the radio has not reported a power.");
-            return;
-        }
-
-        // The button toggles between QRP and not-QRP, so anywhere in the QRP
-        // range goes up to QRO and anywhere above it drops to QRP. The first
-        // press from an ordinary operating power therefore drops to QRP, which
-        // is the habit the original QRP button taught (operator, 2026-08-25).
-        var target = IsQrpPower ? QroWatts : QrpWatts;
-
-        _logStatus($"{(target == QrpWatts ? "QRP" : "QRO")} selected: setting {target} W.");
-        SetLastKnownWatts(target);
-
-        // Shown immediately rather than waiting for the radio's echo, so a
-        // button press does not feel laggy; the echo re-applies the same value.
-        TxPowerText = FormatTxPower(target);
-        await _connection.SetRfPowerAsync(target);
-    }
+    private bool _canAdjustTxPower;
 
     // RfPowerChanged can fire on a FlexLib event thread.
     private void OnRfPowerChanged(int? watts) => _postToUi(() => ApplyRfPower(watts));
 
+    // The radio wins, and that is the whole of it: the deck holds no power of its
+    // own, so a change from anywhere (the deck wheel, SmartSDR, another client)
+    // simply shows.
     private void ApplyRfPower(int? watts)
     {
-        CanToggleQrp = watts is not null;
+        CanAdjustTxPower = watts is not null;
         TxPowerText = watts is { } value ? FormatTxPower(value) : Absent;
 
-        // The radio wins, and now that is the whole of it: with no saved power
-        // there is nothing to invalidate, so a power change from anywhere (the
-        // deck wheel, SmartSDR, another client) simply re-aims the button.
-        SetLastKnownWatts(watts);
+        // A notch still waiting out its settle window when the radio drops must
+        // not be written afterwards: it was aimed at a session that is gone.
+        // Stop() already cancels the wheel's targets this way; losing the power
+        // reading is the same event from the radio's side (found 2026-09-20
+        // while rewriting the reconnect regression test, not field-reported).
+        if (watts is null) _wheelTargetWatts = null;
     }
 
     internal static string FormatTxPower(int watts) => $"{watts} W";
@@ -893,8 +765,8 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
     // ── Mouse wheel over the readouts (issue #65) ────────────────────────────
 
     // The wheel is an accelerator for controls that already exist, with one
-    // exception: TX power had a readout and the QRP button but no stepper, so
-    // the wheel is its only fine adjustment. That is deliberate (operator
+    // exception: TX power has a readout and nothing else, so the wheel is its
+    // only adjustment. That is deliberate (operator
     // request, 2026-08-05): QRP operators work 5 W down to 1 W and wanted single
     // watts without spending a row on a stepper the rest of the time.
     //
@@ -924,8 +796,8 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
     // 1 W step on a 500 W PA would silently quantise back to 5 W and the wheel
     // would look stuck for four notches out of five.
     private const int TxPowerLow = 0;
-    private int TxPowerHigh => QroWatts;
-    private int TxPowerStep => Math.Max(1, QroWatts / 100);
+    private int TxPowerHigh => MaxTxWatts;
+    private int TxPowerStep => Math.Max(1, MaxTxWatts / 100);
 
     // The value the wheel is steering towards, held locally while a write is in
     // flight. Every control needs one: the radio's echo of notch N has not
@@ -1017,12 +889,12 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// Steps transmit power by <paramref name="notches"/> watts, clamped to the
-    /// radio's 0-100 range.
+    /// Steps transmit power by <paramref name="notches"/> steps of one percent of
+    /// rated output (1 W on a 100 W radio), clamped to zero and the radio's rating.
     /// </summary>
     public void NudgeTxPower(int notches)
     {
-        if (!_started || notches == 0 || !CanToggleQrp) return;
+        if (!_started || notches == 0 || !CanAdjustTxPower) return;
 
         var from = _wheelTargetWatts ?? _connection.RfPowerWatts;
         if (from is not { } current) return;
@@ -1286,7 +1158,7 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
         // already unsubscribed the per-slice handler, so no SliceRemoved ever
         // reaches this ViewModel. Refreshing from the now-empty connection
         // rather than clearing by hand keeps one code path deciding what the
-        // deck shows. The telemetry footer needs no equivalent: StopTelemetry
+        // deck shows. The telemetry strip needs no equivalent: StopTelemetry
         // already publishes an empty snapshot, so it falls back to dashes.
         // Bug fix 2026-08-04 (found by the Codex deep audit of the QRP toggle
         // before it shipped): with SmartDeck left open across a radio-side drop,
@@ -1295,7 +1167,9 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
         // is that only the operator Disconnect() path published a power change;
         // a FlexLib-side drop raises ConnectionStateChanged alone. Re-deriving
         // power from the connection here, the way slices already are, means the
-        // deck cannot be left holding state the connection no longer backs.
+        // deck cannot be left holding state the connection no longer backs. (The
+        // QRP button itself was removed 2026-09-20; the re-derive still matters,
+        // so the PWR cell cannot go on showing a dropped session's power.)
         // Bug fix 2026-09-20 (code review, not field-reported): DIV read the
         // radio's diversity capability once at first bind, so a deck left open
         // across a swap from a 6400M to a 6600 kept DIV greyed. No event
@@ -1322,11 +1196,10 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
 
     private void Apply(RadioTelemetryInfo telemetry)
     {
-        PowerText    = FormatPower(telemetry.PowerWatts);
-        RefPowerText = FormatPower(telemetry.ReflectedPowerWatts);
-        SwrText      = FormatSwr(telemetry.Swr, telemetry.PowerWatts);
-        TempText     = Format(telemetry.PaTempCelsius, "0");
-        VoltsText    = Format(telemetry.VoltsDc, "0.0");
+        PowerText = FormatPower(telemetry.PowerWatts);
+        SwrText   = FormatSwr(telemetry.Swr, telemetry.PowerWatts);
+        TempText  = Format(telemetry.PaTempCelsius, "0");
+        VoltsText = Format(telemetry.VoltsDc, "0.0");
     }
 
     // Above this, the radio is putting out RF. The SWR meter floors at 1.0 and
@@ -1359,15 +1232,6 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
     /// Whole watts at 10 W and above, one decimal below it. A 93 W reading does
     /// not need a tenth of a watt, but a QRP operator running 5 W does.
     /// </summary>
-    /// <remarks>
-    /// Shared by forward and reflected power (issue #69), and deliberately not
-    /// gated on transmit the way <see cref="FormatSwr"/> is. SWR needs the gate
-    /// because its meter floors at 1.0, so at rest it formats an idle floor
-    /// into what reads as a real 1:1 match. Reflected power has no such floor:
-    /// 0 W on receive is the true reading, and the same TX-idle signal the
-    /// forward readout already carries. Gating it would make two adjacent power
-    /// readouts behave differently for no gain.
-    /// </remarks>
     internal static string FormatPower(double? watts) =>
         watts is { } value
             ? value.ToString(value >= 10 ? "0" : "0.0", CultureInfo.InvariantCulture)

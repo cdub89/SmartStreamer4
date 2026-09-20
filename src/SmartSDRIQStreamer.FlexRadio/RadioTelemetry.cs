@@ -8,27 +8,19 @@ namespace SDRIQStreamer.FlexRadio;
 /// to mean "no reading yet" (issue #59 gating spike, 2026-08-02).
 /// </summary>
 /// <param name="PowerWatts">Forward RF power, watts. Converted from the dBm the radio reports.</param>
-/// <param name="ReflectedPowerWatts">
-/// Reflected RF power, watts, converted from the dBm the radio reports
-/// (issue #69). Measured by the radio's own REFPWR meter rather than derived
-/// from forward power and SWR: the radio has the meter, and a derived figure
-/// would inherit the SWR meter's 1.0 floor and read exactly 0 W on every good
-/// match.
-/// </param>
 /// <param name="Swr">Standing wave ratio, as a ratio. Floors at 1.0.</param>
 /// <param name="PaTempCelsius">PA temperature, degrees C.</param>
 /// <param name="VoltsDc">Supply voltage at the PA, volts.</param>
 /// <param name="UpdatedUtc">When this snapshot was taken. <c>default</c> when never populated.</param>
 public sealed record RadioTelemetryInfo(
     double? PowerWatts,
-    double? ReflectedPowerWatts,
     double? Swr,
     double? PaTempCelsius,
     double? VoltsDc,
     DateTimeOffset UpdatedUtc)
 {
     /// <summary>No telemetry received yet. Every value absent, so the display shows dashes.</summary>
-    public static RadioTelemetryInfo Empty { get; } = new(null, null, null, null, null, default);
+    public static RadioTelemetryInfo Empty { get; } = new(null, null, null, null, default);
 }
 
 /// <summary>Which meter stream a sample came from.</summary>
@@ -36,9 +28,6 @@ public enum TelemetryChannel
 {
     /// <summary>Forward RF power, in the dBm the radio reports. Converted on the way out.</summary>
     ForwardPowerDbm,
-
-    /// <summary>Reflected RF power, in the dBm the radio reports. Converted on the way out.</summary>
-    ReflectedPowerDbm,
     Swr,
     PaTempCelsius,
     VoltsDc
@@ -63,10 +52,9 @@ public static class RadioTelemetryMath
 }
 
 /// <summary>
-/// Coalesces the five independent meter event streams into one snapshot for
+/// Coalesces the four independent meter event streams into one snapshot for
 /// display. Meter events arrive off the UI thread at two very different rates
-/// (forward power, reflected power and SWR at ~13.4 Hz, PA temperature and
-/// volts at ~0.4 Hz,
+/// (forward power and SWR at ~13.4 Hz, PA temperature and volts at ~0.4 Hz,
 /// measured by the issue #59 spike), so every field is guarded.
 /// </summary>
 /// <remarks>
@@ -81,7 +69,6 @@ public sealed class TelemetrySnapshotAccumulator
 
     // Peak within the current window for the fast pair, reset on every take.
     private double? _windowPeakPowerDbm;
-    private double? _windowPeakReflectedDbm;
     private double? _windowPeakSwr;
 
     // Latest known value for each channel, carried across windows so a snapshot
@@ -89,7 +76,6 @@ public sealed class TelemetrySnapshotAccumulator
     // last take. Without this, a window with no sample for a channel would
     // report it absent and the display would flash dashes.
     private double? _powerWatts;
-    private double? _reflectedPowerWatts;
     private double? _swr;
     private double? _paTempCelsius;
     private double? _voltsDc;
@@ -114,14 +100,6 @@ public sealed class TelemetrySnapshotAccumulator
                 // power meter behaves.
                 case TelemetryChannel.ForwardPowerDbm:
                     _windowPeakPowerDbm = _windowPeakPowerDbm is { } peak ? Math.Max(peak, value) : value;
-                    break;
-
-                // Reflected power rides with forward power rather than with the
-                // slow pair: it is the same meter family at the same ~13.4 Hz,
-                // and under CW keying it swings just as hard, so last-sample
-                // would jitter for the same reason.
-                case TelemetryChannel.ReflectedPowerDbm:
-                    _windowPeakReflectedDbm = _windowPeakReflectedDbm is { } refPeak ? Math.Max(refPeak, value) : value;
                     break;
                 case TelemetryChannel.Swr:
                     _windowPeakSwr = _windowPeakSwr is { } peakSwr ? Math.Max(peakSwr, value) : value;
@@ -163,17 +141,14 @@ public sealed class TelemetrySnapshotAccumulator
 
             if (_windowPeakPowerDbm is { } peakDbm)
                 _powerWatts = RadioTelemetryMath.DbmToWatts(peakDbm);
-            if (_windowPeakReflectedDbm is { } peakReflectedDbm)
-                _reflectedPowerWatts = RadioTelemetryMath.DbmToWatts(peakReflectedDbm);
             if (_windowPeakSwr is { } peakSwr)
                 _swr = peakSwr;
 
             _windowPeakPowerDbm = null;
-            _windowPeakReflectedDbm = null;
             _windowPeakSwr = null;
             _hasPending = false;
 
-            snapshot = new RadioTelemetryInfo(_powerWatts, _reflectedPowerWatts, _swr, _paTempCelsius, _voltsDc, timestampUtc);
+            snapshot = new RadioTelemetryInfo(_powerWatts, _swr, _paTempCelsius, _voltsDc, timestampUtc);
             return true;
         }
     }
@@ -184,10 +159,8 @@ public sealed class TelemetrySnapshotAccumulator
         lock (_sync)
         {
             _windowPeakPowerDbm = null;
-            _windowPeakReflectedDbm = null;
             _windowPeakSwr = null;
             _powerWatts = null;
-            _reflectedPowerWatts = null;
             _swr = null;
             _paTempCelsius = null;
             _voltsDc = null;

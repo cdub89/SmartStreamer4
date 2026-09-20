@@ -893,14 +893,14 @@ public class SmartDeckViewModelTests
         Assert.Equal(["ANT1", "ANT2"], viewModel.TxAntennaButtons.Select(button => button.Label));
     }
 
-    // ── TX power presets (issues #64, #70) ────────────────────────
+    // ── TX power (the PWR cell) ──────────────────────────────────────────────
 
-    // Issue #70, second pass (operator, 2026-08-25): the button no longer saves
-    // and restores the power in use. It sets one of two presets, and any other
-    // power is set by hand. The tests that pinned the saved-power behaviour went
-    // with it, including the ones guarding a stale saved power surviving a
-    // reconnect: with nothing remembered, that whole class of bug is gone rather
-    // than being defended against. Do not reintroduce a remembered power.
+    // The QRP/QRO preset button (issues #64, #70) was removed outright on
+    // 2026-09-20, and the fifteen tests that pinned its label, lit state and
+    // press behaviour went with it. What is left is what the deck still does:
+    // show the radio's power setting and steer it by wheel. The wheel's own
+    // arithmetic is pinned further down, under "TX power wheel". Do not
+    // reintroduce a preset or a remembered power.
 
     private static (FakeTelemetryConnection Connection, SmartDeckViewModel ViewModel) DeckAtPower(int? watts)
         => DeckAtPower(watts, maxWatts: 100);
@@ -919,38 +919,6 @@ public class SmartDeckViewModelTests
         var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
         viewModel.Start();
         return (connection, viewModel);
-    }
-
-    [Fact]
-    public void QRO_on_a_500W_radio_returns_to_500W_not_100W()
-    {
-        // The reported bug (issue #77). QRO meant a hard-coded 100 W, which on
-        // an Aurora is one fifth of the radio rather than full power.
-        var (connection, viewModel) = DeckAtPower(5, maxWatts: 500);
-
-        Assert.Equal("QRP", viewModel.TxPresetText);
-
-        viewModel.ToggleQrpCommand.Execute(null);
-
-        Assert.Equal(500, Assert.Single(connection.RfPowerWrites));
-        Assert.Equal("500 W", viewModel.TxPowerText);
-        Assert.Equal("QRO", viewModel.TxPresetText);
-        Assert.True(viewModel.IsPresetActive);
-    }
-
-    [Fact]
-    public void QRP_still_means_five_watts_on_a_500W_radio()
-    {
-        // The other half of the report: QRP is a wattage, not a percentage, so
-        // it must not scale with the PA. 5 W is reachable exactly on a 500 W
-        // radio because the granularity is 1% of rated output.
-        var (connection, viewModel) = DeckAtPower(500, maxWatts: 500);
-
-        viewModel.ToggleQrpCommand.Execute(null);
-
-        Assert.Equal(5, Assert.Single(connection.RfPowerWrites));
-        Assert.Equal("5 W", viewModel.TxPowerText);
-        Assert.Equal("QRP", viewModel.TxPresetText);
     }
 
     [Fact]
@@ -979,150 +947,55 @@ public class SmartDeckViewModelTests
     }
 
     [Fact]
-    public void The_first_press_from_an_operating_power_drops_to_QRP()
+    public void A_power_change_from_elsewhere_shows_in_the_PWR_cell()
     {
-        // The operator's model is two states, QRP and not-QRP. At 75 W the
-        // label reads QRO because that is true (you are not at QRP), and it is
-        // dark because 75 is not the exact preset power. Pressing toggles the
-        // state, so the first press drops to QRP as the original button did.
+        // The deck holds no power of its own, so a change made in SmartSDR or on
+        // the Maestro simply shows, and the next wheel notch steps from it.
         var (connection, viewModel) = DeckAtPower(75);
-
-        Assert.Equal("QRO", viewModel.TxPresetText);
-        Assert.False(viewModel.IsPresetActive);
-
-        viewModel.ToggleQrpCommand.Execute(null);
-
-        Assert.Equal(5, Assert.Single(connection.RfPowerWrites));
-        Assert.Equal("5 W", viewModel.TxPowerText);
-        Assert.Equal("QRP", viewModel.TxPresetText);
-        Assert.True(viewModel.IsPresetActive);
-    }
-
-    [Fact]
-    public void The_label_never_claims_QRP_while_the_radio_is_above_the_QRP_range()
-    {
-        // The fault the operator caught twice, pinned. QRP is a range (5 W and
-        // under, operator 2026-08-25), so the invariant is about the boundary,
-        // not a single value: anything above it must read QRO.
-        foreach (var watts in new[] { 6, 7, 54, 75, 99, 100 })
-        {
-            var (_, viewModel) = DeckAtPower(watts);
-            Assert.Equal("QRO", viewModel.TxPresetText);
-        }
-
-        foreach (var watts in new[] { 0, 1, 3, 5 })
-        {
-            var (_, viewModel) = DeckAtPower(watts);
-            Assert.Equal("QRP", viewModel.TxPresetText);
-        }
-    }
-
-    [Fact]
-    public void Presses_alternate_between_QRP_and_QRO_and_never_restore_a_saved_power()
-    {
-        // The correction that produced this design: the old build handed back
-        // the operating power on every other press, so the button could read
-        // "QRP" while the radio sat at 75 W. Now every press lands on a preset.
-        var (connection, viewModel) = DeckAtPower(75);
-
-        viewModel.ToggleQrpCommand.Execute(null);
-        viewModel.ToggleQrpCommand.Execute(null);
-        viewModel.ToggleQrpCommand.Execute(null);
-        viewModel.ToggleQrpCommand.Execute(null);
-
-        Assert.Equal([5, 100, 5, 100], connection.RfPowerWrites);
-        Assert.DoesNotContain(75, connection.RfPowerWrites);
-        Assert.Equal("100 W", viewModel.TxPowerText);
-        Assert.Equal("QRO", viewModel.TxPresetText);
-        Assert.True(viewModel.IsPresetActive);
-    }
-
-    [Theory]
-    [InlineData(75, "QRO", false)]   // above the QRP range, not the QRO preset
-    [InlineData(5, "QRP", true)]     // top of the QRP range
-    [InlineData(3, "QRP", true)]     // QRP is a range, not a single value
-    [InlineData(1, "QRP", true)]     // bottom of it
-    [InlineData(0, "QRP", false)]    // reads QRP, but nothing is being run
-    [InlineData(6, "QRO", false)]    // one watt above the range
-    [InlineData(100, "QRO", true)]   // on the QRO preset
-    public void The_label_and_lit_state_are_a_pure_function_of_the_reported_power(
-        int watts, string expectedLabel, bool expectedLit)
-    {
-        // No state of its own, so a power set anywhere (SmartSDR, another
-        // client, the wheel) is reflected with no stand-down logic involved.
-        var (_, viewModel) = DeckAtPower(watts);
-
-        Assert.Equal(expectedLabel, viewModel.TxPresetText);
-        Assert.Equal(expectedLit, viewModel.IsPresetActive);
-    }
-
-    [Fact]
-    public void A_radio_already_sitting_at_five_watts_reads_as_QRP_and_moves_to_QRO()
-    {
-        // Nothing is remembered, so arriving at 5 W by any route reads the same
-        // as pressing to get there: lit, labelled QRP, one press from the other
-        // preset. A lit button moves away from its label; a dark one delivers it.
-        var (connection, viewModel) = DeckAtPower(5);
-
-        Assert.Equal("QRP", viewModel.TxPresetText);
-        Assert.True(viewModel.IsPresetActive);
-
-        viewModel.ToggleQrpCommand.Execute(null);
-
-        Assert.Equal(100, Assert.Single(connection.RfPowerWrites));
-        Assert.Equal("QRO", viewModel.TxPresetText);
-        Assert.True(viewModel.IsPresetActive);
-    }
-
-    [Fact]
-    public void A_power_change_from_elsewhere_re_aims_the_button()
-    {
-        var (connection, viewModel) = DeckAtPower(75);
-        viewModel.ToggleQrpCommand.Execute(null);
-        Assert.True(viewModel.IsPresetActive);
+        Assert.Equal("75 W", viewModel.TxPowerText);
 
         connection.ReportRfPower(30);          // operator moved it in SmartSDR
 
-        Assert.Equal("QRO", viewModel.TxPresetText);
-        Assert.False(viewModel.IsPresetActive);   // no longer on a preset
         Assert.Equal("30 W", viewModel.TxPowerText);
-
-        viewModel.ToggleQrpCommand.Execute(null);
-        Assert.Equal([5, 5], connection.RfPowerWrites);
-    }
-
-    [Fact]
-    public void The_preset_button_is_unavailable_until_the_radio_reports_a_power()
-    {
-        var (connection, viewModel) = DeckAtPower(null);
-
-        Assert.False(viewModel.CanToggleQrp);
-        Assert.Equal("---", viewModel.TxPowerText);
-
-        viewModel.ToggleQrpCommand.Execute(null);
-
-        Assert.Empty(connection.RfPowerWrites);
+        Assert.Empty(connection.RfPowerWrites);   // showing it writes nothing back
     }
 
     [Fact]
     public void A_disconnect_leaves_nothing_behind_to_write_into_the_next_session()
     {
-        var (connection, viewModel) = DeckAtPower(75);
-        viewModel.ToggleQrpCommand.Execute(null);
+        // Regression kept from the QRP button era (Codex deep audit, 2026-08-04):
+        // a power held across a drop was written into the next session. The
+        // button is gone, but the wheel could do the same if the deck went on
+        // believing the old power, so the guard moves to the PWR cell.
+        //
+        // The settle is held open so a notch is genuinely in flight when the
+        // radio drops, which is the only moment this can go wrong.
+        var settle = new TaskCompletionSource();
+        var connection = new FakeTelemetryConnection { MaxRfPowerWatts = 100 };
+        connection.SetSlices(Slice("A"));
+        connection.ReportRfPower(75);
+        var viewModel = new SmartDeckViewModel(
+            connection, TestStation, postToUi: action => action(), settle: _ => settle.Task);
+        viewModel.Start();
 
-        connection.ReportRfPower(null);
+        viewModel.NudgeTxPower(-1);               // 74 W, waiting out the settle
+        Assert.Equal("74 W", viewModel.TxPowerText);
 
-        Assert.False(viewModel.CanToggleQrp);
+        connection.ReportRfPower(null);           // the radio drops
+
+        Assert.False(viewModel.CanAdjustTxPower);
         Assert.Equal("---", viewModel.TxPowerText);
-        Assert.Equal("QRO", viewModel.TxPresetText);
-        Assert.False(viewModel.IsPresetActive);
 
-        // Reconnecting writes only presets, never a number carried over.
-        connection.ReportRfPower(50);
-        viewModel.ToggleQrpCommand.Execute(null);
+        viewModel.NudgeTxPower(-1);               // wheel while disconnected
+        Assert.Equal("---", viewModel.TxPowerText);   // must not step on from the stale 74
 
-        Assert.Equal([5, 5], connection.RfPowerWrites);
-        Assert.DoesNotContain(75, connection.RfPowerWrites);
+        settle.SetResult();                       // the in-flight notch comes due
+        Assert.Empty(connection.RfPowerWrites);   // and writes nothing
+
+        connection.ReportRfPower(50);             // the next session's own power
+        Assert.True(viewModel.CanAdjustTxPower);
+        Assert.Equal("50 W", viewModel.TxPowerText);
+        Assert.Empty(connection.RfPowerWrites);
     }
 
     [Fact]
@@ -1596,8 +1469,8 @@ public class SmartDeckViewModelTests
     [Fact]
     public void The_tx_power_wheel_does_nothing_until_the_radio_reports_a_power()
     {
-        // Same gate as the QRP button: without a reported power there is
-        // nothing to step from, and stepping from a guess would write over
+        // Without a reported power there is nothing to step from, and
+        // stepping from a guess would write over
         // whatever the operator actually has set.
         var connection = new FakeTelemetryConnection();
         connection.SetSlices(Slice("A"));
@@ -1799,85 +1672,6 @@ public class SmartDeckViewModelTests
         connection.RaisePanadapterUpdated(Pan(rfGain: 0));
 
         Assert.Equal("0 dB", viewModel.RfGainText);
-    }
-
-    [Fact]
-    public async Task Wheeling_down_inside_the_QRP_range_stays_QRP_and_stays_lit()
-    {
-        // The old build darkened the button the moment the radio left 5 W,
-        // because it tracked a saved power. Now QRP is a range, so trimming
-        // from 5 W to 4 W is still QRP and the button stays lit. This is the
-        // case that made the point-value design feel wrong on the air.
-        var connection = new FakeTelemetryConnection();
-        connection.SetSlices(Slice("A"));
-        connection.ReportRfPower(75);
-        var viewModel = new SmartDeckViewModel(
-            connection, TestStation, postToUi: action => action(), settle: ImmediateSettle);
-        viewModel.Start();
-
-        await viewModel.ToggleQrpCommand.ExecuteAsync(null);   // 75 -> QRP 5
-        Assert.Equal("QRP", viewModel.TxPresetText);
-        Assert.True(viewModel.IsPresetActive);
-
-        viewModel.NudgeTxPower(-1);
-
-        Assert.Equal("QRP", viewModel.TxPresetText);
-        Assert.True(viewModel.IsPresetActive);
-        Assert.Equal("4 W", viewModel.TxPowerText);
-        Assert.Equal([5, 4], connection.RfPowerWrites);
-
-        // And from inside the range the press still goes up to QRO.
-        await viewModel.ToggleQrpCommand.ExecuteAsync(null);
-        Assert.Equal([5, 4, 100], connection.RfPowerWrites);
-    }
-
-    [Fact]
-    public void Wheeling_one_watt_above_the_QRP_range_darkens_the_button()
-    {
-        // The boundary from the other side: 6 W is QRO, and one notch is all it
-        // takes to cross it.
-        var connection = new FakeTelemetryConnection();
-        connection.SetSlices(Slice("A"));
-        connection.ReportRfPower(5);
-        var viewModel = new SmartDeckViewModel(
-            connection, TestStation, postToUi: action => action(), settle: ImmediateSettle);
-        viewModel.Start();
-
-        Assert.Equal("QRP", viewModel.TxPresetText);
-        Assert.True(viewModel.IsPresetActive);
-
-        viewModel.NudgeTxPower(1);
-
-        Assert.Equal("6 W", viewModel.TxPowerText);
-        Assert.Equal("QRO", viewModel.TxPresetText);
-        Assert.False(viewModel.IsPresetActive);
-    }
-
-    [Fact]
-    public async Task Wheeling_within_the_QRP_range_never_loses_the_lit_state()
-    {
-        // The old build pinned the opposite of this as a documented wart: the
-        // toggle stayed dark after a round trip because it tracked a saved
-        // power rather than the number on the radio. Dropping the saved power
-        // fixed it as a side effect, so the wart is pinned as gone.
-        var connection = new FakeTelemetryConnection();
-        connection.SetSlices(Slice("A"));
-        connection.ReportRfPower(75);
-        var viewModel = new SmartDeckViewModel(
-            connection, TestStation, postToUi: action => action(), settle: ImmediateSettle);
-        viewModel.Start();
-        await viewModel.ToggleQrpCommand.ExecuteAsync(null);
-
-        viewModel.NudgeTxPower(-1);
-        viewModel.NudgeTxPower(1);
-
-        Assert.Equal("5 W", viewModel.TxPowerText);
-        Assert.Equal("QRP", viewModel.TxPresetText);
-        Assert.True(viewModel.IsPresetActive);
-
-        await viewModel.ToggleQrpCommand.ExecuteAsync(null);
-
-        Assert.Equal([5, 4, 5, 100], connection.RfPowerWrites);
     }
 
     [Fact]

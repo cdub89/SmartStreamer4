@@ -4,8 +4,8 @@ using SDRIQStreamer.FlexRadio;
 namespace SmartSDRIQStreamer.App.Tests;
 
 /// <summary>
-/// Issue #76: the receive-chain strip (DIV, NB, NR, APF) and the power button
-/// that replaced the separate wattage readout beside it.
+/// Issue #76: the receive-chain strip (DIV, NB, NR, APF). The power button
+/// that shared this strip, and its tests, were removed on 2026-09-20.
 /// </summary>
 public class SmartDeckToggleTests
 {
@@ -28,22 +28,16 @@ public class SmartDeckToggleTests
             DiversityOn = diversityOn,
         };
 
-    // settle: null keeps the ViewModel's real delay. HeldOpen parks a wheel
-    // write in flight for the life of the test, so the deck's own held value is
-    // what shows rather than an echo.
     private static (FakeTelemetryConnection Connection, SmartDeckViewModel ViewModel) Deck(
         SliceInfo? slice = null,
-        bool diversityAllowed = false,
-        Func<TimeSpan, Task>? settle = null)
+        bool diversityAllowed = false)
     {
         var connection = new FakeTelemetryConnection { DiversityIsAllowed = diversityAllowed };
         connection.SetSlices(slice ?? Slice());
-        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action(), settle: settle);
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
         viewModel.Start();
         return (connection, viewModel);
     }
-
-    private static Task HeldOpen(TimeSpan _) => new TaskCompletionSource().Task;
 
     [Theory]
     [InlineData("APF")]
@@ -150,70 +144,6 @@ public class SmartDeckToggleTests
         viewModel.ToggleDiversityCommand.Execute(null);
 
         Assert.Empty(connection.ToggleWrites);
-    }
-
-    // ── The power button (issue #76) ─────────────────────────────────────────
-
-    [Fact]
-    public void The_power_button_names_the_state_at_rest()
-    {
-        var (connection, viewModel) = Deck();
-        connection.ReportRfPower(100);
-
-        Assert.Equal("QRO", viewModel.TxButtonText);
-
-        connection.ReportRfPower(5);
-
-        Assert.Equal("QRP", viewModel.TxButtonText);
-    }
-
-    [Fact]
-    public void The_power_button_shows_the_wattage_at_any_non_preset_level()
-    {
-        // Off a preset the button has to show the number rather than a
-        // two-state label: "QRO" at 54 W told the operator nothing.
-        var (connection, viewModel) = Deck(settle: HeldOpen);
-        connection.ReportRfPower(50);
-
-        // 50 W is neither preset, so the radio's own level shows straight away.
-        Assert.Equal("50 W", viewModel.TxButtonText);
-
-        viewModel.NudgeTxPower(1);
-
-        Assert.Equal("51 W", viewModel.TxButtonText);
-    }
-
-    [Fact]
-    public async Task The_wattage_stays_up_after_the_wheel_settles()
-    {
-        // Regression, operator-reported on v0.3.3-preview1: the button used to
-        // revert to the preset label once the wheel stopped, so a radio sitting
-        // at 51 W read "QRO". The display is now a function of the level alone
-        // and has nothing to time out.
-        var (connection, viewModel) = Deck(settle: _ => Task.CompletedTask);
-        connection.ReportRfPower(50);
-
-        viewModel.NudgeTxPower(1);
-        await Task.Yield();
-
-        Assert.Equal("51 W", viewModel.TxButtonText);
-        Assert.False(viewModel.IsPresetActive);
-    }
-
-    [Fact]
-    public void A_press_from_an_odd_level_lands_on_a_preset_and_names_it()
-    {
-        var (connection, viewModel) = Deck(settle: HeldOpen);
-        connection.ReportRfPower(50);
-
-        viewModel.NudgeTxPower(1);
-        Assert.Equal("51 W", viewModel.TxButtonText);
-
-        viewModel.ToggleQrpCommand.Execute(null);
-
-        // On a preset the label replaces the number, and the button lights.
-        Assert.Equal("QRP", viewModel.TxButtonText);
-        Assert.True(viewModel.IsPresetActive);
     }
 
     private static void Execute(SmartDeckViewModel viewModel, string control)

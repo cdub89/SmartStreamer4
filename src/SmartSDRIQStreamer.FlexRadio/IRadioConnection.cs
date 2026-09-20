@@ -211,7 +211,7 @@ public interface IRadioConnection
     /// </remarks>
     string ControlStation { get; set; }
 
-    // ── Transmit power (issue #64, SmartDeck QRP toggle) ─────────────────────
+    // ── Transmit power (issue #64; SmartDeck's PWR cell) ─────────────────────
 
     /// <summary>
     /// The radio's transmit power setting in watts, or <c>null</c> until the

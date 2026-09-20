@@ -196,8 +196,10 @@ public sealed class FlexLibRadioConnection : IRadioConnection
                         StopTelemetry();
                         // Same reasoning for transmit power: RfPowerWatts already
                         // reads absent once Connected goes false, but nothing
-                        // told subscribers, so SmartDeck's QRP toggle stayed lit
-                        // holding a power from the dropped session.
+                        // told subscribers, so SmartDeck went on showing, and
+                        // could write from, a power belonging to the dropped
+                        // session. (Found on the QRP toggle, removed 2026-09-20;
+                        // the PWR cell needs it for the same reason.)
                         _rfPowerReported = false;
                         _boundToStation = false;
                         RfPowerChanged?.Invoke(null);
@@ -210,8 +212,8 @@ public sealed class FlexLibRadioConnection : IRadioConnection
                 if (_radio is not null) AvgDAXKbpsChanged?.Invoke(_radio.AvgDAXkbps);
                 break;
             // Fires for our own writes and for another client's alike, which is
-            // what lets SmartDeck's QRP toggle stand down when the operator
-            // changes power in SmartSDR instead of fighting them for it.
+            // what lets SmartDeck's PWR cell follow a power change made in
+            // SmartSDR or on the Maestro.
             case nameof(Radio.RFPower):
                 _rfPowerReported = true;
                 RfPowerChanged?.Invoke(RfPowerWatts);
@@ -628,10 +630,9 @@ public sealed class FlexLibRadioConnection : IRadioConnection
         // No MOX guard, and none is needed: this sets what a later transmission
         // will do rather than keying the radio. FlexLib clamps to 0-100 in the
         // setter (Radio.cs:8377-8379).
-        // Not logged here: SmartDeck writes one [STREAMER] line per QRP press
-        // naming what it saved or restored, which says more than a bare write
-        // would, and a slider drag would otherwise put a line on the log per
-        // step (same reasoning as the band-restore summary line).
+        // Not logged: the only caller is SmartDeck's PWR wheel, and a line per
+        // notch would flood the log for no diagnostic value. (The QRP button
+        // that used to log one line per press was removed 2026-09-20.)
         if (MaxRfPowerWatts is { } max && _radio is { } radio)
         {
             var percent = WattsToPercent(watts, max);
@@ -936,7 +937,7 @@ public sealed class FlexLibRadioConnection : IRadioConnection
         // reported a fictional 100 W, so discard it and wait for the radio to
         // report in the station's context. Found by the Codex deep audit: the
         // connect-time status can land before the GUI-client snapshot the bind
-        // needs, and SmartDeck would otherwise offer QRP against that value.
+        // needs, and SmartDeck would otherwise show, and step from, that value.
         _rfPowerReported = false;
         RfPowerChanged?.Invoke(null);
 
@@ -952,14 +953,11 @@ public sealed class FlexLibRadioConnection : IRadioConnection
 
     // ── Telemetry (issue #59, SmartDeck) ─────────────────────────────────────
 
-    // Display cadence. The five meter streams deliver roughly 41 events/sec
-    // combined: forward power, reflected power and SWR at ~13.4 Hz, PA
-    // temperature and volts at ~0.4 Hz, the rates measured by the issue #59
-    // gating spike against a live FLEX-6400M. 250 ms cuts UI marshals to 4/sec
-    // while staying well clear of the slow pair, so temperature and volts never
-    // look stalled. Reflected power (issue #69) joined the fast group and does
-    // not change the cadence: the pump already coalesces a whole window into
-    // one snapshot, so another fast meter costs no extra UI work.
+    // Display cadence. The four meter streams deliver roughly 28 events/sec
+    // combined: forward power and SWR at ~13.4 Hz, PA temperature and volts at
+    // ~0.4 Hz, both measured by the issue #59 gating spike against a live
+    // FLEX-6400M. 250 ms cuts UI marshals to 4/sec while staying well clear of
+    // the slow pair, so temperature and volts never look stalled.
     private static readonly TimeSpan TelemetryEmitInterval = TimeSpan.FromMilliseconds(250);
 
     private readonly TelemetrySnapshotAccumulator _telemetry = new();
@@ -992,11 +990,10 @@ public sealed class FlexLibRadioConnection : IRadioConnection
             // Radio-level meter events only. These are radio-scoped values, not
             // slice-scoped, so no GUI-client binding is involved: the spike
             // confirmed they arrive with API.IsGUI = false.
-            radio.ForwardPowerDataReady   += OnForwardPowerData;
-            radio.ReflectedPowerDataReady += OnReflectedPowerData;
-            radio.SWRDataReady            += OnSwrData;
-            radio.PATempDataReady         += OnPaTempData;
-            radio.VoltsDataReady          += OnVoltsData;
+            radio.ForwardPowerDataReady += OnForwardPowerData;
+            radio.SWRDataReady          += OnSwrData;
+            radio.PATempDataReady       += OnPaTempData;
+            radio.VoltsDataReady        += OnVoltsData;
             _telemetryRadio = radio;
 
             var cts = new CancellationTokenSource();
@@ -1026,11 +1023,10 @@ public sealed class FlexLibRadioConnection : IRadioConnection
 
         if (radio is not null)
         {
-            radio.ForwardPowerDataReady   -= OnForwardPowerData;
-            radio.ReflectedPowerDataReady -= OnReflectedPowerData;
-            radio.SWRDataReady            -= OnSwrData;
-            radio.PATempDataReady         -= OnPaTempData;
-            radio.VoltsDataReady          -= OnVoltsData;
+            radio.ForwardPowerDataReady -= OnForwardPowerData;
+            radio.SWRDataReady          -= OnSwrData;
+            radio.PATempDataReady       -= OnPaTempData;
+            radio.VoltsDataReady        -= OnVoltsData;
         }
 
         // Drop accumulated readings so a later start shows dashes rather than
@@ -1063,11 +1059,10 @@ public sealed class FlexLibRadioConnection : IRadioConnection
         }
     }
 
-    private void OnForwardPowerData(float data)   => _telemetry.Add(TelemetryChannel.ForwardPowerDbm, data);
-    private void OnReflectedPowerData(float data) => _telemetry.Add(TelemetryChannel.ReflectedPowerDbm, data);
-    private void OnSwrData(float data)            => _telemetry.Add(TelemetryChannel.Swr, data);
-    private void OnPaTempData(float data)         => _telemetry.Add(TelemetryChannel.PaTempCelsius, data);
-    private void OnVoltsData(float data)          => _telemetry.Add(TelemetryChannel.VoltsDc, data);
+    private void OnForwardPowerData(float data) => _telemetry.Add(TelemetryChannel.ForwardPowerDbm, data);
+    private void OnSwrData(float data)          => _telemetry.Add(TelemetryChannel.Swr, data);
+    private void OnPaTempData(float data)       => _telemetry.Add(TelemetryChannel.PaTempCelsius, data);
+    private void OnVoltsData(float data)        => _telemetry.Add(TelemetryChannel.VoltsDc, data);
 
     // ── Own client handle ────────────────────────────────────────────────────
 
