@@ -35,7 +35,7 @@ Prerequisites:
 
 - .NET 8 SDK
 - Windows 10/11 (the app targets `net8.0-windows`)
-- FlexLib API source extracted to `FlexLib_API_v4.2.18.41174/` at the repo root. Download from FlexRadio: <https://www.flexradio.com/software/smartsdr-v4-x-api-flexlib/>
+- FlexLib API source extracted to `FlexLib_API_v4.2.20.41343/` at the repo root. Download from FlexRadio: <https://www.flexradio.com/software/smartsdr-v4-x-api-flexlib/>
 
 Build:
 
