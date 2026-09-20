@@ -1,3 +1,10 @@
+#Requires -Version 7.0
+# pwsh 7 only. Under Windows PowerShell 5.1, `2>$null` on a native command with
+# ErrorActionPreference = Stop raises a terminating NativeCommandError, so an
+# untagged HEAD died inside `git describe` with a raw git error instead of the
+# refusal below (found by the Codex audit, 2026-09-20; it predates that audit).
+# The script has only ever been exercised under pwsh, so refuse 5.1 outright
+# rather than make each git call 5.1-safe.
 param(
     [switch]$Preview,
     [switch]$Publish,

@@ -219,6 +219,13 @@ whose source path contains `FlexLib_API_v4.2.20.41343/`.
 If a new warning seems unavoidable in first-party code, raise it before
 suppressing.
 
+One first-party suppression exists, operator-approved 2026-09-20:
+`AVLN3001` in `SmartSDRIQStreamer.csproj`. `SmartDeckWindow` deliberately
+has no parameterless constructor (see the note above its constructor),
+and nothing loads it by `avares` URI, so the warning describes a
+capability the app does not use. It is scoped to that one code; a second
+window tripping it is a new decision, not covered by this one.
+
 **Test gate**: **After any change in
 `src/SmartSDRIQStreamer.CWSkimmer/`, `src/SmartSDRIQStreamer.FlexRadio/`,
 or `tests/`, immediately run `dotnet test` and fix any failures before
@@ -507,6 +514,12 @@ dotnet test SmartStreamer4.sln                        # run all tests
 .\publish-release.ps1 -Publish                        # GA: build + zip + gh release create
 ```
 
+`publish-release.ps1` is **pwsh 7 only** (`#Requires -Version 7.0`, added
+2026-09-20). Under Windows PowerShell 5.1 a native command's stderr
+becomes a terminating error when `ErrorActionPreference` is `Stop`, so an
+untagged HEAD died inside `git describe` with a raw git error instead of
+the script's own refusal. 5.1 is refused outright rather than supported.
+
 The solution file must be named explicitly: the root also contains
 `SmartSDRIQStreamer.csproj`, so bare `dotnet build` / `dotnet test` fail
 with MSB1011 (ambiguous). Before 2026-07-23 the root solution was a
@@ -519,10 +532,10 @@ series is retired — issue #56):
 - `vMAJOR.MINOR.PATCH` — general availability release (e.g. `v0.2.1`).
   Bump PATCH for a fixes-only release, MINOR when a feature lands.
 - `vMAJOR.MINOR.PATCH-previewN` — numbered tester build (e.g.
-  `v0.3.2-preview1`), adopted 2026-09-08 from the SKCCLogger convention.
+  `v0.3.3-preview1`), adopted 2026-09-08 from the SKCCLogger convention.
   The base is pinned across a line: every preview leading to a release
   carries the same numeric version and only N advances (`-preview1`,
-  `-preview2`, then the clean `v0.3.2` at GA). Annotated tag, phase 1
+  `-preview2`, then the clean `v0.3.3` at GA). Annotated tag, phase 1
   only, zip handed to testers by hand. The suffix is embedded in the
   exe, so About and bug reports say which preview a tester is on, and
   the updater ranks every preview below the clean GA tag at the same
@@ -537,12 +550,13 @@ series is retired — issue #56):
 - **Do not use the `bN` suffix.** It retired with the beta series
   (operator decision, 2026-08-05) and the script no longer accepts it.
   Between that date and 2026-09-08 a tester build carried the plain GA
-  tag; `v0.3.2` at `aabd5ed` is the one build minted that way. Its
-  testers report the same version as GA will, and their updater will
-  say "Up to date" against GA, so they need a manual nudge when GA
-  ships. If a fix build precedes GA, retract that tag
-  (`git push origin :refs/tags/v0.3.2`, delete locally) and tag the fix
-  `v0.3.2-preview2`.
+  tag; `v0.3.2` at `aabd5ed` is the one build minted that way. It was
+  never published and never will be: the line moved on to `v0.3.3`
+  (operator decision, 2026-09-20). The tag stays on origin as a record
+  and is **not** retracted. Its testers need no manual nudge, because
+  `v0.3.3` outranks `v0.3.2` numerically and their updater prompts when
+  GA ships. The last published release is `v0.3.1`, so `v0.3.3` release
+  notes diff from there, not from the `v0.3.2` tag.
 - The tooling still ranks `a`/`alpha`, `b`/`bN` and `rc` suffixes when
   reading old tags; `preview` shares the rank `b` held. A suffix-free
   tag outranks any suffixed tag at the same numeric version.

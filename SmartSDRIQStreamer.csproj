@@ -19,6 +19,16 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\SetupWizard\StreamerApp_variant.ico</ApplicationIcon>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <!-- AVLN3001 only ("XAML resource won't be reachable via runtime loader,
+         no public constructor"). Operator-approved 2026-09-20. It fires for
+         SmartDeckWindow, which deliberately has no parameterless constructor
+         (see the note above its constructor in SmartDeckWindow.axaml.cs): the
+         window is only ever built with a live connection, and nothing loads it
+         by avares URI, so the warning describes a capability we do not use.
+         This is the one first-party suppression in the repo. If a second
+         window trips it, decide that case on its own; do not read this as a
+         blanket licence. -->
+    <NoWarn>$(NoWarn);AVLN3001</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <Compile Remove="FlexLib_API_v4.1.5.39794\**" />
