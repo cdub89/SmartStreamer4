@@ -37,11 +37,18 @@ $ErrorActionPreference = "Stop"
 # <Version> (trailing 'b', '-b', etc.), so release labels are kept out of the
 # csproj entirely. The v0.1.Xb beta series and the bN suffix are both retired.
 
-# R2 preview distribution. The bucket is shared with the public download page,
-# which serves GA from this same prefix, so the two lanes are kept apart by
-# filename: a preview's sidecar is SHA256SUMS-<tag>.txt, never the bare
-# SHA256SUMS.txt that the wx7v.net page verifies GA against. Overwriting that
-# file would break the published GA checksum.
+# R2 preview distribution. Preview sidecars are tag-scoped
+# (SHA256SUMS-<tag>.txt) rather than the bare SHA256SUMS.txt, for two reasons:
+# consecutive previews would otherwise overwrite each other's checksum, and the
+# bare name at this prefix is already taken by an object testers may hold a link
+# to. Nothing here is reliably retractable once the edge has served it, so the
+# rule is simply that a preview never writes a name it does not own.
+#
+# Checked 2026-09-20: wx7v.net links GA artifacts straight from GitHub Releases
+# (releases/download/<tag>/...), NOT from this bucket. The bare SHA256SUMS.txt
+# and the v0.3.2 zip sitting at this prefix are leftovers from the v0.3.2 tester
+# build, not the GA download path. Do not restate that the page verifies GA
+# against this file; it does not.
 $R2Bucket = "wx7v-downloads"
 $R2Prefix = "smartstreamer4"
 $R2PublicHost = "https://downloads.wx7v.net"
@@ -302,8 +309,9 @@ Write-Host "  SHA256: $hash" -ForegroundColor Green
 Write-Host "`n[6/7] Writing $sumsLabel sidecar..." -ForegroundColor Yellow
 # Single-line per-release sidecar in the publish dir. Not tracked in git: the
 # publish dir is under bin/ which is gitignored. GA attaches it as a release
-# asset; a preview uploads it beside the zip under a tag-scoped name so it can
-# never overwrite the GA SHA256SUMS.txt the download page verifies against.
+# asset, which is where wx7v.net actually links GA from; a preview uploads it
+# beside the zip under a tag-scoped name so it never writes a name it does not
+# own (see the note at the top).
 $newLine = "$hash  $zipLabel"
 Set-Content -Path $sumsPath -Value $newLine -Encoding ascii
 Write-Host "  Wrote $sumsPath" -ForegroundColor Green

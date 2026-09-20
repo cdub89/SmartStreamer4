@@ -624,10 +624,15 @@ Steps 1–4 are the operator's; Claude runs step 5.
      Refuses to package if not.
    - Produces `SmartStreamer4-<tag>-win-x64.zip`, tag in the filename,
      so a tester can tell builds apart on disk.
-   - Writes `SHA256SUMS-<tag>.txt`. **Tag-scoped deliberately**: GA uses
-     the bare `SHA256SUMS.txt` at the same R2 prefix and the wx7v.net
-     download page verifies GA against it, so a preview writing that
-     name would break the published GA checksum.
+   - Writes `SHA256SUMS-<tag>.txt`. **Tag-scoped deliberately**:
+     consecutive previews would otherwise overwrite each other's
+     checksum, and the bare `SHA256SUMS.txt` at that prefix is already
+     taken by an object a tester may hold a link to. Nothing in the
+     bucket is reliably retractable once the edge has served it, so a
+     preview never writes a name it does not own. (Checked 2026-09-20:
+     wx7v.net links GA straight from GitHub Releases, not from this
+     bucket. The bare `SHA256SUMS.txt` and the `v0.3.2` zip at that
+     prefix are leftovers from the v0.3.2 tester build.)
    - Uploads both to `wx7v-downloads/smartstreamer4/`, then HEADs the
      live URL and compares `content-length`. The upload reports success
      without confirming anything landed, so the live URL is the only
