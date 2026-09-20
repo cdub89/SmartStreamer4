@@ -27,27 +27,29 @@
          value the radio currently holds. -->
 
     <Window.Styles>
-        <!-- Telemetry readouts are glanced at mid-QSO. They sit a step below the
-             RF gain and AGC-T readouts rather than matching them: matched, the
-             footer competed with the controls above it (operator-reported, issue
-             #59 live feedback). The step-down is the only part of that pass that
-             survived. Spacing is untouched from the shipped layout, the tighter
-             label margin tried alongside the move having gone back with it. -->
-        <Style Selector="TextBlock.telemetry-value">
-            <Setter Property="FontSize" Value="11"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="HorizontalAlignment" Value="Center"/>
-        </Style>
-        <Style Selector="TextBlock.telemetry-label">
-            <Setter Property="FontSize" Value="8"/>
+        <!-- The telemetry strip under the header (2026-09-20 swap, see the row
+             itself). Quiet on purpose: 10px, label and unit muted, only the
+             value in the normal ink, because the number is the point and the
+             frequency above it must stay the loudest thing in the block. At the
+             header's 17 a reading looks equal to the frequency the radio is
+             tuned to, which is the mistake the old footer already found and
+             reverted one tier up. Label and value sit 5 apart, the gap the
+             operator tuned for this same inline form when it carried RIT/XIT. -->
+        <Style Selector="TextBlock.strip-label">
+            <Setter Property="FontSize" Value="10"/>
             <Setter Property="Foreground" Value="{DynamicResource AppMutedBrush}"/>
-            <Setter Property="HorizontalAlignment" Value="Center"/>
+            <Setter Property="VerticalAlignment" Value="Bottom"/>
         </Style>
-        <Style Selector="TextBlock.telemetry-unit">
+        <Style Selector="TextBlock.strip-value">
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="VerticalAlignment" Value="Bottom"/>
+            <Setter Property="Margin" Value="5,0,0,0"/>
+        </Style>
+        <Style Selector="TextBlock.strip-unit">
             <Setter Property="FontSize" Value="9"/>
             <Setter Property="Foreground" Value="{DynamicResource AppMutedBrush}"/>
             <Setter Property="VerticalAlignment" Value="Bottom"/>
-            <Setter Property="Margin" Value="2,0,0,1"/>
+            <Setter Property="Margin" Value="2,0,0,0"/>
         </Style>
 
         <!-- The mode readout is a control, not a caption: clicking it steps the
@@ -175,44 +177,49 @@
             <Setter Property="TextElement.Foreground" Value="{DynamicResource AppMutedBrush}"/>
         </Style>
 
-        <!-- RIT and XIT offsets (issue #73). Label and value share one type
-             treatment, 10px, bottom-aligned, 5px apart (operator, after live
-             test; it was 3 until the operator widened it on 2026-09-20): the
-             pair reads as a single quiet unit rather than a caption plus a
-             reading, which is right for a line that is glanced at rather than
-             dialled by eye. The value started a size up and looked like
-             two different things stuck together.
+        <!-- The control row at the foot of the deck: RF gain, AGC-T, RIT, XIT
+             and PWR, label over value. The value is a step up from the 10px it
+             had inline beside the label (operator, 2026-09-20: the footer slot
+             has the room, and a value you steer by wheel should be easy to
+             read). Starting sizes, expected to be tuned from a screenshot.
 
-             Deliberately well below the frequency above it. At the header's 17
-             an offset reads as visually equal to the frequency the radio is
-             tuned to, which is the mistake the telemetry footer already found
-             and reverted one tier up, and two readouts that size do not fit the
-             centre column with four slices running.
-
-             Colour carries the engaged state, so ".on" MUST stay declared after
-             the base styles: Avalonia resolves competing setters by declaration
-             order, not selector specificity. -->
-        <Style Selector="TextBlock.offset-label">
-            <Setter Property="FontSize" Value="10"/>
+             Colour carries the engaged state for RIT and XIT, so ".on" MUST stay
+             declared after the base styles: Avalonia resolves competing setters
+             by declaration order, not selector specificity. -->
+        <Style Selector="TextBlock.control-label">
+            <Setter Property="FontSize" Value="9"/>
             <Setter Property="Foreground" Value="{DynamicResource AppMutedBrush}"/>
-            <Setter Property="VerticalAlignment" Value="Bottom"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
         </Style>
-        <!-- No bottom margin on either. The 2px they carried was copied from the
-             header, where "MHz" and "Mode" are lifted off a 17px baseline beside
-             a much larger value. Here label and value are the same size, so it
-             was not alignment, it was dead space under the line (operator
-             reported the gap after live test). -->
-        <Style Selector="TextBlock.offset-value">
-            <Setter Property="FontSize" Value="10"/>
-            <Setter Property="Foreground" Value="{DynamicResource AppMutedBrush}"/>
-            <Setter Property="VerticalAlignment" Value="Bottom"/>
-            <Setter Property="Margin" Value="5,0,0,0"/>
+        <Style Selector="TextBlock.control-value">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
         </Style>
-        <Style Selector="TextBlock.offset-label.on">
+        <Style Selector="TextBlock.control-label.on">
             <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}"/>
         </Style>
-        <Style Selector="TextBlock.offset-value.on">
+        <Style Selector="TextBlock.control-value.on">
             <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}"/>
+        </Style>
+        <!-- A disabled cell has to look disabled. The value is in the normal ink
+             now, not the muted one the inline form used, so without this a row
+             greyed for "no slice selected" would read as live. Same 0.5 the
+             deck buttons use. -->
+        <Style Selector="StackPanel.control-cell:disabled">
+            <Setter Property="Opacity" Value="0.5"/>
+        </Style>
+        <!-- Tips sit ABOVE the cell and wait. The default opens at the pointer
+             after 400 ms, and here the pointer is on the value, so the tip
+             landed on the very number being steered by wheel
+             (operator-reported on the first pass, 2026-09-20). Top placement
+             keeps the value in view; the longer delay means a quick wheel
+             adjustment never raises a tip at all. Only these cells: every other
+             tip on the deck belongs to a control whose value is not under it. -->
+        <Style Selector="StackPanel.control-cell">
+            <Setter Property="ToolTip.Placement" Value="Top"/>
+            <Setter Property="ToolTip.VerticalOffset" Value="-4"/>
+            <Setter Property="ToolTip.ShowDelay" Value="1200"/>
         </Style>
 
         <!-- On the air (issue #69). The transmitting slice is usually also the
@@ -291,7 +298,7 @@
          registers, so spacing has to be reclaimed from several places at once
          or not at all. Paired here with the group labels giving back their line
          leading, for about 5px at every group boundary rather than 2. -->
-    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="4" Margin="10,8">
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="4" Margin="10,8">
 
         <!-- Header. Answers slice, frequency and mode without opening anything;
              before the layout pass that state lived inside the slice dropdown's
@@ -307,29 +314,23 @@
                  layouts differ by about a pixel, and this one cannot collide.
                  Still declared first so the chips and the pin draw over it if a
                  station ever runs enough slices to squeeze the column anyway. -->
-            <!-- Issue #73 wrapped this in a vertical stack to hang the RIT and
-                 XIT line beneath the readout. The inner row is untouched: its
-                 baseline alignment took three passes to get right (see the
-                 comments inside it), and wrapping a panel around it does not
-                 disturb that, whereas editing it would. -->
-            <!-- Operator-tuned, 2026-08-25. The block is centred and measures
-                 centred, but does not read that way: two thirds of its ink is
-                 the big frequency at the top with a small dim line hanging
-                 below, and the eye centres on the numerals, which measured
-                 about 11px above the row centre against the slice chip.
+            <!-- A vertical stack around the readout row. Issue #73 put it here to
+                 hang the RIT/XIT line beneath the frequency; that line moved to
+                 the foot of the deck on 2026-09-20 and the telemetry strip took
+                 the position as its own full-width row below the header, so
+                 this now wraps one child. Kept deliberately for now: it is the
+                 seam for the variant still to be tried, with the strip inside
+                 this block directly under the frequency. If that variant is
+                 rejected, fold the wrapper away.
 
-                 A top pad counterweights that. Mirroring the offsets line
-                 exactly (14) centres the numerals properly but reads as a gap
-                 above the readout, which the operator rejected on sight. Half
-                 of it moves the numerals most of the way down while staying
-                 below the threshold where the space itself becomes visible.
-                 Deliberately not exact centring: the operator chose the look
-                 over the arithmetic, and this comment is here so a later pass
-                 does not "correct" it back to 14. -->
+                 The 6px top pad this carried is gone with the line. It existed
+                 only to counterweight a small dim line hanging under the big
+                 numerals; with nothing hanging, plain centring is right again.
+                 The inner row is untouched: its baseline alignment took three
+                 passes to get right (see the comments inside it). -->
             <StackPanel Grid.Column="1"
                         HorizontalAlignment="Center"
-                        VerticalAlignment="Center"
-                        Margin="0,6,0,0">
+                        VerticalAlignment="Center">
             <StackPanel Orientation="Horizontal"
                         HorizontalAlignment="Center">
                 <!-- Bottom-aligned explicitly rather than left on the default
@@ -353,7 +354,7 @@
                 <TextBlock Text="{Binding FrequencyText}" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Bottom"
                            Background="Transparent"
                            PointerWheelChanged="OnFrequencyWheel"
-                           ToolTip.Tip="Wheel: tune by the radio's step"/>
+                           ToolTip.Tip="Wheel: tune"/>
                 <TextBlock Text="MHz" FontSize="10" Foreground="{DynamicResource AppMutedBrush}" VerticalAlignment="Bottom" Margin="3,0,0,2"
                            Background="Transparent"
                            PointerWheelChanged="OnFrequencyWheel"/>
@@ -380,81 +381,6 @@
                     </StackPanel>
                 </Button>
             </StackPanel>
-
-            <!-- RIT and XIT, both always visible. An earlier design put one
-                 behind a toggle to save width; showing both is what makes it
-                 impossible for XIT engaged on the Maestro to sit hidden while
-                 the operator looks at RIT. Goes vertical rather than widening
-                 the centre column, so it cannot worsen the slice-chip collision
-                 the comment above describes.
-
-                 Wheel moves the offset, click engages or releases. Both live on
-                 the label and the value so the target is the whole pair rather
-                 than four characters. Background="Transparent" is what makes a
-                 TextBlock hit-testable in Avalonia; it is not a visual change.
-                 Wheel-only would be undiscoverable, hence the tooltips, the
-                 same call TX power already made. -->
-            <!-- Issue #76: RF gain and AGC-T joined this row in the same inline
-                 style, and their -/+ steppers below were deleted. Nothing was
-                 lost with them: F1-F4 are still bound to RF gain and AGC-T
-                 up/down, and the wheel already worked across the whole group,
-                 so only a click target went. That is what paid for the four
-                 receive-chain buttons on the strip below.
-
-                 IsEnabled, not IsVisible (changed 2026-09-19). Collapsing this
-                 row moved the deck's height at runtime, and now that RF gain
-                 lives here it would also hide a panadapter control that stays
-                 valid with no slice selected. Greying holds one fixed height in
-                 every state, which is what the band and antenna rows already
-                 do. Do not switch this back to IsVisible. -->
-            <!-- Four peers, evenly spaced (operator, 2026-09-20). Grouping them
-                 as RIT/XIT and RF/AGC-T pairs was tried the same day at
-                 several ratios (up to 6 inside, 28 between) and the operator
-                 rejected it on sight each time. Do not reintroduce it. The gap
-                 is 14, up from the 10 the row shipped with; one Spacing on the
-                 panel rather than per-item margins, so it cannot drift
-                 unevenly. -->
-            <StackPanel Orientation="Horizontal"
-                        HorizontalAlignment="Center"
-                        IsEnabled="{Binding HasSelectedSlice}"
-                        Spacing="14"
-                        Margin="0,1,0,0">
-                <StackPanel Orientation="Horizontal"
-                            Background="Transparent"
-                            PointerWheelChanged="OnRitWheel"
-                            Tapped="OnRitTapped"
-                            ToolTip.Tip="RIT. Click: on/off. Wheel: 10 Hz">
-                    <TextBlock Classes="offset-label" Classes.on="{Binding IsRitEnabled}" Text="RIT"/>
-                    <TextBlock Classes="offset-value" Classes.on="{Binding IsRitEnabled}" Text="{Binding RitText}"/>
-                </StackPanel>
-                <StackPanel Orientation="Horizontal"
-                            Background="Transparent"
-                            PointerWheelChanged="OnXitWheel"
-                            Tapped="OnXitTapped"
-                            ToolTip.Tip="XIT. Click: on/off. Wheel: 10 Hz">
-                    <TextBlock Classes="offset-label" Classes.on="{Binding IsXitEnabled}" Text="XIT"/>
-                    <TextBlock Classes="offset-value" Classes.on="{Binding IsXitEnabled}" Text="{Binding XitText}"/>
-                </StackPanel>
-                <!-- No Tapped handler on these two: they carry a value but no
-                     state, so a click has nothing to mean. The deck's rule is
-                     that a control answers whatever it actually has, which is
-                     why DIV below is the mirror image, a click with no wheel. -->
-                <StackPanel Orientation="Horizontal"
-                            Background="Transparent"
-                            IsEnabled="{Binding CanAdjustRfGain}"
-                            PointerWheelChanged="OnRfGainWheel"
-                            ToolTip.Tip="RF gain. Wheel or F1/F2">
-                    <TextBlock Classes="offset-label" Text="RF"/>
-                    <TextBlock Classes="offset-value" Text="{Binding RfGainText}"/>
-                </StackPanel>
-                <StackPanel Orientation="Horizontal"
-                            Background="Transparent"
-                            PointerWheelChanged="OnAgcThresholdWheel"
-                            ToolTip.Tip="AGC-T. Wheel or F3/F4">
-                    <TextBlock Classes="offset-label" Text="AGC-T"/>
-                    <TextBlock Classes="offset-value" Text="{Binding AgcThresholdText}"/>
-                </StackPanel>
-            </StackPanel>
             </StackPanel>
 
             <!-- Centred on the row, like the readout and the pin (operator,
@@ -462,7 +388,9 @@
                  top alignment, which only showed once the RIT/XIT line made the
                  centre column taller than they are: the chips and the pin stayed
                  level with the frequency while the readout grew downward past
-                 them, so the row read as top-aligned rather than centred. -->
+                 them, so the row read as top-aligned rather than centred. That
+                 line left the header on 2026-09-20, but centring stays correct
+                 and is what the in-block telemetry variant would need again. -->
             <ItemsControl Grid.Column="0" ItemsSource="{Binding SliceOptions}" Margin="-2"
                           VerticalAlignment="Center">
                 <ItemsControl.ItemsPanel>
@@ -508,9 +436,66 @@
             </ToggleButton>
         </Grid>
 
+        <!-- Telemetry, read-only, directly under the header (operator request,
+             2026-09-20): while keyed the eye is already on the frequency, so
+             power and SWR belong beside it, and the wheel-driven controls that
+             used to hang here moved to the foot of the deck, away from the
+             frequency's own wheel target.
+
+             Telemetry was moved up here once before, during issue #59, and put
+             back. Per the operator (2026-09-20) that revert was about other
+             usability problems in that pass, not about the position, so it is
+             not a reason to avoid this one. The form differs too: a full-width
+             row in the quiet inline type, not a narrow group of footer cells.
+
+             FIXED CELLS, NOT A FLOWING LINE. Fwd and SWR change four times a
+             second while keyed. A centred run of text re-centres every
+             time "0.0" becomes "100", so the whole strip would shudder sideways
+             on every dit, right under the frequency. Equal columns pin each
+             reading in place. That is also why this is a row of its own rather
+             than a line inside the header's centre block: equal cells need the
+             full width, and the centre block is squeezed between the slice
+             chips and the pin (see the collision notes in the header). The
+             in-block variant is still to be tried at the operator's request.
+
+             Order is the operator's (2026-09-20): Fwd, SWR, Temp, Volts. The two
+             that move while keyed lead, the two slow, steady readings follow.
+             The reverse order was tried the same day and put back; this is also
+             the order the old footer used, less Ref.
+
+             Reflected power (issue #69) was shown here as a fifth cell and
+             dropped by the operator the same day, during this layout pass. The
+             reading is still produced: RefPowerText in the ViewModel, fed from
+             the radio's own REFPWR meter. It is unbound for now, NOT forgotten:
+             once this layout settles, either bring the cell back or remove the
+             plumbing end to end, so it does not linger as dead code. -->
+        <!-- Bottom margin 5: breathing room before the Band heading (operator,
+             first pass 2026-09-20). On top of the grid's RowSpacing of 4. -->
+        <Grid Grid.Row="1" ColumnDefinitions="*,*,*,*" Margin="0,0,0,5">
+            <StackPanel Grid.Column="0" Orientation="Horizontal" HorizontalAlignment="Center">
+                <TextBlock Classes="strip-label" Text="Fwd"/>
+                <TextBlock Classes="strip-value" Text="{Binding PowerText}"/>
+                <TextBlock Classes="strip-unit" Text="W"/>
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center">
+                <TextBlock Classes="strip-label" Text="SWR"/>
+                <TextBlock Classes="strip-value" Text="{Binding SwrText}"/>
+            </StackPanel>
+            <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Center">
+                <TextBlock Classes="strip-label" Text="Temp"/>
+                <TextBlock Classes="strip-value" Text="{Binding TempText}"/>
+                <TextBlock Classes="strip-unit" Text="C"/>
+            </StackPanel>
+            <StackPanel Grid.Column="3" Orientation="Horizontal" HorizontalAlignment="Center">
+                <TextBlock Classes="strip-label" Text="Volts"/>
+                <TextBlock Classes="strip-value" Text="{Binding VoltsText}"/>
+                <TextBlock Classes="strip-unit" Text="V"/>
+            </StackPanel>
+        </Grid>
+
         <!-- Band buttons. A band change is a write to Slice.Freq, not an API
              verb, so the per-band memory behind these lives in BandMemory. -->
-        <StackPanel Grid.Row="1" IsEnabled="{Binding HasSelectedSlice}">
+        <StackPanel Grid.Row="2" IsEnabled="{Binding HasSelectedSlice}">
             <TextBlock Classes="group-label" Text="Band"/>
             <ItemsControl ItemsSource="{Binding BandOptions}" Margin="-2">
                 <ItemsControl.ItemsPanel>
@@ -538,7 +523,7 @@
              transverter ports are filtered out (4 RX against 2 TX), so buttons
              read the same width across the seam; a radio reporting other counts
              renders one group slightly wider, which is cosmetic only. -->
-        <Grid Grid.Row="2" ColumnDefinitions="2*,*" ColumnSpacing="10"
+        <Grid Grid.Row="3" ColumnDefinitions="2*,*" ColumnSpacing="10"
               IsEnabled="{Binding HasSelectedSlice}">
             <StackPanel Grid.Column="0">
                 <TextBlock Classes="group-label" Text="RX antenna"/>
@@ -582,7 +567,9 @@
         </Grid>
 
         <!-- Issue #76: the receive-chain strip, which replaced the RF gain and
-             AGC-T steppers. Those two moved up to the RIT/XIT row as inline
+             AGC-T steppers. (Those two have since moved again, with RIT and XIT,
+             to the control row at the foot of the deck, 2026-09-20; what follows
+             is the #76 record.) Those two moved up to the RIT/XIT row as inline
              pairs and their -/+ buttons were deleted; F1-F4 still drive them
              and the wheel already covered the whole group, so only a click
              target went. That is what paid for these four controls, and the
@@ -604,11 +591,12 @@
              (operator, after live test 2026-09-19). Equal rather than weighted:
              at this width every column lands near 64px, comfortably past the
              widest label ("QRO" and a three-digit wattage), so nothing needs a
-             bigger share. Matches the telemetry footer's own *,*,*,* row.
+             bigger share. The telemetry strip and the control row use the same
+             five equal columns, so all three line up.
              Spacing comes from the deck-button style's uniform 2px margin, the
              same as every other button on the deck: do not add per-button
              margins back here, they were what made the gutters uneven. -->
-        <Grid Grid.Row="3" ColumnDefinitions="*,*,*,*,*"
+        <Grid Grid.Row="4" ColumnDefinitions="*,*,*,*,*"
               IsEnabled="{Binding HasSelectedSlice}">
             <Button Grid.Column="0"
                     Classes="deck-button"
@@ -641,9 +629,10 @@
                  2026-09-19). It names the preset while the radio sits on one
                  and shows the wattage at any other level; see TxButtonText for
                  why the earlier revert-after-two-seconds behaviour went. That
-                 makes this the only place the power *setting* appears; "Fwd"
-                 in the footer is measured forward power and reads zero on
-                 receive, a different number.
+                 left a preset hiding the number, which is what the PWR cell in
+                 the control row below now covers: it always shows the setting
+                 in watts. "Fwd" in the telemetry strip is measured forward
+                 power and reads zero on receive, a different number.
 
                  Lit still means the deck's one thing, the value in force: here,
                  sitting on one of the two presets. The label cannot shift the
@@ -656,69 +645,90 @@
                     Content="{Binding TxButtonText}"
                     IsEnabled="{Binding CanToggleQrp}"
                     PointerWheelChanged="OnTxPowerWheel"
-                    ToolTip.Tip="TX power. Click: QRP/QRO. Wheel: watts"
+                    ToolTip.Tip="Click: QRP/QRO. Wheel: watts"
                     Command="{Binding ToggleQrpCommand}"/>
         </Grid>
 
-        <!-- Telemetry stays the footer, spread across the full width above its
-             own top divider. Moving it up under the header and centring the four
-             cells as a narrower group was tried on the operator's request and
-             put back: the cluster it was meant to join did not read as one
-             block, and the panel looked wrong in the position it was moved to
-             (operator-reported twice, issue #59 live feedback). Only the font
-             step-down from that attempt was kept. Padding and placement here are
-             the shipped v0.3.0b2 values; do not move this again without the
-             operator asking for it specifically. -->
-        <Border Grid.Row="4" BorderBrush="{DynamicResource AppDividerBrush}" BorderThickness="0,1,0,0" Padding="0,5,0,0">
-            <Grid ColumnDefinitions="*,*,*,*,*">
-                <StackPanel Grid.Column="0">
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                        <TextBlock Classes="telemetry-value" Text="{Binding PowerText}"/>
-                        <TextBlock Classes="telemetry-unit" Text="W"/>
-                    </StackPanel>
-                    <!-- "Fwd", not "Power": the TX power group above is the
-                         setting, this is what the meter reads coming out. -->
-                    <TextBlock Classes="telemetry-label" Text="Fwd"/>
-                </StackPanel>
+        <!-- The control row: RF gain, AGC-T, RIT, XIT and PWR, in the footer the
+             telemetry used to hold (operator request, 2026-09-20; order is the
+             operator's). Label over value, and a whole cell is the target, so
+             the wheel and the click land on something far bigger than the four
+             characters they had inline under the frequency.
 
-                <!-- Reflected power, directly after forward power as the issue
-                     asked (issue #69). Read from the radio's own REFPWR meter,
-                     not computed from Fwd and SWR: the radio measures it, and a
-                     computed figure would inherit the SWR meter's 1.0 floor and
-                     read exactly 0 W on every good match.
+             What each control answers is unchanged, and follows the deck's one
+             rule, a control answers whatever it actually has. RIT and XIT have
+             a state and a value: click engages or releases, wheel shifts the
+             offset 10 Hz, and colour shows engaged. Both are always visible, so
+             XIT engaged on the Maestro cannot sit hidden. RF gain, AGC-T and PWR
+             have a value and no state, so they take the wheel and ignore the
+             click. F1 to F4 still drive RF gain and AGC-T, though the tips no
+             longer say so (operator, 2026-09-20: keep the tips short). Background is
+             Transparent only because that is what makes a panel hit-testable in
+             Avalonia; it is not a visual change. Wheel-only would be
+             undiscoverable, hence the tooltips. No hover cue, by the operator's
+             choice for now; revisit if the cells read as read-only.
 
-                     Five columns rather than four now. Each lands near 70px at
-                     the deck's fixed 360px width, which still clears the widest
-                     reading here, so the footer keeps its one-glance row. -->
-                <StackPanel Grid.Column="1">
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                        <TextBlock Classes="telemetry-value" Text="{Binding RefPowerText}"/>
-                        <TextBlock Classes="telemetry-unit" Text="W"/>
-                    </StackPanel>
-                    <TextBlock Classes="telemetry-label" Text="Ref"/>
-                </StackPanel>
+             PWR is the transmit power SETTING, always in watts. The power button
+             above shows "QRP" or "QRO" while the radio sits on a preset, so this
+             is the one place the number is always on view. It is not "Fwd" in
+             the strip, which is measured output and reads zero on receive. The
+             QRP/QRO toggle stays on the button; a click here has nothing to
+             mean.
 
-                <StackPanel Grid.Column="2">
-                    <TextBlock Classes="telemetry-value" Text="{Binding SwrText}"/>
-                    <TextBlock Classes="telemetry-label" Text="SWR"/>
-                </StackPanel>
-
-                <StackPanel Grid.Column="3">
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                        <TextBlock Classes="telemetry-value" Text="{Binding TempText}"/>
-                        <TextBlock Classes="telemetry-unit" Text="C"/>
-                    </StackPanel>
-                    <TextBlock Classes="telemetry-label" Text="Temp"/>
-                </StackPanel>
-
-                <StackPanel Grid.Column="4">
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                        <TextBlock Classes="telemetry-value" Text="{Binding VoltsText}"/>
-                        <TextBlock Classes="telemetry-unit" Text="V"/>
-                    </StackPanel>
-                    <TextBlock Classes="telemetry-label" Text="Volts"/>
-                </StackPanel>
-            </Grid>
-        </Border>
+             IsEnabled, not IsVisible: the deck holds one height in every state.
+             Do not switch this to IsVisible. -->
+        <!-- No divider above this row (operator, 2026-09-20): the rule that
+             fenced off the read-only telemetry footer made no sense once the
+             row became controls, which belong with the buttons above them.
+             Top margin 6 is exactly what the divider occupied, its 1px line
+             plus its 5px pad, so the row sits where it did and only the line
+             is gone (operator: keep the padding). A margin rather than an
+             invisible border: same geometry, nothing hidden to maintain. -->
+        <Grid Grid.Row="5" ColumnDefinitions="*,*,*,*,*" IsEnabled="{Binding HasSelectedSlice}" Margin="0,6,0,0">
+            <StackPanel Grid.Column="0"
+                        Classes="control-cell"
+                        Background="Transparent"
+                        IsEnabled="{Binding CanAdjustRfGain}"
+                        PointerWheelChanged="OnRfGainWheel"
+                        ToolTip.Tip="Wheel: adjust">
+                <TextBlock Classes="control-label" Text="RF Gain"/>
+                <TextBlock Classes="control-value" Text="{Binding RfGainText}"/>
+            </StackPanel>
+            <StackPanel Grid.Column="1"
+                        Classes="control-cell"
+                        Background="Transparent"
+                        PointerWheelChanged="OnAgcThresholdWheel"
+                        ToolTip.Tip="Wheel: adjust">
+                <TextBlock Classes="control-label" Text="AGC-T"/>
+                <TextBlock Classes="control-value" Text="{Binding AgcThresholdText}"/>
+            </StackPanel>
+            <StackPanel Grid.Column="2"
+                        Classes="control-cell"
+                        Background="Transparent"
+                        PointerWheelChanged="OnRitWheel"
+                        Tapped="OnRitTapped"
+                        ToolTip.Tip="Click: on/off. Wheel: 10 Hz">
+                <TextBlock Classes="control-label" Classes.on="{Binding IsRitEnabled}" Text="RIT"/>
+                <TextBlock Classes="control-value" Classes.on="{Binding IsRitEnabled}" Text="{Binding RitText}"/>
+            </StackPanel>
+            <StackPanel Grid.Column="3"
+                        Classes="control-cell"
+                        Background="Transparent"
+                        PointerWheelChanged="OnXitWheel"
+                        Tapped="OnXitTapped"
+                        ToolTip.Tip="Click: on/off. Wheel: 10 Hz">
+                <TextBlock Classes="control-label" Classes.on="{Binding IsXitEnabled}" Text="XIT"/>
+                <TextBlock Classes="control-value" Classes.on="{Binding IsXitEnabled}" Text="{Binding XitText}"/>
+            </StackPanel>
+            <StackPanel Grid.Column="4"
+                        Classes="control-cell"
+                        Background="Transparent"
+                        IsEnabled="{Binding CanToggleQrp}"
+                        PointerWheelChanged="OnTxPowerWheel"
+                        ToolTip.Tip="Wheel: watts">
+                <TextBlock Classes="control-label" Text="PWR"/>
+                <TextBlock Classes="control-value" Text="{Binding TxPowerText}"/>
+            </StackPanel>
+        </Grid>
     </Grid>
 </Window>

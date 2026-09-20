@@ -801,9 +801,11 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
     /// answer and never has to be interpreted. Lit still means a preset is in
     /// force, so lit and unlit now carry the label/number distinction too.
     ///
-    /// This is the only place the power <em>setting</em> appears. It is not the
-    /// same number as the "Fwd" telemetry below, which is measured forward
-    /// power and reads zero on receive.
+    /// The power <em>setting</em> appears here and, always in watts, in the PWR
+    /// cell of the deck's control row (added 2026-09-20), which exists because
+    /// this button hides the number behind "QRP" or "QRO" while the radio sits
+    /// on a preset. Neither is the same number as the "Fwd" telemetry, which is
+    /// measured forward power and reads zero on receive.
     ///
     /// The reverting behaviour needed a linger timer and a generation counter
     /// to keep a stale timer from clearing a fresh reading. Both are gone with

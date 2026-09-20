@@ -170,8 +170,8 @@ public class SmartDeckToggleTests
     [Fact]
     public void The_power_button_shows_the_wattage_at_any_non_preset_level()
     {
-        // This is the only place the power setting appears, so off a preset the
-        // button has to show the number rather than a two-state label.
+        // Off a preset the button has to show the number rather than a
+        // two-state label: "QRO" at 54 W told the operator nothing.
         var (connection, viewModel) = Deck(settle: HeldOpen);
         connection.ReportRfPower(50);
 
