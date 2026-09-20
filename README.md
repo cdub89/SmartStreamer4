@@ -1,4 +1,4 @@
-# SmartStreamer4
+﻿# SmartStreamer4
 
 SmartStreamer4 is a Windows desktop app for running external decoders
 against a FlexRadio. In **CW Mode** it streams DAX-IQ audio into
@@ -61,19 +61,26 @@ The tests cover INI generation and the CW Skimmer sync tracker. They do not exer
 
 ## Release
 
-Releases are produced by [`publish-release.ps1`](publish-release.ps1) in two phases, with live-test, tag push, and release-notes review happening between them:
+Releases are produced by [`publish-release.ps1`](publish-release.ps1), which takes exactly one of two mode flags. A tester build goes to the R2 bucket testers download from; a GA release goes to GitHub Releases. Both build and zip; neither can reach the other's destination.
 
 ```powershell
-git tag -a v0.2.1 -m "SmartStreamer4 v0.2.1"   # annotated, never lightweight
-.\publish-release.ps1            # phase 1: build, verify embedded version, zip, write SHA256SUMS sidecar
-# live-test the zip, then push the tag BEFORE publishing: git push origin v0.2.1
-# confirm RELEASE_NOTES-v0.2.1.md is finalized
-.\publish-release.ps1 -Publish   # phase 2: gh release create --latest with zip + sidecar attached
+# Tester build
+git tag -a v0.3.3-preview1 -m "SmartStreamer4 v0.3.3-preview1"   # annotated, never lightweight
+git push origin main && git push origin v0.3.3-preview1
+.\publish-release.ps1 -Preview   # build, zip, upload to R2, print the tester link
+
+# GA release
+git tag -a v0.3.3 -m "SmartStreamer4 v0.3.3"
+git push origin main && git push origin v0.3.3
+# confirm RELEASE_NOTES-v0.3.3.md is finalized
+.\publish-release.ps1 -Publish   # build, zip, gh release create --latest
 ```
 
-Phase 1 runs the full test suite, publishes a self-contained single-file exe, verifies its embedded `ProductVersion` matches `<tag>+<sha>`, zips it as `SmartStreamer4-<tag>-win-x64.zip` (runtime suffix matches the `-Runtime` parameter) together with `LICENSE` and `THIRD-PARTY-NOTICES.txt`, and writes a `SHA256SUMS.txt` sidecar next to the zip. Phase 2 fails fast if the tag isn't on `origin`, the zip is missing, the SHA256SUMS line doesn't match, or the notes file is empty; otherwise it creates the GitHub release with the zip and sidecar attached (browsers block `.exe` downloads, so always ship the zip). Nothing is committed, so the release commit equals the tag commit. `--latest` is hard-coded.
+Both modes run the full test suite, publish a self-contained single-file exe, verify its embedded `ProductVersion` matches `<tag>+<sha>`, and zip it as `SmartStreamer4-<tag>-win-x64.zip` (runtime suffix matches the `-Runtime` parameter) together with `THIRD-PARTY-NOTICES.txt`. The project's own `LICENSE` is deliberately not packaged: it is extensionless, so Windows will not open it from the extracted folder, and we hold the copyright, so its omission carries no external obligation.
 
-Versioning: the git tag at HEAD is the single source of truth. The csproj `<Version>` stays at a clean numeric default; the script reads the tag and embeds `<tag>+<sha>` in the published exe so the in-app version display and update check report the right release. As of v0.2.1 SmartStreamer4 is generally available and releases follow `vMAJOR.MINOR.PATCH` (e.g. `v0.2.1`). Numbered tester builds are tagged `vMAJOR.MINOR.PATCH-previewN` (e.g. `v0.3.2-preview1`), handed to testers directly, and never published as GitHub releases. The `v0.1.Xb` beta series is retired.
+`-Preview` requires a `vX.Y.Z-previewN` tag, writes a tag-scoped `SHA256SUMS-<tag>.txt`, refuses to overwrite a zip already live in the bucket, uploads both files, and verifies the published URL answers with the expected size. `-Publish` requires a clean `vX.Y.Z` tag, fails fast before building if the tag is missing from `origin` or points at a different commit there or the notes file is empty, writes the bare `SHA256SUMS.txt`, and creates the GitHub release with the zip and sidecar attached (browsers block `.exe` downloads, so always ship the zip). Nothing is committed either way, so the release commit equals the tag commit. `--latest` is hard-coded and `--prerelease` is not exposed.
+
+Versioning: the git tag at HEAD is the single source of truth. The csproj `<Version>` stays at a clean numeric default; the script reads the tag and embeds `<tag>+<sha>` in the published exe so the in-app version display and update check report the right release. As of v0.2.1 SmartStreamer4 is generally available and releases follow `vMAJOR.MINOR.PATCH` (e.g. `v0.2.1`). Numbered tester builds are tagged `vMAJOR.MINOR.PATCH-previewN` (e.g. `v0.3.3-preview1`), distributed to testers from the download bucket, and never published as GitHub releases. The `v0.1.Xb` beta series is retired.
 
 See [PLAN.md](PLAN.md) for what's slated for the next release.
 

@@ -1,4 +1,4 @@
-# CLAUDE.md
+﻿# CLAUDE.md
 
 Operating manual for AI coding agents in this repository. Claude Code
 loads this file directly; Codex reads the same content through the
@@ -96,13 +96,15 @@ list before reporting completion.
   gitignored and live outside the compiled tree. Only 4.2.20 is
   project-referenced (issue #61); 4.1.5 and 4.2.18 are kept on disk for
   historical reference only.
-- **Release**: `publish-release.ps1` is a two-phase script. Phase 1
-  (default) builds, verifies the embedded version, zips
-  `SmartStreamer4-<tag>-win-x64.zip`, and writes a `SHA256SUMS.txt`
-  sidecar next to the zip. Phase 2 (`-Publish`) runs
-  `gh release create --latest`, attaching the zip and the sidecar;
-  nothing is committed, so the release commit equals the tag commit.
-  Notes pulled from `RELEASE_NOTES-<tag>.md` (gitignored).
+- **Release**: `publish-release.ps1` takes exactly one of two mode
+  flags. `-Preview` requires a `-previewN` tag: it builds, verifies the
+  embedded version, zips `SmartStreamer4-<tag>-win-x64.zip`, writes a
+  tag-scoped `SHA256SUMS-<tag>.txt`, and uploads both to the R2 bucket
+  for testers. `-Publish` requires a clean tag: same build, then
+  `SHA256SUMS.txt` and `gh release create --latest` attaching the zip
+  and the sidecar. Nothing is committed either way, so the release
+  commit equals the tag commit. Notes pulled from
+  `RELEASE_NOTES-<tag>.md` (gitignored).
 
 ## Dev Environment
 
@@ -501,8 +503,8 @@ without asking; ask before any other mutating operation (`pull`,
 dotnet build SmartStreamer4.sln                       # debug build (all projects incl. tests)
 dotnet build SmartStreamer4.sln -c Release            # release build
 dotnet test SmartStreamer4.sln                        # run all tests
-.\publish-release.ps1                                 # phase 1: build + verify + zip + SHA256SUMS bump
-.\publish-release.ps1 -Publish                        # phase 2: gh release create with zip + sidecar
+.\publish-release.ps1 -Preview                        # tester build: build + zip + upload to R2
+.\publish-release.ps1 -Publish                        # GA: build + zip + gh release create
 ```
 
 The solution file must be named explicitly: the root also contains
@@ -560,127 +562,155 @@ and surface the gap rather than auto-shipping. Asking users to update
 from a working install implies there is a reason to; shipping
 hygiene-only releases trains operators to ignore update prompts.
 
-Release publishing flow. Two automated phases bracket the manual
-gates. The script does not pause for human input — gates happen between
-script invocations, so a hung session can never strand a release.
+Release publishing flow. Two modes, one per destination, selected by a
+required flag. The script does not pause for human input: gates happen
+between invocations, so a hung session can never strand a release.
 
-**Two destinations, one phase 1.** A **tester build** (`-previewN` tag)
-stops after phase 1 and the zip is handed out by hand; a **published
-release** (clean tag) continues into phase 2. `v0.3.0b1` through `b5`
-and `v0.3.2` were tester builds under the two earlier conventions:
-tagged, pushed and zipped, never `gh release create`d. The tag now says
-which kind a build is, and phase 2 enforces it: it refuses a preview
-tag and hard-codes `--latest` for a clean one (see below).
+**Two destinations, two flags.** A **tester build** (`-previewN` tag)
+runs `-Preview`, which builds the zip and uploads it to R2 for testers.
+A **published release** (clean tag) runs `-Publish`, which builds the
+zip and creates the GitHub release. Both modes build; neither can reach
+the other's destination, because `-Preview` refuses a clean tag and
+`-Publish` refuses a preview tag. `v0.3.0b1` through `b5` and `v0.3.2`
+were tester builds under the two earlier conventions: tagged, pushed
+and zipped, never `gh release create`d.
 
-### Phase 1 — tag, push, build (`.\publish-release.ps1`)
+**Why flags rather than inference** (adopted 2026-09-20 from
+SKCCLogger's `build.py`). The script used to read the destination off
+the tag shape, with bare invocation meaning "build". Inference cannot
+catch the case that actually bites: intending a tester build, mistyping
+a clean `vX.Y.Z` tag, and getting a GA-shaped zip with no complaint.
+Stating the intent lets the script check the tag against it, and it
+checks **before** the test run and build rather than after. SKCCLogger
+hit the same class of bug from the other side (`build.py:2320`, pre-GA
+review 2026-07-07): a full build plus three notarizations finished and
+then both publish steps silently printed "Skipping ... not a clean
+tag", shipping nothing.
 
-Steps 1–5 are the operator's; Claude runs step 6 and does step 7.
+### Preview — tester build (`.\publish-release.ps1 -Preview`)
 
-1. Commit everything, including docs. The script tags HEAD and does
-   **not** check for a clean working tree, so anything uncommitted is
-   simply absent from what the tag names.
-2. Tag the local HEAD with the release label, always as an
-   **annotated** tag: `git tag -a v0.2.1 -m "SmartStreamer4 v0.2.1"`.
+Steps 1–4 are the operator's; Claude runs step 5.
+
+1. Commit everything, including docs. The script tags nothing itself and
+   does **not** check for a clean working tree, so anything uncommitted
+   is simply absent from what the tag names.
+2. Tag the local HEAD, always as an **annotated** tag:
+   `git tag -a v0.3.3-preview1 -m "SmartStreamer4 v0.3.3-preview1"`.
    Lightweight tags have caused busted releases before; annotated only.
    The csproj `<Version>` stays at the clean numeric default; release
    version comes from the tag.
-3. `git push origin main` **before** pushing the tag. Otherwise origin
-   carries a tag pointing at a commit unreachable from any branch.
-4. `git push origin <tag>`. Every release tag goes to origin, including
-   tester builds that will never be published; only phase 2 puts a
-   release in front of operators.
-5. Confirm no SmartStreamer4 instance is running. Phase 1 does a
+3. `git push origin main` **before** pushing the tag, then
+   `git push origin <tag>`. Otherwise origin carries a tag pointing at a
+   commit unreachable from any branch. Every release tag goes to origin,
+   including tester builds that will never be published.
+4. Confirm no SmartStreamer4 instance is running. The build does a
    `dotnet publish`, and a live instance holds `bin\...\*.dll`, turning
-   the build into a wall of `MSB3021` / `MSB3027` lock errors that read
-   like a code failure and are not one.
-6. Run `.\publish-release.ps1`. The script:
-   - Refuses to run if the tag at HEAD is absent or doesn't match the
-     version regex.
-   - **Runs `dotnet test SmartStreamer4.sln` first and aborts the
-     release on any failure** (issue #50 fix). A phase 1 failure is
-     therefore as likely to be a red test as a packaging problem.
+   it into a wall of `MSB3021` / `MSB3027` lock errors that read like a
+   code failure and are not one.
+5. Run `.\publish-release.ps1 -Preview`. The script:
+   - Refuses unless HEAD carries a `-previewN` tag. A clean tag is a GA
+     tag, and the error says to run `-Publish` instead.
+   - Refuses if the zip's key already exists on R2. **Never re-upload
+     different bytes under a live key**: the edge can keep serving the
+     superseded copy to a tester, who then reports a bug already fixed,
+     and deleting the object does not reliably revoke it. A rebuild of
+     the same tag bumps to the next `-previewN`.
+   - **Runs `dotnet test SmartStreamer4.sln` first and aborts on any
+     failure** (issue #50 fix). A failure here is as likely to be a red
+     test as a packaging problem.
    - Builds with `-p:InformationalVersion=<label>+<commit-sha>` so the
-     in-app About display and update check report the right version.
-   - Verifies the published exe's embedded `ProductVersion` matches
-     `<label>+<commit-sha>`. Refuses to package the zip if not.
-   - Produces `SmartStreamer4-<tag>-win-x64.zip` (runtime suffix
-     matches the `-Runtime` parameter; default `win-x64`).
-   - Writes a single-line `SHA256SUMS.txt` sidecar next to the zip in
-     the publish dir. (The tracked `artifacts/release/SHA256SUMS.txt`
-     is a frozen v0.1.18b-era snapshot the script no longer updates.)
-7. Copy the zip to `C:\Users\chris\OneDrive\Documents\SmartStreamer4-releases\`
-   so it syncs to the other Windows test machines. A dedicated folder
-   rather than Documents itself: the zips accumulate one per tag and
-   are already uniquely named.
-8. **Prune old builds.** Each zip is ~80 MB, and OneDrive syncs every
-   one of them to every test machine. Keep the tag just built and the
-   one before it — enough to put a tester back on the previous build
-   — and delete older zips from both the OneDrive folder and the
-   publish dir. Report what was removed; do not delete silently.
+     in-app About display and update check report the right version, and
+     verifies the published exe's embedded `ProductVersion` matches.
+     Refuses to package if not.
+   - Produces `SmartStreamer4-<tag>-win-x64.zip`, tag in the filename,
+     so a tester can tell builds apart on disk.
+   - Writes `SHA256SUMS-<tag>.txt`. **Tag-scoped deliberately**: GA uses
+     the bare `SHA256SUMS.txt` at the same R2 prefix and the wx7v.net
+     download page verifies GA against it, so a preview writing that
+     name would break the published GA checksum.
+   - Uploads both to `wx7v-downloads/smartstreamer4/`, then HEADs the
+     live URL and compares `content-length`. The upload reports success
+     without confirming anything landed, so the live URL is the only
+     real check, and a truncated object still answers 200.
+   - Prints the tester links.
 
-   **Never delete `artifacts/release/SHA256SUMS.txt`.** `/artifacts/`
-   is gitignored, but that one file is tracked (`git ls-files
-   artifacts` returns it and nothing else). It is the frozen
-   v0.1.18b-era cumulative hash snapshot, and it is the only thing in
-   that whole tree the pipeline still depends on.
+**Upload only, no pruning.** Preview zips accumulate under that prefix
+by design (operator decision, 2026-09-20). The bucket's
+`expire-beta-builds` lifecycle rule is scoped to the literal `beta/`
+prefix, which this repo does not use, so nothing we upload ever
+auto-expires. Do not add a pruning step without being asked.
 
-   Everything else under `artifacts/release/` is legacy: the folder
-   holds pre-GA zips (newest `v0.1.12b`, April 2026), extracted alpha
-   build directories, and three orphaned `RELEASE_NOTES-*.md`. The
-   current script has never written there. Treat a non-empty
-   `artifacts/release/` as a cleanup task, not as release output.
+**Tell testers about SmartScreen up front.** No build is code-signed, so
+the warning fires on every Windows artifact. Unmentioned, it becomes the
+feedback instead of the bug report.
 
-**Tradeoff in this ordering, named deliberately.** The tag is pushed
-(step 4) before the zip is live-tested, so a failed live test means
-deleting a tag that is already on origin, not just a local one. The
-previous ordering built first and pushed the tag only once the zip was
-good, which made a bad tag cheap to retract. It was reordered to match
-how the operator actually works, and because a pushed tag with no
-GitHub Release attached is invisible to operators anyway. If a live
-test does fail: `git push origin :refs/tags/<tag>` then delete locally,
-fix, retag.
+Preview builds carry no release notes: nothing reads
+`RELEASE_NOTES-<tag>.md` in this mode.
 
-### Human gates between phases
+### GA — published release (`.\publish-release.ps1 -Publish`)
 
-Only for a published release. A tester build stops at the live test.
+**`--latest` is hard-coded**, so publishing any clean tag makes it the
+current release and prompts every operator whose version it outranks.
 
-1. Live-test the zip: extract to a temp directory **outside the repo**
-   (so the runtime version resolver can't fall back to `git describe`),
-   run the exe, confirm About / status shows `<tag> (<sha>)`, and
-   trigger an update check to confirm it resolves the current tag
-   correctly.
+Before running it:
+
+1. Commit, tag the clean `vX.Y.Z` **annotated**, `git push origin main`
+   then `git push origin <tag>`, and close any running instance, exactly
+   as steps 1–4 above.
 2. Confirm `RELEASE_NOTES-<tag>.md` exists at the repo root and is
    finalized. The file is gitignored. Claude drafts it by analyzing the
    actual code diffs between the prior tag and HEAD, never by
-   summarizing commit messages alone; the operator reviews and edits
-   in place. **Phase 1 does not need this file** — it prints the
-   expected filename but only phase 2 reads it, which is why tester
-   builds carry no notes.
-
-### Phase 2 — publish (`.\publish-release.ps1 -Publish`)
-
-Skip this entirely for a tester build; the script refuses a `-preview`
-tag. **`--latest` is hard-coded**, so publishing any clean tag makes it
-the current release and prompts every operator whose version it
-outranks.
-
-1. Run `.\publish-release.ps1 -Publish`. The script:
-   - Fails fast on any missing precondition: tag is not a preview, tag
-     on `origin`, zip present, `SHA256SUMS.txt` line matches the zip,
-     notes file present + non-empty.
+   summarizing commit messages alone; the operator reviews and edits in
+   place.
+3. Run `.\publish-release.ps1 -Publish`. The script:
+   - Refuses a `-preview` tag. The in-app updater in every build fielded
+     before 2026-09-08 reads the releases list without skipping
+     pre-releases, so publishing a preview in any form would prompt
+     every operator on the previous GA.
+   - Fails fast **before** the build on a missing precondition: tag on
+     `origin`, notes file present and non-empty.
+   - Runs the same tests, build, embedded-version check and zip as
+     `-Preview`, then writes the bare `SHA256SUMS.txt`.
    - Runs `gh release create $tag $zip SHA256SUMS.txt --title ...
      --notes-file ... --latest`, attaching the sidecar as a release
      asset. Nothing is committed, so `origin/main` HEAD stays equal to
-     the tag commit. `--latest` is hard-coded; the script does not expose
-     `--prerelease` (the retired `b` suffix caused that wrong-flag
-     mistake before; the preview guard removes the temptation).
+     the tag commit. The script does not expose `--prerelease` (the
+     retired `b` suffix caused that wrong-flag mistake before; the
+     preview guard removes the temptation).
    - Attaches the zip, not a raw `.exe` (browsers block `.exe`
      downloads from GitHub Releases).
-2. Post-publish (manual). Re-launch a clean install of the prior
-   published release (e.g. `v0.1.20b` on a tester machine) and confirm
-   it sees the new release as available. Then install the new release
-   and confirm it reports "up to date". If either fails, pull the
-   release immediately.
+4. Post-publish (manual). Re-launch a clean install of the prior
+   published release on a tester machine and confirm it sees the new
+   release as available. Then install the new release and confirm it
+   reports "up to date". If either fails, pull the release immediately.
+
+**No separate live test of the GA zip, named deliberately.** `-Publish`
+builds and publishes in one invocation, so there is no moment between
+the two to extract the GA zip and check About. That is the cost of the
+two-flag interface (operator decision, 2026-09-20): the code reaching
+GA is the code already validated as a `-previewN` build, the two zips
+differ only in the embedded version string, and step 4 catches a broken
+update flow after the fact. If a GA-zip live test is ever wanted back,
+it needs a third mode, not a silent re-split of this one.
+
+**Tradeoff in the tag ordering, named deliberately.** The tag is pushed
+before the zip is built, so a failed build or live test means deleting a
+tag that is already on origin, not just a local one. The previous
+ordering built first and pushed the tag only once the zip was good,
+which made a bad tag cheap to retract. It was reordered to match how the
+operator actually works, and because a pushed tag with no GitHub Release
+attached is invisible to operators anyway. If it does fail:
+`git push origin :refs/tags/<tag>` then delete locally, fix, retag.
+
+**Never delete `artifacts/release/SHA256SUMS.txt`.** `/artifacts/` is
+gitignored, but that one file is tracked (`git ls-files artifacts`
+returns it and nothing else). It is the frozen v0.1.18b-era cumulative
+hash snapshot, and it is the only thing in that whole tree the pipeline
+still depends on. Everything else under `artifacts/release/` is legacy:
+pre-GA zips (newest `v0.1.12b`, April 2026), extracted alpha build
+directories, and three orphaned `RELEASE_NOTES-*.md`. The current script
+has never written there. Treat a non-empty `artifacts/release/` as a
+cleanup task, not as release output.
 
 ## Quick Start After /clear
 
