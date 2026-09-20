@@ -38,6 +38,7 @@ internal sealed class FakeTelemetryConnection : IRadioConnection
     public void RaiseConnectionStateChanged(bool connected)
     {
         if (!connected) RfPowerWatts = null;
+        IsConnected = connected;
         ConnectionStateChanged?.Invoke(connected);
     }
 
@@ -46,8 +47,9 @@ internal sealed class FakeTelemetryConnection : IRadioConnection
 
     // ── Inert remainder of the interface ─────────────────────────────────────
 
-    public bool IsConnected => true;
+    public bool IsConnected { get; private set; } = true;
     public string? ConnectedModel => "FLEX-6400M";
+    public string? ConnectedNickname { get; set; } = "Shack";
     public string? ConnectedSerial => "FAKE-SERIAL";
     public string? Versions => null;
     public uint OwnClientHandle => 0;

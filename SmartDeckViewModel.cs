@@ -29,6 +29,9 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
     /// <summary>Shown in place of a value that has never been reported.</summary>
     private const string Absent = "---";
 
+    private const string AppTitle = "SmartDeck";
+    private const string DisconnectedLabel = "Disconnected";
+
     private readonly IRadioConnection _connection;
     private readonly string _controlStation;
 
@@ -68,6 +71,30 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
         _bandMemory = bandMemory ?? new BandMemory();
         _logStatus = logStatus ?? (_ => { });
         _settle = settle ?? Task.Delay;
+    }
+
+    /// <summary>
+    /// Window title (issue #83): "SmartDeck Nickname : Station" while connected,
+    /// "SmartDeck Disconnected" otherwise. Wording is the operator's, 2026-09-20.
+    /// </summary>
+    /// <remarks>
+    /// A nickname is optional on the radio, so a blank one falls back to the
+    /// model, as the radio picker does. Radio-scoped with no event of its own,
+    /// so it is re-raised from <see cref="OnConnectionStateChanged"/>, like
+    /// <see cref="IsDiversityAvailable"/>.
+    /// </remarks>
+    public string WindowTitle
+    {
+        get
+        {
+            if (!_connection.IsConnected) return $"{AppTitle} {DisconnectedLabel}";
+
+            var radio = string.IsNullOrWhiteSpace(_connection.ConnectedNickname)
+                ? _connection.ConnectedModel
+                : _connection.ConnectedNickname;
+            string?[] identity = [radio, _controlStation];
+            return string.Join(" ", [AppTitle, string.Join(" : ", identity.Where(part => !string.IsNullOrWhiteSpace(part)))]).TrimEnd();
+        }
     }
 
     [ObservableProperty]
@@ -1182,6 +1209,7 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
                 RefreshSlices();
                 ApplyRfPower(_connection.RfPowerWatts);
                 OnPropertyChanged(nameof(IsDiversityAvailable));
+                OnPropertyChanged(nameof(WindowTitle));
             });
             return;
         }
@@ -1190,6 +1218,7 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
         {
             ApplyRfPower(_connection.RfPowerWatts);
             OnPropertyChanged(nameof(IsDiversityAvailable));
+            OnPropertyChanged(nameof(WindowTitle));
         });
         _connection.StartTelemetry();
     }

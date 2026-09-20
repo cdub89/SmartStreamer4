@@ -220,6 +220,7 @@ public sealed class CwSkimmerWorkflowServiceTests
 
         public bool IsConnected => true;
         public string? ConnectedModel  => "FLEX-6400M";
+        public string? ConnectedNickname => null;
         public string? ConnectedSerial => "FAKE-SERIAL";
         public string? Versions        => null;
         public uint OwnClientHandle    => 0;

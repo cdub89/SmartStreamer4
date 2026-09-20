@@ -280,6 +280,44 @@ public class SmartDeckViewModelTests
         Assert.True(viewModel.HasSelectedSlice);
     }
 
+    [Theory]
+    [InlineData("Shack", "Maestro-C", "SmartDeck Shack : Maestro-C")]
+    [InlineData("Shack", "", "SmartDeck Shack")]
+    // A nickname is optional on the radio; the fake's model stands in for it.
+    [InlineData("", "Maestro-C", "SmartDeck FLEX-6400M : Maestro-C")]
+    public void Title_names_the_radio_and_the_control_station(string nickname, string station, string expected)
+    {
+        // Issue #83.
+        var connection = new FakeTelemetryConnection { ConnectedNickname = nickname };
+        var viewModel = new SmartDeckViewModel(connection, station, postToUi: action => action());
+
+        Assert.Equal(expected, viewModel.WindowTitle);
+    }
+
+    [Fact]
+    public void Title_follows_a_disconnect_and_a_swap_to_a_different_radio()
+    {
+        // The deck stays open across a disconnect, and nothing else republishes
+        // the radio's identity, so the title is re-raised on both edges.
+        var connection = new FakeTelemetryConnection { ConnectedNickname = "Shack" };
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+        viewModel.Start();
+        var raised = 0;
+        viewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(SmartDeckViewModel.WindowTitle)) raised++;
+        };
+
+        connection.RaiseConnectionStateChanged(false);
+        Assert.Equal("SmartDeck Disconnected", viewModel.WindowTitle);
+
+        connection.ConnectedNickname = "Contest";
+        connection.RaiseConnectionStateChanged(true);
+
+        Assert.Equal(2, raised);
+        Assert.Equal($"SmartDeck Contest : {TestStation}", viewModel.WindowTitle);
+    }
+
     [Fact]
     public void No_slices_leaves_the_controls_without_a_target()
     {

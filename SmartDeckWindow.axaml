@@ -6,7 +6,7 @@
         mc:Ignorable="d" d:DesignWidth="360"
         x:Class="SDRIQStreamer.App.SmartDeckWindow"
         x:DataType="local:SmartDeckViewModel"
-        Title="SmartDeck"
+        Title="{Binding WindowTitle}"
         Width="360" MinWidth="356"
         SizeToContent="Height"
         WindowStartupLocation="CenterScreen">

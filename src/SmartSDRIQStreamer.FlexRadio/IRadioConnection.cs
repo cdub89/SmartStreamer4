@@ -10,6 +10,9 @@ public interface IRadioConnection
 
     bool IsConnected { get; }
     string? ConnectedModel { get; }
+
+    /// <summary>The operator's own name for the radio. Can be blank: it is optional on the radio.</summary>
+    string? ConnectedNickname { get; }
     string? ConnectedSerial { get; }
     string? Versions { get; }
 

@@ -45,6 +45,7 @@ public sealed class FlexLibRadioConnection : IRadioConnection
 
     public bool IsConnected        => _radio?.Connected ?? false;
     public string? ConnectedModel  => _radio?.Model;
+    public string? ConnectedNickname => _radio?.Nickname;
     public string? ConnectedSerial => _radio?.Serial;
     public string? Versions        => _radio?.Versions;
 
@@ -498,8 +499,21 @@ public sealed class FlexLibRadioConnection : IRadioConnection
             return Task.CompletedTask;
         }
 
-        return SetSliceFlagAsync(slice, enabled, static (s, v) => s.DiversityOn = v, static s => s.DiversityOn, "Diversity");
+        // Bug fix (issue #82, reported 2026-09-20): with the diversity child's
+        // flag selected, DIV went grey on the deck while the radio stayed in
+        // diversity. The radio only acts on the parent's flag, and FlexLib flips
+        // the child's local state before any answer, so the write was lost and
+        // the button lied. Redirected to the parent rather than hiding the child
+        // from the deck, whose RX antenna selector picks the second antenna.
+        return SetSliceFlagAsync(slice, enabled, static (s, v) => DiversityParent(s).DiversityOn = v, static s => DiversityParent(s).DiversityOn, "Diversity");
     }
+
+    // FlexLib fills DiversitySlicePartner only when diversity_index arrives
+    // after diversity=1, so the index lookup covers the other ordering.
+    private static Slice DiversityParent(Slice slice) =>
+        slice.DiversityChild
+            ? slice.DiversitySlicePartner ?? slice.Radio?.FindSliceByIndex(slice.DiversityIndex) ?? slice
+            : slice;
 
     /// <inheritdoc/>
     public bool DiversityIsAllowed => _radio is { Connected: true } radio && radio.DiversityIsAllowed;
