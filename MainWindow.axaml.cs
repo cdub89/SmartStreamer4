@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -427,7 +427,15 @@ public partial class MainWindow : Window
         var deck = new SmartDeckWindow(vm.CreateSmartDeckViewModel(_settingsSession.Settings), _settingsSession.Settings);
         deck.Closed += (_, _) => _smartDeck = null;
         _smartDeck = deck;
-        deck.Show(this);
+        // Show() without an owner, deliberately (operator-reported on
+        // v0.3.3-preview1). An owned window follows its owner's window state,
+        // so minimising the main window minimised the deck with it. The deck is
+        // a control surface an operator keeps up while the main window is out
+        // of the way, which is exactly the case ownership broke. Nothing else
+        // depended on it: teardown is explicit in OnClosing above, and the
+        // always-on-top setting drives Topmost directly. Do not pass an owner
+        // here.
+        deck.Show();
     }
 
     // One button rather than a Light/Dark pair or a dropdown: two options with

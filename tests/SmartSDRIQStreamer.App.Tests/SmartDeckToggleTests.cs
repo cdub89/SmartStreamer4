@@ -1,4 +1,4 @@
-using SDRIQStreamer.App;
+﻿using SDRIQStreamer.App;
 using SDRIQStreamer.FlexRadio;
 
 namespace SmartSDRIQStreamer.App.Tests;
@@ -153,10 +153,10 @@ public class SmartDeckToggleTests
     }
 
     [Fact]
-    public void The_power_button_shows_watts_while_the_wheel_moves_it()
+    public void The_power_button_shows_the_wattage_at_any_non_preset_level()
     {
-        // The separate wattage readout went away when power became one button
-        // on a row of toggles, so this is the only place the setting shows.
+        // This is the only place the power setting appears, so off a preset the
+        // button has to show the number rather than a two-state label.
         var settle = new TaskCompletionSource();
         var connection = new FakeTelemetryConnection();
         connection.SetSlices(Slice());
@@ -165,7 +165,8 @@ public class SmartDeckToggleTests
         viewModel.Start();
         connection.ReportRfPower(50);
 
-        Assert.Equal("QRO", viewModel.TxButtonText);
+        // 50 W is neither preset, so the radio's own level shows straight away.
+        Assert.Equal("50 W", viewModel.TxButtonText);
 
         viewModel.NudgeTxPower(1);
 
@@ -173,8 +174,12 @@ public class SmartDeckToggleTests
     }
 
     [Fact]
-    public async Task The_watts_give_way_to_the_state_once_the_wheel_settles()
+    public async Task The_wattage_stays_up_after_the_wheel_settles()
     {
+        // Regression, operator-reported on v0.3.3-preview1: the button used to
+        // revert to the preset label once the wheel stopped, so a radio sitting
+        // at 51 W read "QRO". The display is now a function of the level alone
+        // and has nothing to time out.
         var connection = new FakeTelemetryConnection();
         connection.SetSlices(Slice());
         var viewModel = new SmartDeckViewModel(
@@ -185,14 +190,13 @@ public class SmartDeckToggleTests
         viewModel.NudgeTxPower(1);
         await Task.Yield();
 
-        Assert.Equal("QRO", viewModel.TxButtonText);
+        Assert.Equal("51 W", viewModel.TxButtonText);
+        Assert.False(viewModel.IsPresetActive);
     }
 
     [Fact]
-    public void A_press_puts_the_state_back_immediately_even_mid_linger()
+    public void A_press_from_an_odd_level_lands_on_a_preset_and_names_it()
     {
-        // A press is a state change, so the label must not keep showing watts
-        // from a wheel gesture that has not finished lingering.
         var settle = new TaskCompletionSource();
         var connection = new FakeTelemetryConnection();
         connection.SetSlices(Slice());
@@ -206,7 +210,9 @@ public class SmartDeckToggleTests
 
         viewModel.ToggleQrpCommand.Execute(null);
 
+        // On a preset the label replaces the number, and the button lights.
         Assert.Equal("QRP", viewModel.TxButtonText);
+        Assert.True(viewModel.IsPresetActive);
     }
 
     private static void Execute(SmartDeckViewModel viewModel, string control)

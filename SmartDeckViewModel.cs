@@ -793,10 +793,10 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
     /// the radio at all. Do not reintroduce a remembered power here.
     /// </remarks>
     /// <remarks>
-    /// A state readout, not a promise about the press. The operator's model is
-    /// two states, QRP and not-QRP, and "QRO" names the second one (operator,
-    /// 2026-08-25), so at 54 W it reads QRO because that is true: you are not
-    /// at QRP. Pressing toggles the state rather than delivering the label.
+    /// A state readout, not a promise about the press. Only ever displayed
+    /// while the radio sits on a preset (see <see cref="TxButtonText"/>), so
+    /// it names the preset in force: QRP at or below the QRP ceiling, QRO at
+    /// 100 W. Pressing toggles to the other one.
     /// An earlier pass made the label name what the press would do, which put
     /// "QRP" on a button while the radio sat at the operating power. That is
     /// the thing to avoid: the label must never claim a state the radio is not
@@ -805,31 +805,28 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
     public string TxPresetText => IsQrpPower ? "QRP" : "QRO";
 
     /// <summary>
-    /// What the single power button actually shows (issue #76): the wattage
-    /// while the wheel is moving it, the preset state the rest of the time.
+    /// What the single power button shows: the preset name while the radio
+    /// sits on a preset, the actual wattage at any other level.
     /// </summary>
     /// <remarks>
-    /// The separate always-on wattage readout went away when the power control
-    /// became one button on a row of toggles, so this is the only place the
-    /// power <em>setting</em> appears. It is not the same number as the "Fwd"
-    /// telemetry below, which is measured forward power and reads zero on
-    /// receive. The watts linger for <see cref="TxPowerLingerWindow"/> after
-    /// the last detent so a single click of the wheel is readable rather than
-    /// flashing past.
+    /// Rewritten 2026-09-20 after the v0.3.3-preview1 live test. The first
+    /// pass showed the watts only while the wheel was turning and then reverted
+    /// to the preset label, so the button read "QRO" while the radio sat at
+    /// 54 W. "QRO" was defensible as a two-state readout, but on a button that
+    /// can show the real number it is strictly worse: the number is the whole
+    /// answer and never has to be interpreted. Lit still means a preset is in
+    /// force, so lit and unlit now carry the label/number distinction too.
+    ///
+    /// This is the only place the power <em>setting</em> appears. It is not the
+    /// same number as the "Fwd" telemetry below, which is measured forward
+    /// power and reads zero on receive.
+    ///
+    /// The reverting behaviour needed a linger timer and a generation counter
+    /// to keep a stale timer from clearing a fresh reading. Both are gone with
+    /// it: an always-correct display has nothing to time out. Do not reintroduce
+    /// a timer here.
     /// </remarks>
-    public string TxButtonText => IsAdjustingTxPower ? TxPowerText : TxPresetText;
-
-    /// <summary>True while the button is showing watts rather than its preset label.</summary>
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(TxButtonText))]
-    private bool _isAdjustingTxPower;
-
-    /// <summary>How long the wattage stays on the button after the wheel stops.</summary>
-    private static readonly TimeSpan TxPowerLingerWindow = TimeSpan.FromSeconds(2);
-
-    // Bumped on every notch so a linger that was scheduled by an earlier notch
-    // cannot clear the display while the operator is still turning the wheel.
-    private int _txPowerAdjustGeneration;
+    public string TxButtonText => IsPresetActive ? TxPresetText : TxPowerText;
 
     /// <summary>
     /// True when the radio is running QRP, which is a range and not a single
@@ -884,12 +881,6 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
 
         _logStatus($"{(target == QrpWatts ? "QRP" : "QRO")} selected: setting {target} W.");
         SetLastKnownWatts(target);
-
-        // A press is a state change, so the button goes straight back to naming
-        // the state even if the wheel was mid-linger. Bumping the generation
-        // stops that pending linger from firing later over the new label.
-        _txPowerAdjustGeneration++;
-        IsAdjustingTxPower = false;
 
         // Shown immediately rather than waiting for the radio's echo, so a
         // button press does not feel laggy; the echo re-applies the same value.
@@ -1056,22 +1047,7 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
         // Shown immediately rather than waiting for the radio's echo, matching
         // every other control on the deck.
         TxPowerText = FormatTxPower(target);
-        ShowWattsWhileAdjusting();
         ScheduleTxPowerWrite();
-    }
-
-    // Puts the wattage on the button. The return to the preset label is not
-    // scheduled here: it happens at the end of FlushTxPowerAsync, after the
-    // write, which is both the right moment and the only way to keep a single
-    // settle await outstanding at a time. Two concurrent awaits on one injected
-    // settle stop the .NET task machinery running continuations inline, which
-    // silently made the power write land after the assertion in two existing
-    // wheel tests (caught 2026-09-19 running the full suite; each test passed
-    // alone, so an isolated run would not have shown it).
-    private void ShowWattsWhileAdjusting()
-    {
-        IsAdjustingTxPower = true;
-        _txPowerAdjustGeneration++;
     }
 
     private void ScheduleTxPowerWrite()
@@ -1088,28 +1064,10 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
 
         if (_wheelTargetWatts is not { } target) return;
 
-        // Captured before the write, not after. A notch arriving while the
-        // write is in flight bumps the generation and starts its own flush; if
-        // we read the counter afterwards we would pick up that bump, and then
-        // both passes would think they owned the clear, with ours firing first
-        // and cutting the newer notch's wattage short. Today SetRfPowerAsync
-        // completes synchronously so nothing can interleave here, but the
-        // ordering is what makes the guard true rather than the timing
-        // (Codex deep audit, 2026-09-19).
-        var generation = _txPowerAdjustGeneration;
-
         await _connection.SetRfPowerAsync(target);
 
         if (_wheelTargetWatts == target)
             _wheelTargetWatts = null;
-
-        // Now let the wattage linger before the button goes back to naming the
-        // preset state, so one detent is readable rather than flashing past.
-        // The generation guard means a notch arriving during the linger keeps
-        // the wattage up instead of this stale pass clearing it.
-        await _settle(TxPowerLingerWindow);
-        if (_txPowerAdjustGeneration == generation)
-            IsAdjustingTxPower = false;
     }
 
     /// <summary>

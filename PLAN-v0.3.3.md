@@ -1,4 +1,4 @@
-# PLAN: v0.3.2 — controls the hardware has and the software does not
+﻿# PLAN: v0.3.3 — controls the hardware has and the software does not
 
 ## Context
 
@@ -535,23 +535,44 @@ item is last:
   value on transmit, now from MOX rather than the power threshold; both themes.
 - No new NuGet dependencies anywhere on this slate.
 
-## Deferred to v0.3.3 or later
+## Will not do, unless a user asks again
 
-- **#62 Phase B** — auto-resume mode and stream. See above.
-- **#69, the other four requests.** Recommend splitting the issue so it can
-  close. *Reflected power*: a pure algebraic restatement of SWR, adds a field to
-  a dense strip without adding information — recommend against. *Bar meters*:
-  justified in the issue as animating the page, which is aesthetics, against a
-  13.4 Hz telemetry feed. *Auto-select active slice*: decent value, and we have
-  no active-slice concept at all today (FlexLib has `Slice.Active`); own change.
-  *Mute slice*: new plumbing for one button.
-- **#73 click-to-zero on the offset readout** — see "Reset, deliberately
-  absent". Add only if live testing shows scrolling back is tedious.
+Operator decision, 2026-09-20. These are closed on intent, not on effort:
+none is blocked or hard, and the cheapest of them got cheaper after #76.
+They are declined because nobody has asked for them since the original
+issue was filed. A fresh user request reopens the question; nothing else
+should.
+
+- **#69, all remaining scope.** *Bar meters*: justified in the issue as
+  animating the page, which is aesthetics, against a 13.4 Hz telemetry
+  feed. *Auto-select active slice*: real value, but the app has no
+  active-slice concept today (FlexLib has `Slice.Active`), and
+  live-following would move the deck's selection under the operator's
+  hand mid-wheel, so it needs its own design rather than a ride-along.
+  *Mute slice*: `Slice.Mute` exists and #76 built the exact toggle
+  pattern, so the code is now trivial; the real cost is a sixth column
+  on a strip whose constraint is fixed geometry.
 - **#68 rotator widget** — new widget plus an external PST Rotator TCP
   dependency; no protocol work done yet.
+- **#73 click-to-zero on the offset readout** — see "Reset, deliberately
+  absent". The gate was "add only if live testing shows scrolling back is
+  tedious"; live testing across two builds did not show that.
+
+**Correction to the record.** This section previously listed *reflected
+power* here as "a pure algebraic restatement of SWR ... recommend
+against". That was wrong: the radio has its own `REFPWR` meter
+(`Radio.ReflectedPowerDataReady`), so it is an independent measurement,
+and deriving it from SWR would have inherited that meter's 1.0 floor and
+read 0 W on every good match. It shipped in `9e5e759`.
+
+## Deferred to v0.3.4 or later
+
+- **#62 Phase A** — auto-connect on launch. Fully specified above,
+  including its test decisions; deferred 2026-09-20, not declined.
+- **#62 Phase B** — auto-resume mode and stream. Follows Phase A.
 - **#71 VITA-49 direct stream** — a research program, not an issue. Would
   replace the CW Skimmer engine and require a WSJT-X fork.
-- **#72 SmartLink** — architectural, and needs a private repo to hold ClientID
-  and secrets before any code is written.
-- **#48 help/reporting doc** — not a slate item; refresh it at publish time to
-  cover whatever v0.3.2 actually ships.
+- **#72 SmartLink** — architectural, and needs a private repo to hold
+  ClientID and secrets before any code is written.
+- **#48 help/reporting doc** — not a slate item; refresh it at publish
+  time to cover whatever actually ships.

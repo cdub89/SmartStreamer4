@@ -9,7 +9,7 @@
         Title="SmartDeck"
         Width="360" MinWidth="356"
         SizeToContent="Height"
-        WindowStartupLocation="CenterOwner">
+        WindowStartupLocation="CenterScreen">
 
     <!-- Accelerators match the ones the operator already uses in FRStack.
          In-app only, by the phase-1 decision: no Win32 RegisterHotKey, so
