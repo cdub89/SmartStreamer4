@@ -98,9 +98,9 @@ list before reporting completion.
   historical reference only.
 - **Release**: `publish-release.ps1` takes exactly one of two mode
   flags. `-Preview` requires a `-previewN` tag: it builds, verifies the
-  embedded version, zips `SmartStreamer4-<tag>-win-x64.zip`, writes a
-  tag-scoped `SHA256SUMS-<tag>.txt`, and uploads both to the R2 bucket
-  for testers. `-Publish` requires a clean tag: same build, then
+  embedded version, zips `SmartStreamer4-<tag>-win-x64.zip`, uploads the
+  zip to the R2 bucket for testers, and confirms the link serves it.
+  `-Publish` requires a clean tag: same build, then
   `SHA256SUMS.txt` and `gh release create --latest` attaching the zip
   and the sidecar. Nothing is committed either way, so the release
   commit equals the tag commit. Notes pulled from
@@ -605,9 +605,13 @@ tag", shipping nothing.
 
 Steps 1–4 are the operator's; Claude runs step 5.
 
-1. Commit everything, including docs. The script tags nothing itself and
-   does **not** check for a clean working tree, so anything uncommitted
-   is simply absent from what the tag names.
+1. Commit everything, including docs. The script tags nothing itself,
+   and it **refuses a dirty working tree** (modified or untracked files;
+   gitignored ones do not count). `dotnet publish` builds the working
+   tree, not the tagged commit, so an uncommitted change would otherwise
+   ship inside a build that claims the tag's version and sha. This file
+   said the opposite until 2026-09-20 ("anything uncommitted is simply
+   absent"); that was wrong, and the Codex design review caught it.
 2. Tag the local HEAD, always as an **annotated** tag:
    `git tag -a v0.3.3-preview1 -m "SmartStreamer4 v0.3.3-preview1"`.
    Lightweight tags have caused busted releases before; annotated only.
@@ -624,11 +628,16 @@ Steps 1–4 are the operator's; Claude runs step 5.
 5. Run `.\publish-release.ps1 -Preview`. The script:
    - Refuses unless HEAD carries a `-previewN` tag. A clean tag is a GA
      tag, and the error says to run `-Publish` instead.
-   - Refuses if the zip's key already exists on R2. **Never re-upload
-     different bytes under a live key**: the edge can keep serving the
-     superseded copy to a tester, who then reports a bug already fixed,
-     and deleting the object does not reliably revoke it. A rebuild of
-     the same tag bumps to the next `-previewN`.
+   - Does **not** check whether the zip's key already exists on R2
+     (removed 2026-09-20, operator decision; do not restore it). That
+     check asked the public URL before the upload, Cloudflare cached the
+     404 it got, and the post-upload verify was then served the cached
+     404: `v0.3.3-preview2` uploaded correctly and the script still
+     exited 1. A re-run of the same tag now simply overwrites, which is
+     what a re-run after a failed run needs. New code always gets a new
+     tag and the tag is in the filename, so that is the only time a key
+     repeats. Known cost: a tester who already fetched that key can be
+     served the older copy from the edge until it expires.
    - **Runs `dotnet test SmartStreamer4.sln` first and aborts on any
      failure** (issue #50 fix). A failure here is as likely to be a red
      test as a packaging problem.
@@ -638,20 +647,27 @@ Steps 1–4 are the operator's; Claude runs step 5.
      Refuses to package if not.
    - Produces `SmartStreamer4-<tag>-win-x64.zip`, tag in the filename,
      so a tester can tell builds apart on disk.
-   - Writes `SHA256SUMS-<tag>.txt`. **Tag-scoped deliberately**:
-     consecutive previews would otherwise overwrite each other's
-     checksum, and the bare `SHA256SUMS.txt` at that prefix is already
-     taken by an object a tester may hold a link to. Nothing in the
-     bucket is reliably retractable once the edge has served it, so a
-     preview never writes a name it does not own. (Checked 2026-09-20:
-     wx7v.net links GA straight from GitHub Releases, not from this
-     bucket. The bare `SHA256SUMS.txt` and the `v0.3.2` zip at that
-     prefix are leftovers from the v0.3.2 tester build.)
-   - Uploads both to `wx7v-downloads/smartstreamer4/`, then HEADs the
-     live URL and compares `content-length`. The upload reports success
-     without confirming anything landed, so the live URL is the only
-     real check, and a truncated object still answers 200.
-   - Prints the tester links.
+   - Writes **no checksum sidecar** for a preview (removed 2026-09-20:
+     no tester ever asked for one). The SHA256 is still printed. GA
+     keeps `SHA256SUMS.txt` as a release asset. (wx7v.net links GA
+     straight from GitHub Releases, not from this bucket; the
+     `SHA256SUMS*.txt` objects and the `v0.3.2` zip at that prefix are
+     leftovers from earlier tester builds.)
+   - Uploads the zip to `wx7v-downloads/smartstreamer4/`, then verifies:
+     it HEADs the public URL with a unique query string, requires a 200
+     with a `content-length` equal to the local zip, and retries for up
+     to two minutes. The upload reports success without confirming
+     anything landed, and a truncated object still answers 200. The
+     query string is a separate cache key at the edge, so a cached
+     response cannot answer for the object. **This proves the object is
+     in R2, not that the plain link is fresh after an overwrite.**
+   - Prints the tester link.
+
+If the verify step fails after a successful upload, check by hand before
+doing anything else: `curl -sI "<url>?cb=<random>"` should show 200 and
+the right `content-length`, and `cf-cache-status` on the plain URL tells
+you whether the edge is answering from cache. Never pre-check the plain
+URL before a run; that is what caches a 404 for it.
 
 **Upload only, no pruning.** Preview zips accumulate under that prefix
 by design (operator decision, 2026-09-20). The bucket's
