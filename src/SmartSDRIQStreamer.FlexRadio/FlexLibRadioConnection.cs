@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Globalization;
 using System.Linq;
@@ -966,11 +966,14 @@ public sealed class FlexLibRadioConnection : IRadioConnection
 
     // ── Telemetry (issue #59, SmartDeck) ─────────────────────────────────────
 
-    // Display cadence. The four meter streams deliver roughly 28 events/sec
-    // combined: forward power and SWR at ~13.4 Hz, PA temperature and volts at
-    // ~0.4 Hz, both measured by the issue #59 gating spike against a live
-    // FLEX-6400M. 250 ms cuts UI marshals to 4/sec while staying well clear of
-    // the slow pair, so temperature and volts never look stalled.
+    // Display cadence. The five meter streams deliver roughly 41 events/sec
+    // combined: forward power, reflected power and SWR at ~13.4 Hz, PA
+    // temperature and volts at ~0.4 Hz, the rates measured by the issue #59
+    // gating spike against a live FLEX-6400M. 250 ms cuts UI marshals to 4/sec
+    // while staying well clear of the slow pair, so temperature and volts never
+    // look stalled. Reflected power (issue #69) joined the fast group and does
+    // not change the cadence: the pump already coalesces a whole window into
+    // one snapshot, so another fast meter costs no extra UI work.
     private static readonly TimeSpan TelemetryEmitInterval = TimeSpan.FromMilliseconds(250);
 
     private readonly TelemetrySnapshotAccumulator _telemetry = new();
@@ -1003,10 +1006,11 @@ public sealed class FlexLibRadioConnection : IRadioConnection
             // Radio-level meter events only. These are radio-scoped values, not
             // slice-scoped, so no GUI-client binding is involved: the spike
             // confirmed they arrive with API.IsGUI = false.
-            radio.ForwardPowerDataReady += OnForwardPowerData;
-            radio.SWRDataReady          += OnSwrData;
-            radio.PATempDataReady       += OnPaTempData;
-            radio.VoltsDataReady        += OnVoltsData;
+            radio.ForwardPowerDataReady   += OnForwardPowerData;
+            radio.ReflectedPowerDataReady += OnReflectedPowerData;
+            radio.SWRDataReady            += OnSwrData;
+            radio.PATempDataReady         += OnPaTempData;
+            radio.VoltsDataReady          += OnVoltsData;
             _telemetryRadio = radio;
 
             var cts = new CancellationTokenSource();
@@ -1036,10 +1040,11 @@ public sealed class FlexLibRadioConnection : IRadioConnection
 
         if (radio is not null)
         {
-            radio.ForwardPowerDataReady -= OnForwardPowerData;
-            radio.SWRDataReady          -= OnSwrData;
-            radio.PATempDataReady       -= OnPaTempData;
-            radio.VoltsDataReady        -= OnVoltsData;
+            radio.ForwardPowerDataReady   -= OnForwardPowerData;
+            radio.ReflectedPowerDataReady -= OnReflectedPowerData;
+            radio.SWRDataReady            -= OnSwrData;
+            radio.PATempDataReady         -= OnPaTempData;
+            radio.VoltsDataReady          -= OnVoltsData;
         }
 
         // Drop accumulated readings so a later start shows dashes rather than
@@ -1072,10 +1077,11 @@ public sealed class FlexLibRadioConnection : IRadioConnection
         }
     }
 
-    private void OnForwardPowerData(float data) => _telemetry.Add(TelemetryChannel.ForwardPowerDbm, data);
-    private void OnSwrData(float data)          => _telemetry.Add(TelemetryChannel.Swr, data);
-    private void OnPaTempData(float data)       => _telemetry.Add(TelemetryChannel.PaTempCelsius, data);
-    private void OnVoltsData(float data)        => _telemetry.Add(TelemetryChannel.VoltsDc, data);
+    private void OnForwardPowerData(float data)   => _telemetry.Add(TelemetryChannel.ForwardPowerDbm, data);
+    private void OnReflectedPowerData(float data) => _telemetry.Add(TelemetryChannel.ReflectedPowerDbm, data);
+    private void OnSwrData(float data)            => _telemetry.Add(TelemetryChannel.Swr, data);
+    private void OnPaTempData(float data)         => _telemetry.Add(TelemetryChannel.PaTempCelsius, data);
+    private void OnVoltsData(float data)          => _telemetry.Add(TelemetryChannel.VoltsDc, data);
 
     // ── Own client handle ────────────────────────────────────────────────────
 

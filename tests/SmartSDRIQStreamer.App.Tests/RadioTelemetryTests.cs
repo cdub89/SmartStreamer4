@@ -1,4 +1,4 @@
-using SDRIQStreamer.FlexRadio;
+﻿using SDRIQStreamer.FlexRadio;
 
 namespace SmartSDRIQStreamer.App.Tests;
 
@@ -42,6 +42,7 @@ public class RadioTelemetryTests
         var empty = RadioTelemetryInfo.Empty;
 
         Assert.Null(empty.PowerWatts);
+        Assert.Null(empty.ReflectedPowerWatts);
         Assert.Null(empty.Swr);
         Assert.Null(empty.PaTempCelsius);
         Assert.Null(empty.VoltsDc);
@@ -77,10 +78,67 @@ public class RadioTelemetryTests
         accumulator.Add(TelemetryChannel.Swr, 1.8);
         accumulator.Add(TelemetryChannel.Swr, 1.2);
 
+        // Reflected power is a fast meter too (issue #69), so it peak-holds
+        // with the other two rather than taking the closing sample.
+        accumulator.Add(TelemetryChannel.ReflectedPowerDbm, 20.0);
+        accumulator.Add(TelemetryChannel.ReflectedPowerDbm, 33.0);
+        accumulator.Add(TelemetryChannel.ReflectedPowerDbm, 10.0);
+
         Assert.True(accumulator.TryTakeSnapshot(At, out var snapshot));
 
         Assert.Equal(100.0, snapshot.PowerWatts.GetValueOrDefault(), precision: 1);
         Assert.Equal(1.8, snapshot.Swr.GetValueOrDefault(), precision: 2);
+        // 33 dBm is ~2 W: the window peak, not the 10 dBm it closed on.
+        Assert.Equal(2.0, snapshot.ReflectedPowerWatts.GetValueOrDefault(), precision: 1);
+    }
+
+    // ── Reflected power (issue #69) ──────────────────────────────────────────
+
+    [Fact]
+    public void Reflected_power_stays_absent_until_its_own_meter_reports()
+    {
+        var accumulator = new TelemetrySnapshotAccumulator();
+
+        // Forward power alone must not conjure a reflected reading: the two are
+        // separate meters, and deriving one from the other is exactly what this
+        // change avoids.
+        accumulator.Add(TelemetryChannel.ForwardPowerDbm, 50.0);
+
+        Assert.True(accumulator.TryTakeSnapshot(At, out var snapshot));
+
+        Assert.NotNull(snapshot.PowerWatts);
+        Assert.Null(snapshot.ReflectedPowerWatts);
+    }
+
+    [Fact]
+    public void Reflected_power_carries_across_a_window_with_no_new_sample()
+    {
+        var accumulator = new TelemetrySnapshotAccumulator();
+
+        accumulator.Add(TelemetryChannel.ReflectedPowerDbm, 33.0);
+        Assert.True(accumulator.TryTakeSnapshot(At, out var first));
+        Assert.Equal(2.0, first.ReflectedPowerWatts.GetValueOrDefault(), precision: 1);
+
+        // A later window with only forward power must not blank the reflected
+        // readout back to dashes; the snapshot describes the whole radio.
+        accumulator.Add(TelemetryChannel.ForwardPowerDbm, 50.0);
+        Assert.True(accumulator.TryTakeSnapshot(At, out var second));
+
+        Assert.Equal(2.0, second.ReflectedPowerWatts.GetValueOrDefault(), precision: 1);
+    }
+
+    [Fact]
+    public void Reset_clears_reflected_power_so_a_reconnect_starts_from_dashes()
+    {
+        var accumulator = new TelemetrySnapshotAccumulator();
+        accumulator.Add(TelemetryChannel.ReflectedPowerDbm, 33.0);
+        Assert.True(accumulator.TryTakeSnapshot(At, out _));
+
+        accumulator.Reset();
+
+        accumulator.Add(TelemetryChannel.ForwardPowerDbm, 50.0);
+        Assert.True(accumulator.TryTakeSnapshot(At, out var snapshot));
+        Assert.Null(snapshot.ReflectedPowerWatts);
     }
 
     [Fact]

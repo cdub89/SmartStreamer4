@@ -670,7 +670,7 @@
              the shipped v0.3.0b2 values; do not move this again without the
              operator asking for it specifically. -->
         <Border Grid.Row="4" BorderBrush="{DynamicResource AppDividerBrush}" BorderThickness="0,1,0,0" Padding="0,5,0,0">
-            <Grid ColumnDefinitions="*,*,*,*">
+            <Grid ColumnDefinitions="*,*,*,*,*">
                 <StackPanel Grid.Column="0">
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                         <TextBlock Classes="telemetry-value" Text="{Binding PowerText}"/>
@@ -681,12 +681,29 @@
                     <TextBlock Classes="telemetry-label" Text="Fwd"/>
                 </StackPanel>
 
+                <!-- Reflected power, directly after forward power as the issue
+                     asked (issue #69). Read from the radio's own REFPWR meter,
+                     not computed from Fwd and SWR: the radio measures it, and a
+                     computed figure would inherit the SWR meter's 1.0 floor and
+                     read exactly 0 W on every good match.
+
+                     Five columns rather than four now. Each lands near 70px at
+                     the deck's fixed 360px width, which still clears the widest
+                     reading here, so the footer keeps its one-glance row. -->
                 <StackPanel Grid.Column="1">
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                        <TextBlock Classes="telemetry-value" Text="{Binding RefPowerText}"/>
+                        <TextBlock Classes="telemetry-unit" Text="W"/>
+                    </StackPanel>
+                    <TextBlock Classes="telemetry-label" Text="Ref"/>
+                </StackPanel>
+
+                <StackPanel Grid.Column="2">
                     <TextBlock Classes="telemetry-value" Text="{Binding SwrText}"/>
                     <TextBlock Classes="telemetry-label" Text="SWR"/>
                 </StackPanel>
 
-                <StackPanel Grid.Column="2">
+                <StackPanel Grid.Column="3">
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                         <TextBlock Classes="telemetry-value" Text="{Binding TempText}"/>
                         <TextBlock Classes="telemetry-unit" Text="C"/>
@@ -694,7 +711,7 @@
                     <TextBlock Classes="telemetry-label" Text="Temp"/>
                 </StackPanel>
 
-                <StackPanel Grid.Column="3">
+                <StackPanel Grid.Column="4">
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                         <TextBlock Classes="telemetry-value" Text="{Binding VoltsText}"/>
                         <TextBlock Classes="telemetry-unit" Text="V"/>

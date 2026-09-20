@@ -73,6 +73,10 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string _powerText = Absent;
 
+    /// <summary>Reflected power, watts (issue #69).</summary>
+    [ObservableProperty]
+    private string _refPowerText = Absent;
+
     [ObservableProperty]
     private string _swrText = Absent;
 
@@ -1364,10 +1368,11 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
 
     private void Apply(RadioTelemetryInfo telemetry)
     {
-        PowerText = FormatPower(telemetry.PowerWatts);
-        SwrText   = FormatSwr(telemetry.Swr, telemetry.PowerWatts);
-        TempText  = Format(telemetry.PaTempCelsius, "0");
-        VoltsText = Format(telemetry.VoltsDc, "0.0");
+        PowerText    = FormatPower(telemetry.PowerWatts);
+        RefPowerText = FormatPower(telemetry.ReflectedPowerWatts);
+        SwrText      = FormatSwr(telemetry.Swr, telemetry.PowerWatts);
+        TempText     = Format(telemetry.PaTempCelsius, "0");
+        VoltsText    = Format(telemetry.VoltsDc, "0.0");
     }
 
     // Above this, the radio is putting out RF. The SWR meter floors at 1.0 and
@@ -1400,6 +1405,15 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
     /// Whole watts at 10 W and above, one decimal below it. A 93 W reading does
     /// not need a tenth of a watt, but a QRP operator running 5 W does.
     /// </summary>
+    /// <remarks>
+    /// Shared by forward and reflected power (issue #69), and deliberately not
+    /// gated on transmit the way <see cref="FormatSwr"/> is. SWR needs the gate
+    /// because its meter floors at 1.0, so at rest it formats an idle floor
+    /// into what reads as a real 1:1 match. Reflected power has no such floor:
+    /// 0 W on receive is the true reading, and the same TX-idle signal the
+    /// forward readout already carries. Gating it would make two adjacent power
+    /// readouts behave differently for no gain.
+    /// </remarks>
     internal static string FormatPower(double? watts) =>
         watts is { } value
             ? value.ToString(value >= 10 ? "0" : "0.0", CultureInfo.InvariantCulture)
