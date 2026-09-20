@@ -619,22 +619,22 @@
                     Command="{Binding ToggleDiversityCommand}"/>
             <Button Grid.Column="1"
                     Classes="deck-button"
-                    Classes.lit="{Binding IsApfOn}"
-                    Content="APF"
-                    ToolTip.Tip="Audio peaking filter"
-                    Command="{Binding ToggleApfCommand}"/>
-            <Button Grid.Column="2"
-                    Classes="deck-button"
                     Classes.lit="{Binding IsNbOn}"
                     Content="NB"
                     ToolTip.Tip="Noise blanker"
                     Command="{Binding ToggleNbCommand}"/>
-            <Button Grid.Column="3"
+            <Button Grid.Column="2"
                     Classes="deck-button"
                     Classes.lit="{Binding IsNrOn}"
                     Content="NR"
                     ToolTip.Tip="Noise reduction"
                     Command="{Binding ToggleNrCommand}"/>
+            <Button Grid.Column="3"
+                    Classes="deck-button"
+                    Classes.lit="{Binding IsApfOn}"
+                    Content="APF"
+                    ToolTip.Tip="Audio peaking filter"
+                    Command="{Binding ToggleApfCommand}"/>
 
             <!-- One button for power now, not a readout plus a button: a bare
                  number sitting beside four toggles read as odd (operator,

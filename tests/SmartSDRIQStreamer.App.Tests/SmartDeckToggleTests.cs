@@ -4,7 +4,7 @@ using SDRIQStreamer.FlexRadio;
 namespace SmartSDRIQStreamer.App.Tests;
 
 /// <summary>
-/// Issue #76: the receive-chain strip (DIV, APF, NB, NR) and the power button
+/// Issue #76: the receive-chain strip (DIV, NB, NR, APF) and the power button
 /// that replaced the separate wattage readout beside it.
 /// </summary>
 public class SmartDeckToggleTests
