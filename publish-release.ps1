@@ -1,4 +1,4 @@
-﻿param(
+param(
     [switch]$Preview,
     [switch]$Publish,
     [string]$Runtime = "win-x64",
@@ -7,6 +7,20 @@
 )
 
 $ErrorActionPreference = "Stop"
+
+# One exit path for every refusal: red headline, yellow hints, non-zero exit.
+# `exit` inside a function still ends the whole script, including from inside a
+# try block, which the R2 precondition check below relies on.
+function Fail {
+    param(
+        [Parameter(Mandatory)][string]$Message,
+        [string[]]$Hints = @(),
+        [int]$Code = 1
+    )
+    Write-Host "`nERROR: $Message" -ForegroundColor Red
+    foreach ($hint in $Hints) { Write-Host "  $hint" -ForegroundColor Yellow }
+    exit $Code
+}
 
 # Two modes, one per destination. Exactly one flag is required: the invocation
 # states the intent, and the tag has to agree with it before anything is built.
@@ -60,16 +74,16 @@ $publishDir = Join-Path $PSScriptRoot "bin/$Configuration/net8.0-windows/$Runtim
 # Mode and tag validation, before any work.
 # -----------------------------------------------------------------------------
 if ($Preview -and $Publish) {
-    Write-Host "`nERROR: -Preview and -Publish are mutually exclusive." -ForegroundColor Red
-    Write-Host "  -Preview builds a tester zip and uploads it to R2." -ForegroundColor Yellow
-    Write-Host "  -Publish builds a GA zip and creates the GitHub release." -ForegroundColor Yellow
-    exit 2
+    Fail "-Preview and -Publish are mutually exclusive." -Hints @(
+        "-Preview builds a tester zip and uploads it to R2."
+        "-Publish builds a GA zip and creates the GitHub release."
+    ) -Code 2
 }
 if (-not $Preview -and -not $Publish) {
-    Write-Host "`nERROR: specify exactly one of -Preview or -Publish." -ForegroundColor Red
-    Write-Host "  .\publish-release.ps1 -Preview   # tester build from a vX.Y.Z-previewN tag" -ForegroundColor White
-    Write-Host "  .\publish-release.ps1 -Publish   # GA release from a clean vX.Y.Z tag" -ForegroundColor White
-    exit 2
+    Fail "specify exactly one of -Preview or -Publish." -Hints @(
+        ".\publish-release.ps1 -Preview   # tester build from a vX.Y.Z-previewN tag"
+        ".\publish-release.ps1 -Publish   # GA release from a clean vX.Y.Z tag"
+    ) -Code 2
 }
 
 Write-Host "== SmartStreamer4 release ==" -ForegroundColor Cyan
@@ -80,22 +94,18 @@ Write-Host "Configuration:  $Configuration"
 
 $tag = (& git describe --tags --exact-match HEAD 2>$null)
 if (-not $tag) {
-    Write-Host "`nERROR: HEAD has no release tag." -ForegroundColor Red
-    Write-Host "Tag the release first, then re-run, e.g.:" -ForegroundColor Yellow
-    if ($Publish) {
-        Write-Host "  git tag -a v0.3.3 -m `"SmartStreamer4 v0.3.3`"" -ForegroundColor White
-    } else {
-        Write-Host "  git tag -a v0.3.3-preview1 -m `"SmartStreamer4 v0.3.3-preview1`"" -ForegroundColor White
-    }
-    exit 1
+    $exampleTag = if ($Publish) { "v0.3.3" } else { "v0.3.3-preview1" }
+    Fail "HEAD has no release tag." -Hints @(
+        "Tag the release first, then re-run, e.g.:"
+        "  git tag -a $exampleTag -m `"SmartStreamer4 $exampleTag`""
+    )
 }
 # Two tag shapes are minted: a clean vX.Y.Z for GA, or vX.Y.Z-previewN for a
 # numbered tester build (convention adopted 2026-09-08, mirroring SKCCLogger).
 # The retired bN suffix is still parsed by ReleaseUpdateService for old tags
 # but is no longer accepted here, so it cannot be minted by accident.
 if ($tag -notmatch '^v\d+\.\d+\.\d+(-preview\d+)?$') {
-    Write-Host "`nERROR: tag '$tag' does not match v<major>.<minor>.<patch>[-preview<N>] (e.g. v0.3.3, v0.3.3-preview1)." -ForegroundColor Red
-    exit 1
+    Fail "tag '$tag' does not match v<major>.<minor>.<patch>[-preview<N>] (e.g. v0.3.3, v0.3.3-preview1)."
 }
 $isPreviewTag = $tag -match '-preview\d+$'
 
@@ -103,18 +113,18 @@ $isPreviewTag = $tag -match '-preview\d+$'
 # destinations with different audiences, so a mismatch here is always a mistake
 # rather than something to resolve silently in either direction.
 if ($Preview -and -not $isPreviewTag) {
-    Write-Host "`nERROR: -Preview requires a vX.Y.Z-previewN tag; HEAD is '$tag'." -ForegroundColor Red
-    Write-Host "  A clean tag is a GA tag. Either re-tag as a preview, or run -Publish." -ForegroundColor Yellow
-    exit 1
+    Fail "-Preview requires a vX.Y.Z-previewN tag; HEAD is '$tag'." -Hints @(
+        "A clean tag is a GA tag. Either re-tag as a preview, or run -Publish."
+    )
 }
 if ($Publish -and $isPreviewTag) {
     # Phase 2 hard-codes --latest, and the in-app updater in every build fielded
     # before 2026-09-08 reads the releases list without skipping pre-releases,
     # so publishing a preview tag in any form would prompt every operator on the
     # previous GA. Previews reach testers through R2, never GitHub Releases.
-    Write-Host "`nERROR: -Publish requires a clean vX.Y.Z tag; HEAD is '$tag'." -ForegroundColor Red
-    Write-Host "  Previews are never published. Run -Preview to build and upload it." -ForegroundColor Yellow
-    exit 1
+    Fail "-Publish requires a clean vX.Y.Z tag; HEAD is '$tag'." -Hints @(
+        "Previews are never published. Run -Preview to build and upload it."
+    )
 }
 
 $releaseLabel = $tag.Substring(1)   # strip leading 'v' for the embedded version string (SemVer convention)
@@ -143,8 +153,7 @@ if ($Publish) {
     # would not match what was built (Codex audit, 2026-09-20).
     $remoteRefs = @(& git ls-remote origin "refs/tags/$tag" "refs/tags/$tag^{}" 2>$null)
     if (-not $remoteRefs) {
-        Write-Host "  ERROR: tag '$tag' not on origin. Push it first:  git push origin $tag" -ForegroundColor Red
-        exit 1
+        Fail "tag '$tag' not on origin. Push it first:  git push origin $tag"
     }
     # Annotated tags list twice: the tag object, then the peeled '^{}' commit.
     # Prefer the peeled line; a lightweight tag has only the plain one.
@@ -153,18 +162,18 @@ if ($Publish) {
     $remoteSha = ($remoteLine -split "\s+")[0]
     $localSha = (& git rev-parse "$tag^{commit}").Trim()
     if ($remoteSha -ne $localSha) {
-        Write-Host "  ERROR: tag '$tag' on origin points at $remoteSha but locally at $localSha." -ForegroundColor Red
-        Write-Host "         The release would attach to the wrong commit. Reconcile first:" -ForegroundColor Red
-        Write-Host "           git push origin :refs/tags/$tag   # drop the stale remote tag" -ForegroundColor White
-        Write-Host "           git push origin $tag              # push the current one" -ForegroundColor White
-        exit 1
+        Fail "tag '$tag' on origin points at $remoteSha but locally at $localSha." -Hints @(
+            "The release would attach to the wrong commit. Reconcile first:"
+            "  git push origin :refs/tags/$tag   # drop the stale remote tag"
+            "  git push origin $tag              # push the current one"
+        )
     }
     Write-Host "  Tag on origin:           OK ($localSha)"
 
     if (-not (Test-Path $notesPath) -or (Get-Item $notesPath).Length -eq 0) {
-        Write-Host "  ERROR: RELEASE_NOTES-${tag}.md missing or empty." -ForegroundColor Red
-        Write-Host "         Author release notes at $notesPath then re-run." -ForegroundColor Red
-        exit 1
+        Fail "RELEASE_NOTES-${tag}.md missing or empty." -Hints @(
+            "Author release notes at $notesPath then re-run."
+        )
     }
     Write-Host "  Release notes present:   OK"
 }
@@ -180,28 +189,24 @@ if ($Preview) {
     # as absent would let a transient 5xx, a DNS blip or a timeout wave through
     # an upload over a key that is live (Codex audit, 2026-09-20).
     $existingUrl = "$R2PublicHost/$R2Prefix/$zipLabel"
-    $keyIsFree = $false
     try {
         Invoke-WebRequest -Uri $existingUrl -Method Head -TimeoutSec 30 -ErrorAction Stop | Out-Null
-        Write-Host "  ERROR: $zipLabel is already published at $existingUrl." -ForegroundColor Red
-        Write-Host "         Re-uploading different bytes under a live key is not safe." -ForegroundColor Red
-        Write-Host "         Tag the next preview instead, e.g. the -preview<N+1> of this line." -ForegroundColor Yellow
-        exit 1
+        Fail "$zipLabel is already published at $existingUrl." -Hints @(
+            "Re-uploading different bytes under a live key is not safe."
+            "Tag the next preview instead, e.g. the -preview<N+1> of this line."
+        )
     } catch {
         $status = $null
         if ($_.Exception.PSObject.Properties['Response'] -and $_.Exception.Response) {
             $status = [int]$_.Exception.Response.StatusCode
         }
-        if ($status -eq 404) {
-            $keyIsFree = $true
-        } else {
+        if ($status -ne 404) {
             $detail = if ($status) { "HTTP $status" } else { $_.Exception.Message }
-            Write-Host "  ERROR: could not confirm whether $zipLabel already exists ($detail)." -ForegroundColor Red
-            Write-Host "         Refusing to upload rather than risk overwriting a live key." -ForegroundColor Red
-            exit 1
+            Fail "could not confirm whether $zipLabel already exists ($detail)." -Hints @(
+                "Refusing to upload rather than risk overwriting a live key."
+            )
         }
     }
-    if (-not $keyIsFree) { exit 1 }
     Write-Host "  Key is free on R2:       OK"
 }
 
@@ -217,8 +222,7 @@ if (-not $SkipTests) {
     # and fail fast so this gate is real.
     dotnet test SmartStreamer4.sln
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "Tests failed (exit $LASTEXITCODE). Aborting release build." -ForegroundColor Red
-        exit 1
+        Fail "Tests failed (exit $LASTEXITCODE). Aborting release build."
     }
 } else {
     Write-Host "`n[1/7] Skipping tests (-SkipTests)." -ForegroundColor Yellow
@@ -252,10 +256,10 @@ dotnet publish $projectPath `
 # carries this same tag's version the embedded-version gate below passes and a
 # stale build ships (Codex audit, 2026-09-20).
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "`nERROR: dotnet publish failed (exit $LASTEXITCODE)." -ForegroundColor Red
-    Write-Host "  If this is a file-lock wall of MSB3021/MSB3027, close any running" -ForegroundColor Yellow
-    Write-Host "  SmartStreamer4 instance and re-run." -ForegroundColor Yellow
-    exit 1
+    Fail "dotnet publish failed (exit $LASTEXITCODE)." -Hints @(
+        "If this is a file-lock wall of MSB3021/MSB3027, close any running"
+        "SmartStreamer4 instance and re-run."
+    )
 }
 
 $exeName = "SmartStreamer4.exe"
@@ -267,9 +271,9 @@ Write-Host "`n[3/7] Verifying embedded version..." -ForegroundColor Yellow
 # eliminates a class of "shipped a build with the wrong embedded version" bugs.
 $embedded = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($exePath).ProductVersion
 if ($embedded -ne $infoVersion) {
-    Write-Host "`nERROR: published exe has ProductVersion '$embedded' but expected '$infoVersion'." -ForegroundColor Red
-    Write-Host "  In-app version display and update check would be wrong. Refusing to package." -ForegroundColor Red
-    exit 1
+    Fail "published exe has ProductVersion '$embedded' but expected '$infoVersion'." -Hints @(
+        "In-app version display and update check would be wrong. Refusing to package."
+    )
 }
 Write-Host "  Embedded ProductVersion: $embedded" -ForegroundColor Green
 
@@ -293,12 +297,10 @@ Write-Host "`n[5/7] Creating release zip..." -ForegroundColor Yellow
 # CONTRIBUTING links; only the shipped zip drops it.
 $noticesPath = Join-Path $PSScriptRoot "THIRD-PARTY-NOTICES.txt"
 if (-not (Test-Path $noticesPath)) {
-    Write-Host "`nERROR: '$noticesPath' not found. Refusing to package without it." -ForegroundColor Red
-    exit 1
+    Fail "'$noticesPath' not found. Refusing to package without it."
 }
 if (Select-String -Path $noticesPath -Pattern 'TODO' -Quiet) {
-    Write-Host "`nERROR: THIRD-PARTY-NOTICES.txt still contains a TODO placeholder. Refusing to package." -ForegroundColor Red
-    exit 1
+    Fail "THIRD-PARTY-NOTICES.txt still contains a TODO placeholder. Refusing to package."
 }
 Compress-Archive -Path $exePath, $noticesPath -DestinationPath $zipPath -Force
 $hash = (Get-FileHash $zipPath -Algorithm SHA256).Hash.ToLower()
@@ -324,15 +326,20 @@ if ($Preview) {
 
     & npx wrangler r2 object put "$R2Bucket/$R2Prefix/$zipLabel" --file $zipPath --content-type "application/zip" --remote
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "  ERROR: upload of $zipLabel failed (exit $LASTEXITCODE)." -ForegroundColor Red
-        Write-Host "         If this is an auth failure, run:  npx wrangler login" -ForegroundColor Yellow
-        exit 1
+        Fail "upload of $zipLabel failed (exit $LASTEXITCODE)." -Hints @(
+            "If this is an auth failure, run:  npx wrangler login"
+        )
     }
 
     & npx wrangler r2 object put "$R2Bucket/$R2Prefix/$sumsLabel" --file $sumsPath --content-type "text/plain; charset=utf-8" --remote
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "  ERROR: upload of $sumsLabel failed (exit $LASTEXITCODE)." -ForegroundColor Red
-        exit 1
+        # The zip is live by now, so the precondition check refuses a re-run.
+        # The sidecar is the one upload that is safe to repeat by hand: it is
+        # tag-scoped, and this failure means nothing was written under its key.
+        Fail "upload of $sumsLabel failed (exit $LASTEXITCODE)." -Hints @(
+            "The zip is already live, so a re-run will be refused. Upload the sidecar by hand:"
+            "  npx wrangler r2 object put `"$R2Bucket/$R2Prefix/$sumsLabel`" --file `"$sumsPath`" --content-type `"text/plain; charset=utf-8`" --remote"
+        )
     }
 
     # The upload reports success without confirming anything landed, so the live
@@ -343,8 +350,7 @@ if ($Preview) {
     try {
         $head = Invoke-WebRequest -Uri $zipUrl -Method Head -TimeoutSec 60 -ErrorAction Stop
     } catch {
-        Write-Host "  ERROR: $zipUrl did not answer after upload: $($_.Exception.Message)" -ForegroundColor Red
-        exit 1
+        Fail "$zipUrl did not answer after upload: $($_.Exception.Message)"
     }
     # Windows PowerShell 5.1 hands back a bare string here while PowerShell 7
     # hands back a collection, so indexing [0] unconditionally would read the
@@ -353,8 +359,7 @@ if ($Preview) {
     $clValue = if ($clRaw -is [string]) { $clRaw } else { @($clRaw)[0] }
     $servedBytes = [int64]$clValue
     if ($servedBytes -ne $zipBytes) {
-        Write-Host "  ERROR: $zipUrl served $servedBytes bytes, expected $zipBytes." -ForegroundColor Red
-        exit 1
+        Fail "$zipUrl served $servedBytes bytes, expected $zipBytes."
     }
     Write-Host "  Live and $servedBytes bytes: OK" -ForegroundColor Green
 
@@ -379,8 +384,7 @@ Write-Host "`n[7/7] Creating GitHub release..." -ForegroundColor Yellow
     --notes-file $notesPath `
     --latest
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "`nERROR: gh release create failed (exit $LASTEXITCODE)." -ForegroundColor Red
-    exit 1
+    Fail "gh release create failed (exit $LASTEXITCODE)."
 }
 
 Write-Host "`nDone." -ForegroundColor Green

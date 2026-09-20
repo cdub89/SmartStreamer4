@@ -1,0 +1,8 @@
+# Settles one question only: text files are UTF-8 without a byte-order mark.
+# Six .cs files, the deck XAML and three docs picked up a BOM on 2026-09-19/20
+# from scripted edits, against 84 of 90 .cs files that had none. Harmless to the
+# compiler, noise in every diff. No style or analyzer rules live here on purpose.
+root = true
+
+[*]
+charset = utf-8

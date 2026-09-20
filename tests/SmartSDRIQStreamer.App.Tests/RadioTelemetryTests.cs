@@ -1,4 +1,4 @@
-﻿using SDRIQStreamer.FlexRadio;
+using SDRIQStreamer.FlexRadio;
 
 namespace SmartSDRIQStreamer.App.Tests;
 

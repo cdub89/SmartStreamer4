@@ -32,3 +32,7 @@
 # Claude Code local state
 .claude/settings.local.json
 .claude/worktrees/
+
+# Wrangler local cache (publish-release.ps1 -Preview runs npx wrangler from the
+# repo root). Holds the Cloudflare account id and account name; machine-local.
+.wrangler/

@@ -1,4 +1,4 @@
-﻿# CLAUDE.md
+# CLAUDE.md
 
 Operating manual for AI coding agents in this repository. Claude Code
 loads this file directly; Codex reads the same content through the

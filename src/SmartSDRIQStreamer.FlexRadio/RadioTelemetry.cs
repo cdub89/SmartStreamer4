@@ -1,4 +1,4 @@
-﻿namespace SDRIQStreamer.FlexRadio;
+namespace SDRIQStreamer.FlexRadio;
 
 /// <summary>
 /// One coalesced reading of the radio's operating telemetry, in the units the

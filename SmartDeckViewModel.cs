@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
@@ -173,27 +173,22 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
             ? ((int)Math.Round(hz)).ToString("+0;-0;0", CultureInfo.InvariantCulture)
             : Absent;
 
-    [RelayCommand]
-    private async Task ToggleRitAsync()
-    {
-        if (SelectedSlice is not { } slice) return;
-        await _connection.SetSliceRitEnabledAsync(slice, !IsRitEnabled);
-    }
+    // One shape for every on/off control on the deck: ask the radio for the
+    // opposite of what it holds, and do nothing with no slice selected. The lit
+    // state is never set here; it follows the radio's echo on the slice.
+    private Task ToggleOnSelectedSliceAsync(Func<SliceInfo, bool, Task> write, bool current) =>
+        SelectedSlice is { } slice ? write(slice, !current) : Task.CompletedTask;
 
     [RelayCommand]
-    private async Task ToggleXitAsync()
-    {
-        if (SelectedSlice is not { } slice) return;
-        await _connection.SetSliceXitEnabledAsync(slice, !IsXitEnabled);
-    }
+    private Task ToggleRitAsync() => ToggleOnSelectedSliceAsync(_connection.SetSliceRitEnabledAsync, IsRitEnabled);
+
+    [RelayCommand]
+    private Task ToggleXitAsync() => ToggleOnSelectedSliceAsync(_connection.SetSliceXitEnabledAsync, IsXitEnabled);
 
     // ── Receive-chain toggles (issue #76) ────────────────────────────────────
     //
-    // Four states and no levels. FlexLib carries APFLevel, NRLevel and NBLevel,
-    // but SmartSDR removed those sliders in 4.1/4.2 and the radio adapts them
-    // itself (operator, 2026-09-19), so the deck offers on/off only and the
-    // wheel does nothing here. Do not add level steppers without checking that
-    // SmartSDR has started exposing them again.
+    // Four states and no levels, so the wheel does nothing here. See the
+    // remarks on SliceInfo.ApfOn for why, before adding level steppers.
 
     /// <summary>True while the audio peaking filter is on, which lights the button.</summary>
     public bool IsApfOn => SelectedSlice?.ApfOn ?? false;
@@ -212,35 +207,23 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
     /// and 6500, where the button would sit dead: the radio reports its own
     /// capability, so a model list here would only go stale.
     /// </summary>
+    /// <remarks>
+    /// Radio-scoped and not backed by an event of its own, so it is re-raised
+    /// from <see cref="OnConnectionStateChanged"/>: see the note there.
+    /// </remarks>
     public bool IsDiversityAvailable => _connection.DiversityIsAllowed;
 
     [RelayCommand]
-    private async Task ToggleApfAsync()
-    {
-        if (SelectedSlice is not { } slice) return;
-        await _connection.SetSliceApfEnabledAsync(slice, !IsApfOn);
-    }
+    private Task ToggleApfAsync() => ToggleOnSelectedSliceAsync(_connection.SetSliceApfEnabledAsync, IsApfOn);
 
     [RelayCommand]
-    private async Task ToggleNrAsync()
-    {
-        if (SelectedSlice is not { } slice) return;
-        await _connection.SetSliceNrEnabledAsync(slice, !IsNrOn);
-    }
+    private Task ToggleNrAsync() => ToggleOnSelectedSliceAsync(_connection.SetSliceNrEnabledAsync, IsNrOn);
 
     [RelayCommand]
-    private async Task ToggleNbAsync()
-    {
-        if (SelectedSlice is not { } slice) return;
-        await _connection.SetSliceNbEnabledAsync(slice, !IsNbOn);
-    }
+    private Task ToggleNbAsync() => ToggleOnSelectedSliceAsync(_connection.SetSliceNbEnabledAsync, IsNbOn);
 
     [RelayCommand]
-    private async Task ToggleDiversityAsync()
-    {
-        if (SelectedSlice is not { } slice) return;
-        await _connection.SetSliceDiversityEnabledAsync(slice, !IsDiversityOn);
-    }
+    private Task ToggleDiversityAsync() => ToggleOnSelectedSliceAsync(_connection.SetSliceDiversityEnabledAsync, IsDiversityOn);
 
     /// <summary>
     /// Steps the selected slice's RIT offset by <paramref name="notches"/>
@@ -796,7 +779,8 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
     /// A state readout, not a promise about the press. Only ever displayed
     /// while the radio sits on a preset (see <see cref="TxButtonText"/>), so
     /// it names the preset in force: QRP at or below the QRP ceiling, QRO at
-    /// 100 W. Pressing toggles to the other one.
+    /// the radio's rated output (100 W on a FLEX, 500 W on an Aurora; issue
+    /// #77). Pressing toggles to the other one.
     /// An earlier pass made the label name what the press would do, which put
     /// "QRP" on a button while the radio sat at the operating power. That is
     /// the thing to avoid: the label must never claim a state the radio is not
@@ -1310,17 +1294,27 @@ public sealed partial class SmartDeckViewModel : ObservableObject, IDisposable
         // a FlexLib-side drop raises ConnectionStateChanged alone. Re-deriving
         // power from the connection here, the way slices already are, means the
         // deck cannot be left holding state the connection no longer backs.
+        // Bug fix 2026-09-20 (code review, not field-reported): DIV read the
+        // radio's diversity capability once at first bind, so a deck left open
+        // across a swap from a 6400M to a 6600 kept DIV greyed. No event
+        // republishes it, so it is re-raised on both edges here. Connect is late
+        // enough: FlexLib answers from its model table until the radio reports.
         if (!connected)
         {
             _postToUi(() =>
             {
                 RefreshSlices();
                 ApplyRfPower(_connection.RfPowerWatts);
+                OnPropertyChanged(nameof(IsDiversityAvailable));
             });
             return;
         }
 
-        _postToUi(() => ApplyRfPower(_connection.RfPowerWatts));
+        _postToUi(() =>
+        {
+            ApplyRfPower(_connection.RfPowerWatts);
+            OnPropertyChanged(nameof(IsDiversityAvailable));
+        });
         _connection.StartTelemetry();
     }
 

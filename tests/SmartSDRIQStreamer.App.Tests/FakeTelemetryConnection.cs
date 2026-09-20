@@ -171,13 +171,10 @@ internal sealed class FakeTelemetryConnection : IRadioConnection
     public Task SetSliceNrEnabledAsync(SliceInfo slice, bool enabled) => RecordToggle("NR", slice, enabled);
     public Task SetSliceNbEnabledAsync(SliceInfo slice, bool enabled) => RecordToggle("NB", slice, enabled);
 
-    public Task SetSliceDiversityEnabledAsync(SliceInfo slice, bool enabled)
-    {
-        // Mirrors the real connection, which refuses the write on a radio that
-        // does not allow diversity rather than letting it through.
-        if (!DiversityIsAllowed) return Task.CompletedTask;
-        return RecordToggle("DIV", slice, enabled);
-    }
+    // Records unconditionally. The real connection refuses this write on a
+    // radio that does not allow diversity, but mirroring that guard here only
+    // let a test assert the fake's own behaviour, so it was removed.
+    public Task SetSliceDiversityEnabledAsync(SliceInfo slice, bool enabled) => RecordToggle("DIV", slice, enabled);
 
     /// <summary>
     /// Records the write and echoes the new state back on the slice, as the

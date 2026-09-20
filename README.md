@@ -1,4 +1,4 @@
-﻿# SmartStreamer4
+# SmartStreamer4
 
 SmartStreamer4 is a Windows desktop app for running external decoders
 against a FlexRadio. In **CW Mode** it streams DAX-IQ audio into

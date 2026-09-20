@@ -1,4 +1,4 @@
-﻿<Window xmlns="https://github.com/avaloniaui"
+<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -353,7 +353,7 @@
                 <TextBlock Text="{Binding FrequencyText}" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Bottom"
                            Background="Transparent"
                            PointerWheelChanged="OnFrequencyWheel"
-                           ToolTip.Tip="Mouse wheel tunes the slice by the tune step set on the radio."/>
+                           ToolTip.Tip="Wheel: tune by the radio's step"/>
                 <TextBlock Text="MHz" FontSize="10" Foreground="{DynamicResource AppMutedBrush}" VerticalAlignment="Bottom" Margin="3,0,0,2"
                            Background="Transparent"
                            PointerWheelChanged="OnFrequencyWheel"/>
@@ -372,7 +372,7 @@
                 <Button Classes="mode-toggle"
                         IsVisible="{Binding HasSelectedSlice}"
                         Command="{Binding CycleModeCommand}"
-                        ToolTip.Tip="Click to step the slice mode: CW, LSB, USB, AM"
+                        ToolTip.Tip="Click: next mode"
                         Margin="10,0,0,0">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="{Binding ModeText}" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Bottom"/>
@@ -423,7 +423,7 @@
                             Background="Transparent"
                             PointerWheelChanged="OnRitWheel"
                             Tapped="OnRitTapped"
-                            ToolTip.Tip="RIT. Click to engage or release, mouse wheel to shift the receive offset 10 Hz a step.">
+                            ToolTip.Tip="RIT. Click: on/off. Wheel: 10 Hz">
                     <TextBlock Classes="offset-label" Classes.on="{Binding IsRitEnabled}" Text="RIT"/>
                     <TextBlock Classes="offset-value" Classes.on="{Binding IsRitEnabled}" Text="{Binding RitText}"/>
                 </StackPanel>
@@ -431,7 +431,7 @@
                             Background="Transparent"
                             PointerWheelChanged="OnXitWheel"
                             Tapped="OnXitTapped"
-                            ToolTip.Tip="XIT. Click to engage or release, mouse wheel to shift the transmit offset 10 Hz a step.">
+                            ToolTip.Tip="XIT. Click: on/off. Wheel: 10 Hz">
                     <TextBlock Classes="offset-label" Classes.on="{Binding IsXitEnabled}" Text="XIT"/>
                     <TextBlock Classes="offset-value" Classes.on="{Binding IsXitEnabled}" Text="{Binding XitText}"/>
                 </StackPanel>
@@ -443,14 +443,14 @@
                             Background="Transparent"
                             IsEnabled="{Binding CanAdjustRfGain}"
                             PointerWheelChanged="OnRfGainWheel"
-                            ToolTip.Tip="RF gain. Mouse wheel to change, or F1 and F2.">
+                            ToolTip.Tip="RF gain. Wheel or F1/F2">
                     <TextBlock Classes="offset-label" Text="RF"/>
                     <TextBlock Classes="offset-value" Text="{Binding RfGainText}"/>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal"
                             Background="Transparent"
                             PointerWheelChanged="OnAgcThresholdWheel"
-                            ToolTip.Tip="AGC-T. Mouse wheel to change, or F3 and F4.">
+                            ToolTip.Tip="AGC-T. Wheel or F3/F4">
                     <TextBlock Classes="offset-label" Text="AGC-T"/>
                     <TextBlock Classes="offset-value" Text="{Binding AgcThresholdText}"/>
                 </StackPanel>
@@ -487,7 +487,7 @@
                           Name="AlwaysOnTopCheck"
                           Classes="pin"
                           VerticalAlignment="Center"
-                          ToolTip.Tip="Keep SmartDeck above other windows"
+                          ToolTip.Tip="Keep on top"
                           IsCheckedChanged="OnAlwaysOnTopChanged">
                 <!-- Thumbtack seen head-on: cap, shaft, flange, needle. The
                      enclosed outline is the point, since the checked style
@@ -588,10 +588,8 @@
              target went. That is what paid for these four controls, and the
              deck comes out a line shorter than before rather than taller.
 
-             APF, NR and NB are on/off only. FlexLib carries a level for each,
-             but SmartSDR removed those sliders in 4.1/4.2 and the radio adapts
-             them itself (operator, 2026-09-19), so the wheel does nothing on
-             them. Do not add level steppers here.
+             APF, NR and NB are on/off only, so the wheel does nothing on them.
+             See the remarks on SliceInfo.ApfOn before adding level steppers.
 
              DIV greys out rather than hiding on a radio that does not allow
              diversity (operator, 2026-09-19; his own 6400M is one). Hiding it
@@ -617,52 +615,48 @@
                     Classes.lit="{Binding IsDiversityOn}"
                     IsEnabled="{Binding IsDiversityAvailable}"
                     Content="DIV"
-                    MinWidth="42"
-                    ToolTip.Tip="Diversity reception. Greyed out on radios that do not support it."
+                    ToolTip.Tip="Diversity"
                     Command="{Binding ToggleDiversityCommand}"/>
             <Button Grid.Column="1"
                     Classes="deck-button"
                     Classes.lit="{Binding IsApfOn}"
                     Content="APF"
-                    MinWidth="42"
-                    ToolTip.Tip="Audio peaking filter. The radio sets its own level."
+                    ToolTip.Tip="Audio peaking filter"
                     Command="{Binding ToggleApfCommand}"/>
             <Button Grid.Column="2"
                     Classes="deck-button"
                     Classes.lit="{Binding IsNbOn}"
                     Content="NB"
-                    MinWidth="42"
-                    ToolTip.Tip="Noise blanker. The radio sets its own level."
+                    ToolTip.Tip="Noise blanker"
                     Command="{Binding ToggleNbCommand}"/>
             <Button Grid.Column="3"
                     Classes="deck-button"
                     Classes.lit="{Binding IsNrOn}"
                     Content="NR"
-                    MinWidth="42"
-                    ToolTip.Tip="Noise reduction. The radio sets its own level."
+                    ToolTip.Tip="Noise reduction"
                     Command="{Binding ToggleNrCommand}"/>
 
             <!-- One button for power now, not a readout plus a button: a bare
                  number sitting beside four toggles read as odd (operator,
-                 2026-09-19). It names the state at rest and shows the wattage
-                 while the wheel moves it, lingering two seconds afterwards so a
-                 single detent is readable. That makes this the only place the
-                 power *setting* appears; "Fwd" in the footer is measured
-                 forward power and reads zero on receive, a different number.
+                 2026-09-19). It names the preset while the radio sits on one
+                 and shows the wattage at any other level; see TxButtonText for
+                 why the earlier revert-after-two-seconds behaviour went. That
+                 makes this the only place the power *setting* appears; "Fwd"
+                 in the footer is measured forward power and reads zero on
+                 receive, a different number.
 
                  Lit still means the deck's one thing, the value in force: here,
-                 sitting on one of the two presets. The label can no longer
-                 shift the strip at all now that the column is a fixed share of
-                 the width; MinWidth stays only as a floor covering "QRP", "QRO"
-                 and a three-digit wattage if the deck is ever narrowed. -->
+                 sitting on one of the two presets. The label cannot shift the
+                 strip: the column is a fixed share of the deck's fixed width,
+                 which is also why no button on this strip carries a MinWidth
+                 (they were dead floors, removed 2026-09-20). -->
             <Button Grid.Column="4"
                     Classes="deck-button"
                     Classes.lit="{Binding IsPresetActive}"
                     Content="{Binding TxButtonText}"
                     IsEnabled="{Binding CanToggleQrp}"
-                    MinWidth="54"
                     PointerWheelChanged="OnTxPowerWheel"
-                    ToolTip.Tip="Transmit power. Click toggles QRP and QRO; mouse wheel sets the watts, shown here while you turn it."
+                    ToolTip.Tip="TX power. Click: QRP/QRO. Wheel: watts"
                     Command="{Binding ToggleQrpCommand}"/>
         </Grid>
 

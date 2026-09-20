@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Globalization;
 using System.Linq;
@@ -184,7 +184,7 @@ public sealed class FlexLibRadioConnection : IRadioConnection
     {
         switch (e.PropertyName)
         {
-            case "Connected":
+            case nameof(Radio.Connected):
                 {
                     var nowConnected = _radio?.Connected ?? false;
                     if (!nowConnected && !_disconnectInitiatedByUs)
@@ -206,27 +206,27 @@ public sealed class FlexLibRadioConnection : IRadioConnection
                     ConnectionStateChanged?.Invoke(nowConnected);
                 }
                 break;
-            case "AvgDAXkbps":
+            case nameof(Radio.AvgDAXkbps):
                 if (_radio is not null) AvgDAXKbpsChanged?.Invoke(_radio.AvgDAXkbps);
                 break;
             // Fires for our own writes and for another client's alike, which is
             // what lets SmartDeck's QRP toggle stand down when the operator
             // changes power in SmartSDR instead of fighting them for it.
-            case "RFPower":
+            case nameof(Radio.RFPower):
                 _rfPowerReported = true;
                 RfPowerChanged?.Invoke(RfPowerWatts);
                 break;
             // The PA rating scales every watt figure we report (issue #77), and
             // it can land after the first RFPower status, so a late arrival has
             // to re-publish or the deck keeps showing the pre-rating number.
-            case "MaxInternalPaPowerWatts":
+            case nameof(Radio.MaxInternalPaPowerWatts):
                 if (_rfPowerReported) RfPowerChanged?.Invoke(RfPowerWatts);
                 break;
-            case "NetworkPing":
-            case "RemoteNetworkQuality":
+            case nameof(Radio.NetworkPing):
+            case nameof(Radio.RemoteNetworkQuality):
                 PublishNetworkStatus();
                 break;
-            case "GuiClients":
+            case nameof(Radio.GuiClients):
                 RefreshGuiClients();
                 break;
             // Bug fix 2026-05-19 (Radio versions always "(unavailable)" in
@@ -234,7 +234,7 @@ public sealed class FlexLibRadioConnection : IRadioConnection
             // UpdateVersions reply handler (Radio.cs:7127). Reading it
             // synchronously right after Connect() returns is too early.
             // Defer to this PropertyChanged event so the value surfaces.
-            case "Versions":
+            case nameof(Radio.Versions):
                 if (_radio?.Versions is { Length: > 0 } v)
                     EmitDiag($"Radio versions: {v}.");
                 break;
@@ -245,7 +245,7 @@ public sealed class FlexLibRadioConnection : IRadioConnection
             // fault onset with key-down. Logging only; no action on TX state.
             // FlexLib derives Mox from the interlock state (Radio.cs:7588),
             // so CW key-down surfaces here, not just the MOX button.
-            case "Mox":
+            case nameof(Radio.Mox):
                 if (_radio is { } moxRadio)
                 {
                     // Issue #69: publish before logging, deliberately. The log
@@ -469,16 +469,18 @@ public sealed class FlexLibRadioConnection : IRadioConnection
 
     // ── Receive-chain toggles (issue #76) ────────────────────────────────────
     //
-    // Four states, no levels. FlexLib exposes APFLevel, NRLevel and NBLevel too,
-    // but SmartSDR removed those sliders in 4.1/4.2 and the radio adapts them
-    // itself; writing them from here would fight that. Do not add level setters
-    // without checking whether SmartSDR has started exposing them again.
+    // Four states, no levels. See the remarks on SliceInfo.ApfOn for why,
+    // before adding level setters.
+
+    /// <inheritdoc/>
     public Task SetSliceApfEnabledAsync(SliceInfo slice, bool enabled) =>
         SetSliceFlagAsync(slice, enabled, static (s, v) => s.APFOn = v, static s => s.APFOn, "APF");
 
+    /// <inheritdoc/>
     public Task SetSliceNrEnabledAsync(SliceInfo slice, bool enabled) =>
         SetSliceFlagAsync(slice, enabled, static (s, v) => s.NROn = v, static s => s.NROn, "NR");
 
+    /// <inheritdoc/>
     public Task SetSliceNbEnabledAsync(SliceInfo slice, bool enabled) =>
         SetSliceFlagAsync(slice, enabled, static (s, v) => s.NBOn = v, static s => s.NBOn, "NB");
 
@@ -592,46 +594,30 @@ public sealed class FlexLibRadioConnection : IRadioConnection
     // "Watts, from 0 to 100" (Radio.cs:8368). On a 100 W radio the two numbers
     // coincide, which is why every earlier radio read correctly by accident.
     // Fixed here rather than in the ViewModel so this class stays the only code
-    // that knows RFPower is a percentage; everything above it is in watts and
-    // is now true rather than true-by-coincidence. A per-model watts table was
-    // rejected: the radio reports its own rating, so there is nothing to keep.
-    // Codex deep audit 2026-09-19 raised this as High: FlexLib initialises
-    // MaxInternalPaPowerWatts to 100 (Radio.cs:11993), so a default is
-    // indistinguishable from a reported 100 W rating, and an Aurora whose
-    // rfpower status beat its max_internal_pa_power status would scale against
-    // 100 and put 25 W behind a QRP press. Read and rejected, for two reasons.
+    // that knows RFPower is a percentage. A per-model watts table was rejected:
+    // the radio reports its own rating, so there is nothing to keep.
     //
-    // It is not reachable: the issue #64 bind sequence below clears
-    // _rfPowerReported *after* binding and publishes null, and the connect-time
-    // status burst lands before the bind (see the comment at BindToStation).
-    // Nothing is published until the radio reports RFPower again in the bound
-    // context, by which time the rating from that earlier burst is already in
-    // hand. The MaxInternalPaPowerWatts case in the property handler covers the
-    // remaining case of a rating that genuinely changes later.
-    //
-    // And the proposed fix would be worse than the bug. Gating on a "rating
-    // reported" flag set from the property path cannot work: FlexLib's setter
-    // returns early when the value is unchanged, so a 100 W radio reporting its
-    // true 100 W raises no PropertyChanged at all. The flag would stay false on
-    // every FLEX-6000 and 8000 ever made, leaving RfPowerWatts permanently null
-    // and SmartDeck's power control dead for almost every operator.
-    //
-    // Do not add that flag. If this ever does need hardening, the signal has to
-    // come from the status text, not the property.
-    private int? MaxPaWattsOrNull =>
+    // Do NOT gate this on a "rating reported" flag set from PropertyChanged
+    // (proposed by the Codex audit of 2026-09-19 because FlexLib defaults the
+    // rating to 100; the full adjudication is this comment as of 5b63860).
+    // FlexLib's setter returns early on an unchanged value, so a real 100 W
+    // radio never raises the event, and the flag would leave power dead on
+    // every FLEX-6000 and 8000. The default is not reachable anyway: nothing
+    // publishes until RFPower is re-reported after the bind, by which time the
+    // rating has arrived.
+
+    /// <inheritdoc/>
+    public int? MaxRfPowerWatts =>
         _boundToStation && _radio is { Connected: true } radio && radio.MaxInternalPaPowerWatts > 0
             ? radio.MaxInternalPaPowerWatts
             : null;
-
-    /// <inheritdoc/>
-    public int? MaxRfPowerWatts => MaxPaWattsOrNull;
 
     // Absent until the radio has reported a power *in the station's context*.
     // The bind requirement is the whole lesson of issue #64: an unbound client
     // is told a fictional 100 W, and SmartDeck saving that as the power to
     // return to would write it over the operator's real setting.
     public int? RfPowerWatts =>
-        _boundToStation && _rfPowerReported && _radio is { Connected: true } radio && MaxPaWattsOrNull is { } max
+        _rfPowerReported && MaxRfPowerWatts is { } max && _radio is { } radio
             ? PercentToWatts(radio.RFPower, max)
             : null;
 
@@ -646,7 +632,7 @@ public sealed class FlexLibRadioConnection : IRadioConnection
         // naming what it saved or restored, which says more than a bare write
         // would, and a slider drag would otherwise put a line on the log per
         // step (same reasoning as the band-restore summary line).
-        if (_radio is { Connected: true } radio && MaxPaWattsOrNull is { } max)
+        if (MaxRfPowerWatts is { } max && _radio is { } radio)
         {
             var percent = WattsToPercent(watts, max);
             if (radio.RFPower != percent)
@@ -1200,24 +1186,24 @@ public sealed class FlexLibRadioConnection : IRadioConnection
         if (string.IsNullOrWhiteSpace(propertyName))
             return true;
 
-        if (propertyName is "Freq" or "DemodMode" or "DAXChannel")
+        if (propertyName is nameof(Slice.Freq) or nameof(Slice.DemodMode) or nameof(Slice.DAXChannel))
             return true;
 
         // Issue #59 phase 2a: antenna selection and the radio-reported option
         // lists drive the SmartDeck control surface, so their changes have to
         // reach the UI. Without this the selectors would never populate,
         // because the lists arrive after the slice is first tracked.
-        if (propertyName is "RXAnt" or "TXAnt" or "RXAntList" or "TXAntList")
+        if (propertyName is nameof(Slice.RXAnt) or nameof(Slice.TXAnt) or nameof(Slice.RXAntList) or nameof(Slice.TXAntList))
             return true;
 
         // AGC-T drives its own SmartDeck readout.
-        if (propertyName is "AGCThreshold")
+        if (propertyName is nameof(Slice.AGCThreshold))
             return true;
 
         // Issue #69: which slice transmits decides which chip reddens on key
         // down, so a change of TX slice has to reach the UI even when nothing
         // else about the slice moved.
-        if (propertyName is "IsTransmitSlice")
+        if (propertyName is nameof(Slice.IsTransmitSlice))
             return true;
 
         // Issue #76: the four receive-chain toggles. Named explicitly for the
@@ -1225,7 +1211,7 @@ public sealed class FlexLibRadioConnection : IRadioConnection
         // so the fall-through would drop them and the buttons would light only
         // for our own presses, never for a change made on the Maestro or in
         // SmartSDR.
-        if (propertyName is "APFOn" or "NROn" or "NBOn" or "DiversityOn")
+        if (propertyName is nameof(Slice.APFOn) or nameof(Slice.NROn) or nameof(Slice.NBOn) or nameof(Slice.DiversityOn))
             return true;
 
         // FlexLib variants expose RIT state/offset and tune-step with different names.

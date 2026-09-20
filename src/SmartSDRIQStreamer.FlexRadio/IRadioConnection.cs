@@ -149,9 +149,7 @@ public interface IRadioConnection
 
     // ── Receive-chain toggles (issue #76) ────────────────────────────────────
     //
-    // On/off only. FlexLib also carries APFLevel, NRLevel and NBLevel, but
-    // SmartSDR removed those sliders in 4.1/4.2 and the radio adapts the levels
-    // itself, so the deck does not drive them.
+    // On/off only, no levels: see the remarks on SliceInfo.ApfOn.
 
     /// <summary>Turn the audio peaking filter on or off for the slice.</summary>
     Task SetSliceApfEnabledAsync(SliceInfo slice, bool enabled);
@@ -255,10 +253,10 @@ public interface IRadioConnection
     /// Watts are converted to the radio's 0-100 setting on the way down, so a
     /// value the radio cannot represent lands on the nearest one it can: on a
     /// 500 W PA the granularity is 5 W (issue #77).
-    /// </remarks>
-    /// <remarks>
+    /// <para>
     /// This changes what a subsequent transmission will do; it does not key the
     /// radio.
+    /// </para>
     /// </remarks>
     Task SetRfPowerAsync(int watts);
 

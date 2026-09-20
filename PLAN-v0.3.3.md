@@ -1,4 +1,4 @@
-﻿# PLAN: v0.3.3 — controls the hardware has and the software does not
+# PLAN: v0.3.3 — controls the hardware has and the software does not
 
 ## Context
 

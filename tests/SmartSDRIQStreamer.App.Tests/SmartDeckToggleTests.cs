@@ -1,4 +1,4 @@
-﻿using SDRIQStreamer.App;
+using SDRIQStreamer.App;
 using SDRIQStreamer.FlexRadio;
 
 namespace SmartSDRIQStreamer.App.Tests;
@@ -28,16 +28,22 @@ public class SmartDeckToggleTests
             DiversityOn = diversityOn,
         };
 
+    // settle: null keeps the ViewModel's real delay. HeldOpen parks a wheel
+    // write in flight for the life of the test, so the deck's own held value is
+    // what shows rather than an echo.
     private static (FakeTelemetryConnection Connection, SmartDeckViewModel ViewModel) Deck(
         SliceInfo? slice = null,
-        bool diversityAllowed = false)
+        bool diversityAllowed = false,
+        Func<TimeSpan, Task>? settle = null)
     {
         var connection = new FakeTelemetryConnection { DiversityIsAllowed = diversityAllowed };
         connection.SetSlices(slice ?? Slice());
-        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
+        var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action(), settle: settle);
         viewModel.Start();
         return (connection, viewModel);
     }
+
+    private static Task HeldOpen(TimeSpan _) => new TaskCompletionSource().Task;
 
     [Theory]
     [InlineData("APF")]
@@ -98,16 +104,25 @@ public class SmartDeckToggleTests
     }
 
     [Fact]
-    public void A_DIV_press_on_a_radio_that_cannot_do_it_reaches_nothing()
+    public void DIV_availability_follows_a_swap_to_a_different_radio()
     {
-        // Belt and braces with greying the button: the connection refuses the
-        // write too, so a stale binding cannot put the radio in a state it
-        // does not support.
+        // Regression, found in code review 2026-09-20. The deck stays open
+        // across a disconnect, and the capability is radio-scoped with no event
+        // of its own, so the binding kept the first radio's answer: connect a
+        // 6400M, then a 6600, and DIV stayed greyed until the deck was reopened.
         var (connection, viewModel) = Deck(diversityAllowed: false);
+        var raised = 0;
+        viewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(SmartDeckViewModel.IsDiversityAvailable)) raised++;
+        };
 
-        viewModel.ToggleDiversityCommand.Execute(null);
+        connection.RaiseConnectionStateChanged(false);
+        connection.DiversityIsAllowed = true;
+        connection.RaiseConnectionStateChanged(true);
 
-        Assert.Empty(connection.ToggleWrites);
+        Assert.Equal(2, raised);
+        Assert.True(viewModel.IsDiversityAvailable);
     }
 
     [Fact]
@@ -127,7 +142,7 @@ public class SmartDeckToggleTests
     {
         var connection = new FakeTelemetryConnection { DiversityIsAllowed = true };
         var viewModel = new SmartDeckViewModel(connection, TestStation, postToUi: action => action());
-        viewModel.Start();
+        viewModel.Start();   // no slices at all, which Deck() cannot express
 
         viewModel.ToggleApfCommand.Execute(null);
         viewModel.ToggleNrCommand.Execute(null);
@@ -157,12 +172,7 @@ public class SmartDeckToggleTests
     {
         // This is the only place the power setting appears, so off a preset the
         // button has to show the number rather than a two-state label.
-        var settle = new TaskCompletionSource();
-        var connection = new FakeTelemetryConnection();
-        connection.SetSlices(Slice());
-        var viewModel = new SmartDeckViewModel(
-            connection, TestStation, postToUi: action => action(), settle: _ => settle.Task);
-        viewModel.Start();
+        var (connection, viewModel) = Deck(settle: HeldOpen);
         connection.ReportRfPower(50);
 
         // 50 W is neither preset, so the radio's own level shows straight away.
@@ -180,11 +190,7 @@ public class SmartDeckToggleTests
         // revert to the preset label once the wheel stopped, so a radio sitting
         // at 51 W read "QRO". The display is now a function of the level alone
         // and has nothing to time out.
-        var connection = new FakeTelemetryConnection();
-        connection.SetSlices(Slice());
-        var viewModel = new SmartDeckViewModel(
-            connection, TestStation, postToUi: action => action(), settle: _ => Task.CompletedTask);
-        viewModel.Start();
+        var (connection, viewModel) = Deck(settle: _ => Task.CompletedTask);
         connection.ReportRfPower(50);
 
         viewModel.NudgeTxPower(1);
@@ -197,12 +203,7 @@ public class SmartDeckToggleTests
     [Fact]
     public void A_press_from_an_odd_level_lands_on_a_preset_and_names_it()
     {
-        var settle = new TaskCompletionSource();
-        var connection = new FakeTelemetryConnection();
-        connection.SetSlices(Slice());
-        var viewModel = new SmartDeckViewModel(
-            connection, TestStation, postToUi: action => action(), settle: _ => settle.Task);
-        viewModel.Start();
+        var (connection, viewModel) = Deck(settle: HeldOpen);
         connection.ReportRfPower(50);
 
         viewModel.NudgeTxPower(1);

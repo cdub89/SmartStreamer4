@@ -178,7 +178,10 @@ public sealed record SliceInfo(
     /// State only, deliberately. FlexLib also exposes <c>APFLevel</c>, but
     /// SmartSDR dropped the NR, NB and APF sliders in 4.1/4.2 and neither the
     /// Maestro nor the SmartSDR client offers them, because the radio adapts
-    /// these itself. Driving the level from here would fight that adaptation.
+    /// these itself. Driving the level from here would fight that adaptation,
+    /// so check that SmartSDR has started exposing the sliders again before
+    /// adding a level setter or stepper anywhere. This is the one full copy of
+    /// the reasoning; the connection, the ViewModel and the deck XAML point here.
     /// The same reasoning covers <see cref="NrOn"/> and <see cref="NbOn"/>.
     /// </remarks>
     public bool ApfOn { get; init; }
