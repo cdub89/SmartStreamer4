@@ -15,11 +15,11 @@ $ErrorActionPreference = "Stop"
 #
 #   .\publish-release.ps1 -Preview
 #     Requires a vX.Y.Z-previewN tag. Tests, builds, verifies the embedded
-#     version, zips, uploads the zip to R2, confirms the link serves it, and
-#     prints the tester link. Never touches GitHub Releases.
+#     version, signs, zips, uploads the zip to R2, confirms the link serves it,
+#     and prints the tester link. Never touches GitHub Releases.
 #
 #   .\publish-release.ps1 -Publish
-#     Requires a clean vX.Y.Z tag. Same build, then writes SHA256SUMS.txt and
+#     Requires a clean vX.Y.Z tag. Same build and signing, then writes SHA256SUMS.txt and
 #     runs gh release create with --latest, attaching the zip and the sidecar.
 #
 # Flags rather than inferring the destination from the tag shape, and checked
@@ -34,6 +34,10 @@ $ErrorActionPreference = "Stop"
 # post-upload verify fail on a good v0.3.3-preview2 upload. A re-run of the same
 # tag now simply overwrites, which is what a re-run after a failed run needs;
 # new code always gets a new tag, and the tag is in the filename.
+#
+# Every build is Authenticode-signed (operator decision, 2026-09-20): previews
+# and GA alike, with no unsigned fallback and no skip flag. Setup, recipe and
+# the Azure half are in CODE-SIGNING.md.
 #
 # Version source: the git tag at HEAD. The csproj <Version> stays a clean
 # numeric default, because MSBuild's condition evaluator OOMs on a non-numeric
@@ -52,6 +56,21 @@ $R2PublicHost = "https://downloads.wx7v.net"
 # How long to keep asking the public URL for the uploaded zip before giving up.
 $VerifyTimeoutSeconds = 120
 $VerifyRetrySeconds = 10
+
+# Code signing: Azure Artifact Signing through jsign, the same recipe as the
+# Linux seat. Everything lives outside the repo. The jar name is pinned, not
+# globbed: the signer version is part of the release toolchain, not something
+# to pick up by accident.
+$SigningDir = Join-Path $env:USERPROFILE ".skcclogger-signing\windows"
+$SigningConfigPath = Join-Path $SigningDir "azure.conf"
+$JsignJarPath = Join-Path $SigningDir "jsign-7.5.jar"
+$SigningConfigKeys = "tenant_id", "client_id", "client_secret", "endpoint", "account", "profile", "expected_cn"
+$SigningScope = "https://codesigning.azure.net/.default"
+# Mandatory, not optional: signing certificates live 72 hours, so an exe without
+# a timestamp stops validating three days after release.
+$TimestampUrl = "http://timestamp.acs.microsoft.com"
+$SecretExpiryWarnDays = 30
+$ExpectedIssuerOrg = "O=Microsoft Corporation"
 
 $projectPath = Join-Path $PSScriptRoot "SmartSDRIQStreamer.csproj"
 $publishDir = Join-Path $PSScriptRoot "bin/$Configuration/net8.0-windows/$Runtime/publish"
@@ -73,6 +92,107 @@ function Fail {
 
 function Step([string]$Title) { Write-Host "`n$Title" -ForegroundColor Yellow }
 
+# key=value, '#' comments, split on the FIRST '=' so a secret may contain one.
+# Returns a hashtable; refuses a missing file or a blank required key.
+function Read-SigningConfig {
+    if (-not (Test-Path $SigningConfigPath)) {
+        Fail "signing config not found at $SigningConfigPath." -Hints @(
+            "Every build is signed; there is no unsigned fallback. See CODE-SIGNING.md."
+        )
+    }
+    $config = @{}
+    foreach ($line in Get-Content $SigningConfigPath) {
+        if ($line -match '^\s*(#|$)' -or $line -notmatch '=') { continue }
+        $key, $value = $line -split '=', 2
+        $config[$key.Trim()] = $value.Trim()
+    }
+    $missing = @($SigningConfigKeys | Where-Object { [string]::IsNullOrWhiteSpace($config[$_]) })
+    if ($missing) {
+        Fail "signing config is missing: $($missing -join ', ')." -Hints @("File: $SigningConfigPath")
+    }
+    $config
+}
+
+# Client-credentials grant. The secret travels in the HTTPS body only, and on
+# failure only Microsoft's own error code and first line are shown: never the
+# request, the secret or a token.
+function Get-SigningToken($Config) {
+    try {
+        $response = Invoke-RestMethod -Method Post -TimeoutSec 30 `
+            -Uri "https://login.microsoftonline.com/$($Config.tenant_id)/oauth2/v2.0/token" `
+            -Body @{
+                grant_type    = "client_credentials"
+                client_id     = $Config.client_id
+                client_secret = $Config.client_secret
+                scope         = $SigningScope
+            }
+        return $response.access_token
+    } catch {
+        $detail = $_.Exception.Message
+        if ($_.ErrorDetails.Message) {
+            try {
+                $aad = $_.ErrorDetails.Message | ConvertFrom-Json
+                $detail = "$($aad.error): $(($aad.error_description -split "`r?`n")[0])"
+            } catch { }
+        }
+        Fail "could not get a signing token ($detail)." -Hints @(
+            "invalid_client usually means a wrong or expired client secret in $SigningConfigPath."
+        )
+    }
+}
+
+# Signs in place. The token is in the environment only for the life of the jsign
+# call, so wrangler, npx and gh further down can never inherit it, and it is
+# never on a command line.
+function Invoke-Signing($Config, [string]$Path) {
+    $env:AZURE_ACCESS_TOKEN = Get-SigningToken $Config
+    try {
+        & java -jar $JsignJarPath `
+            --storetype TRUSTEDSIGNING `
+            --keystore $Config.endpoint `
+            --storepass env:AZURE_ACCESS_TOKEN `
+            --alias "$($Config.account)/$($Config.profile)" `
+            --tsaurl $TimestampUrl `
+            --tsmode RFC3161 `
+            --name "SmartStreamer4" `
+            $Path
+        $exit = $LASTEXITCODE
+    } finally {
+        $env:AZURE_ACCESS_TOKEN = $null
+    }
+    if ($exit -ne 0) {
+        Fail "jsign failed (exit $exit)." -Hints @(
+            "HTTP 403 means the app registration lacks the Certificate Profile Signer role."
+            "A re-run of this same tag is safe."
+        )
+    }
+}
+
+# Get-AuthenticodeSignature says Valid for ANY chain this PC trusts, including a
+# local test root, so Valid alone does not prove who signed. The exact Common
+# Name and a Microsoft issuer do (Codex design review, 2026-09-20). Exact, not
+# "contains": a substring match would accept a longer name that starts the same.
+function Assert-Signature($Config, [string]$Path) {
+    $simpleName = [System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName
+    $signature = Get-AuthenticodeSignature $Path
+    $commonName = $null
+    $problems = @()
+    if ($signature.Status -ne "Valid") { $problems += "status is $($signature.Status): $($signature.StatusMessage)" }
+    if (-not $signature.TimeStamperCertificate) { $problems += "no timestamp, so it would stop validating in 72 hours" }
+    if ($signature.SignerCertificate) {
+        $commonName = $signature.SignerCertificate.GetNameInfo($simpleName, $false)
+        if ($commonName -cne $Config.expected_cn) { $problems += "signer is '$commonName', expected '$($Config.expected_cn)'" }
+        if ($signature.SignerCertificate.Issuer -notmatch [regex]::Escape($ExpectedIssuerOrg)) {
+            $problems += "issuer is '$($signature.SignerCertificate.Issuer)', expected one under $ExpectedIssuerOrg"
+        }
+    } else {
+        $problems += "no signer certificate"
+    }
+    if ($problems) { Fail "signature check failed for $Path." -Hints $problems }
+    Write-Host "  Signed by:   $commonName" -ForegroundColor Green
+    Write-Host "  Timestamped: $($signature.TimeStamperCertificate.GetNameInfo($simpleName, $false))" -ForegroundColor Green
+}
+
 # -----------------------------------------------------------------------------
 # Mode and tag validation, before any work.
 # -----------------------------------------------------------------------------
@@ -89,36 +209,41 @@ if (-not $Preview -and -not $Publish) {
     ) -Code 2
 }
 
-$tag = (& git describe --tags --exact-match HEAD 2>$null)
-if (-not $tag) {
-    $exampleTag = if ($Publish) { "vX.Y.Z" } else { "vX.Y.Z-previewN" }
-    Fail "HEAD has no release tag." -Hints @(
-        "Tag the release first (annotated), then re-run, e.g.:"
-        "  git tag -a $exampleTag -m `"SmartStreamer4 $exampleTag`""
+# The mode picks the tag, not the other way round. GA is cut from the commit a
+# preview already validated, so that commit carries BOTH vX.Y.Z-previewN and
+# vX.Y.Z, and `git describe --exact-match` would hand back whichever it liked
+# (Codex final audit, 2026-09-20). So: list every tag at HEAD, keep the ones of
+# the shape this mode ships, and require exactly one.
+#
+# Two shapes are minted: a clean vX.Y.Z for GA, or vX.Y.Z-previewN for a tester
+# build. Case-sensitive on purpose: the tag becomes the zip name and the version
+# in About. The retired bN suffix is still parsed by ReleaseUpdateService for
+# old tags but is not accepted here. A preview can never reach -Publish: it
+# hard-codes --latest, and the updater in every build fielded before 2026-09-08
+# reads the releases list without skipping pre-releases, so a published preview
+# would prompt every operator on the previous GA.
+$wantedShape = if ($Publish) { '^v\d+\.\d+\.\d+$' } else { '^v\d+\.\d+\.\d+-preview\d+$' }
+$wantedExample = if ($Publish) { "vX.Y.Z" } else { "vX.Y.Z-previewN" }
+$tagsAtHead = @(& git tag --points-at HEAD)
+$candidates = @($tagsAtHead | Where-Object { $_ -cmatch $wantedShape })
+if ($candidates.Count -ne 1) {
+    $modeName = if ($Publish) { "-Publish" } else { "-Preview" }
+    $found = if ($tagsAtHead) { "Tags at HEAD: $($tagsAtHead -join ', ')." } else { "HEAD has no tags." }
+    $problem = if ($candidates.Count -gt 1) { "more than one" } else { "no" }
+    Fail "$modeName needs exactly one $wantedExample tag at HEAD, and there is $problem such tag. $found" -Hints @(
+        "Tag the release first (annotated, lowercase), then re-run, e.g.:"
+        "  git tag -a $wantedExample -m `"SmartStreamer4 $wantedExample`""
+        "A clean vX.Y.Z tag is a GA tag (-Publish); a -previewN tag is a tester build (-Preview)."
     )
 }
-# Two tag shapes are minted: a clean vX.Y.Z for GA, or vX.Y.Z-previewN for a
-# numbered tester build. The retired bN suffix is still parsed by
-# ReleaseUpdateService for old tags but is not accepted here.
-if ($tag -notmatch '^v\d+\.\d+\.\d+(-preview\d+)?$') {
-    Fail "tag '$tag' does not match v<major>.<minor>.<patch>[-preview<N>] (e.g. v0.3.3, v0.3.3-preview1)."
-}
-$isPreviewTag = $tag -match '-preview\d+$'
+$tag = $candidates[0]
 
-# The tag has to match the stated intent. Previews and GA go to different
-# destinations with different audiences, so a mismatch is always a mistake.
-if ($Preview -and -not $isPreviewTag) {
-    Fail "-Preview requires a vX.Y.Z-previewN tag; HEAD is '$tag'." -Hints @(
-        "A clean tag is a GA tag. Either re-tag as a preview, or run -Publish."
-    )
-}
-if ($Publish -and $isPreviewTag) {
-    # -Publish hard-codes --latest, and the in-app updater in every build
-    # fielded before 2026-09-08 reads the releases list without skipping
-    # pre-releases, so a published preview would prompt every operator on the
-    # previous GA. Previews reach testers through R2, never GitHub Releases.
-    Fail "-Publish requires a clean vX.Y.Z tag; HEAD is '$tag'." -Hints @(
-        "Previews are never published. Run -Preview to build and upload it."
+# Annotated only. Lightweight tags have caused busted releases before, and
+# `push.followTags` silently leaves them behind.
+if ((& git cat-file -t $tag) -ne "tag") {
+    Fail "tag '$tag' is a lightweight tag; release tags must be annotated." -Hints @(
+        "  git tag -d $tag"
+        "  git tag -a $tag -m `"SmartStreamer4 $tag`""
     )
 }
 
@@ -146,34 +271,34 @@ Write-Host "Embed version:  $infoVersion"
 Write-Host "Zip:            $zipLabel"
 
 # -----------------------------------------------------------------------------
-# Publish preconditions, still before the build. -Preview has none.
+# Preconditions, still before the build.
 # -----------------------------------------------------------------------------
+Step "Checking the tag on origin..."
+# Both modes: every release tag goes to origin, tester builds included, so an
+# artifact in someone's hands always has a source reference that outlives this
+# PC. Existence is not enough: the remote tag has to name the commit we are
+# about to build. A tag moved locally after a fix, without a force-push, would
+# otherwise ship under a name that means something else on origin (Codex
+# audits, 2026-09-20). Annotated tags list twice, the tag object and then the
+# peeled '^{}' commit; the peeled line is the one to compare.
+$remoteRefs = @(& git ls-remote origin "refs/tags/$tag" "refs/tags/$tag^{}" 2>$null)
+if (-not $remoteRefs) {
+    Fail "tag '$tag' not on origin. Push it first:  git push origin $tag"
+}
+$peeled = $remoteRefs | Where-Object { $_ -match "refs/tags/$([regex]::Escape($tag))\^\{\}$" }
+$remoteLine = if ($peeled) { @($peeled)[0] } else { @($remoteRefs)[0] }
+$remoteSha = ($remoteLine -split "\s+")[0]
+$localSha = (& git rev-parse "$tag^{commit}").Trim()
+if ($remoteSha -ne $localSha) {
+    Fail "tag '$tag' on origin points at $remoteSha but locally at $localSha." -Hints @(
+        "The build would not match what origin calls '$tag'. Reconcile first:"
+        "  git push origin :refs/tags/$tag   # drop the stale remote tag"
+        "  git push origin $tag              # push the current one"
+    )
+}
+Write-Host "  Tag on origin:           OK ($localSha)"
+
 if ($Publish) {
-    Step "Checking publish preconditions..."
-
-    # Existence is not enough: the remote tag has to name the commit we are
-    # about to build. A tag moved locally after a fix, without a force-push,
-    # would otherwise attach new assets to the OLD remote tag (Codex audit,
-    # 2026-09-20).
-    $remoteRefs = @(& git ls-remote origin "refs/tags/$tag" "refs/tags/$tag^{}" 2>$null)
-    if (-not $remoteRefs) {
-        Fail "tag '$tag' not on origin. Push it first:  git push origin $tag"
-    }
-    # Annotated tags list twice: the tag object, then the peeled '^{}' commit.
-    # Prefer the peeled line; a lightweight tag has only the plain one.
-    $peeled = $remoteRefs | Where-Object { $_ -match "refs/tags/$([regex]::Escape($tag))\^\{\}$" }
-    $remoteLine = if ($peeled) { @($peeled)[0] } else { @($remoteRefs)[0] }
-    $remoteSha = ($remoteLine -split "\s+")[0]
-    $localSha = (& git rev-parse "$tag^{commit}").Trim()
-    if ($remoteSha -ne $localSha) {
-        Fail "tag '$tag' on origin points at $remoteSha but locally at $localSha." -Hints @(
-            "The release would attach to the wrong commit. Reconcile first:"
-            "  git push origin :refs/tags/$tag   # drop the stale remote tag"
-            "  git push origin $tag              # push the current one"
-        )
-    }
-    Write-Host "  Tag on origin:           OK ($localSha)"
-
     if (-not (Test-Path $notesPath) -or (Get-Item $notesPath).Length -eq 0) {
         Fail "RELEASE_NOTES-$tag.md missing or empty." -Hints @(
             "Author release notes at $notesPath then re-run."
@@ -181,6 +306,35 @@ if ($Publish) {
     }
     Write-Host "  Release notes present:   OK"
 }
+
+# Signing preflight, so a missing tool or a bad secret fails in seconds rather
+# than after the tests and the build.
+Step "Checking code signing..."
+$signing = Read-SigningConfig
+if ($signing.client_secret_expires) {
+    $expires = [datetime]::MinValue
+    if (-not [datetime]::TryParseExact($signing.client_secret_expires, "yyyy-MM-dd",
+            [cultureinfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::None, [ref]$expires)) {
+        Fail "client_secret_expires '$($signing.client_secret_expires)' in $SigningConfigPath is not YYYY-MM-DD."
+    }
+    $daysLeft = [int]($expires.Date - (Get-Date).Date).TotalDays
+    if ($daysLeft -lt 0) {
+        Fail "the signing client secret expired on $($signing.client_secret_expires)." -Hints @(
+            "Create a new one on the app registration and update $SigningConfigPath. See CODE-SIGNING.md."
+        )
+    }
+    if ($daysLeft -le $SecretExpiryWarnDays) {
+        Write-Host "  WARNING: the signing client secret expires in $daysLeft days ($($signing.client_secret_expires))." -ForegroundColor Magenta
+    }
+}
+if (-not (Get-Command java -ErrorAction SilentlyContinue)) {
+    Fail "java is not on the PATH; jsign needs it." -Hints @("Open a new terminal if Java was just installed. See CODE-SIGNING.md.")
+}
+if (-not (Test-Path $JsignJarPath)) {
+    Fail "jsign not found at $JsignJarPath. See CODE-SIGNING.md."
+}
+$null = Get-SigningToken $signing
+Write-Host "  Config, java, jsign, token: OK (publisher will be '$($signing.expected_cn)')"
 
 # The notices file is cheap to check and would otherwise fail after the build.
 if (-not (Test-Path $noticesPath)) {
@@ -190,7 +344,7 @@ if (-not (Test-Path $noticesPath)) {
 # -----------------------------------------------------------------------------
 # Build.
 # -----------------------------------------------------------------------------
-Step "[1/4] Running tests..."
+Step "[1/5] Running tests..."
 # Issue #50: name the solution and check the exit code. Bare `dotnet test` once
 # fell back to the app csproj and passed while running zero tests.
 dotnet test SmartStreamer4.sln
@@ -198,7 +352,11 @@ if ($LASTEXITCODE -ne 0) {
     Fail "Tests failed (exit $LASTEXITCODE). Aborting release build."
 }
 
-Step "[2/4] Publishing self-contained single-file executable..."
+Step "[2/5] Publishing self-contained single-file executable..."
+# Start from no exe at all. A failed publish can then never leave an earlier exe
+# behind to pass the version gate, and the signing step below never meets a
+# file that already carries a signature (Codex design review, 2026-09-20).
+if (Test-Path $exePath) { Remove-Item $exePath -Force }
 # InformationalVersion carries the tag and commit into the exe; About and the
 # update check both read it. IncludeSourceRevisionInInformationalVersion=false
 # stops the SDK appending the full 40-char sha, which would fail the equality
@@ -214,9 +372,7 @@ dotnet publish $projectPath `
     -p:EnableCompressionInSingleFile=true `
     -p:DebugSymbols=false `
     -p:DebugType=None
-# A native non-zero exit is not a terminating error, so check it. Without this a
-# failed publish can leave a stale exe carrying this same tag's version, which
-# then passes the version gate below and ships (Codex audit, 2026-09-20).
+# A native non-zero exit is not a terminating error, so check it.
 if ($LASTEXITCODE -ne 0) {
     Fail "dotnet publish failed (exit $LASTEXITCODE)." -Hints @(
         "If this is a file-lock wall of MSB3021/MSB3027, close any running"
@@ -234,7 +390,13 @@ if ($embedded -ne $infoVersion) {
 }
 Write-Host "  Embedded ProductVersion: $embedded" -ForegroundColor Green
 
-Step "[3/4] Creating release zip..."
+Step "[3/5] Signing..."
+# After the version check and before the zip, so the zip and its SHA256 cover
+# the signed exe. A failure here aborts with no zip and nothing shipped.
+Invoke-Signing $signing $exePath
+Assert-Signature $signing $exePath
+
+Step "[4/5] Creating release zip..."
 # Exactly two files ship: the exe and the third-party notices. wx7v.net will not
 # host an artifact whose notices do not ship inside it, and the MIT and BSD
 # dependencies require their notice text to travel with any redistribution. The
@@ -250,7 +412,7 @@ Write-Host "  SHA256: $hash" -ForegroundColor Green
 # Ship.
 # -----------------------------------------------------------------------------
 if ($Preview) {
-    Step "[4/4] Uploading to R2..."
+    Step "[5/5] Uploading to R2..."
     & npx wrangler r2 object put "$R2Bucket/$R2Prefix/$zipLabel" --file $zipPath --content-type "application/zip" --remote
     if ($LASTEXITCODE -ne 0) {
         Fail "upload of $zipLabel failed (exit $LASTEXITCODE)." -Hints @(
@@ -293,13 +455,13 @@ if ($Preview) {
     Write-Host "`nPreview published." -ForegroundColor Green
     Write-Host "`nTester link:" -ForegroundColor Yellow
     Write-Host "  $zipUrl" -ForegroundColor White
-    Write-Host "`nWhen you send it, say up front that Windows SmartScreen will warn:" -ForegroundColor Yellow
-    Write-Host "  no build is code-signed, and unmentioned the warning becomes the" -ForegroundColor White
-    Write-Host "  feedback instead of the bug report." -ForegroundColor White
+    Write-Host "`nWhen you send it, mention that the build is code-signed, and that" -ForegroundColor Yellow
+    Write-Host "  SmartScreen may still caution for a while: its reputation builds with" -ForegroundColor White
+    Write-Host "  downloads. Unmentioned, a warning becomes the feedback instead of the bug." -ForegroundColor White
     exit 0
 }
 
-Step "[4/4] Creating GitHub release..."
+Step "[5/5] Creating GitHub release..."
 # GA carries a checksum sidecar as a release asset; previews do not (no tester
 # ever asked for one). --latest is hard-coded and --prerelease is not exposed:
 # the preview guard above refuses the only tags that could tempt it. Nothing is

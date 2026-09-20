@@ -98,8 +98,11 @@ list before reporting completion.
   historical reference only.
 - **Release**: `publish-release.ps1` takes exactly one of two mode
   flags. `-Preview` requires a `-previewN` tag: it builds, verifies the
-  embedded version, zips `SmartStreamer4-<tag>-win-x64.zip`, uploads the
-  zip to the R2 bucket for testers, and confirms the link serves it.
+  embedded version, signs the exe, zips
+  `SmartStreamer4-<tag>-win-x64.zip`, uploads the zip to the R2 bucket
+  for testers, and confirms the link serves it. **Every build is
+  Authenticode-signed, previews and GA alike, with no unsigned fallback**
+  (operator decision, 2026-09-20; see [CODE-SIGNING.md](CODE-SIGNING.md)).
   `-Publish` requires a clean tag: same build, then
   `SHA256SUMS.txt` and `gh release create --latest` attaching the zip
   and the sidecar. Nothing is committed either way, so the release
@@ -644,7 +647,18 @@ Steps 1–4 are the operator's; Claude runs step 5.
    - Builds with `-p:InformationalVersion=<label>+<commit-sha>` so the
      in-app About display and update check report the right version, and
      verifies the published exe's embedded `ProductVersion` matches.
-     Refuses to package if not.
+     Refuses to package if not. It deletes any earlier exe first, so a
+     failed publish cannot leave a stale one behind to pass that gate.
+   - **Signs the exe and verifies the signature** (added 2026-09-20,
+     both modes). A preflight before the tests checks the signing
+     config, `java`, the jsign jar and the client secret, so a bad
+     secret fails in seconds. After the version check it signs through
+     Azure Artifact Signing with jsign and a mandatory timestamp, then
+     requires a `Valid` status, a timestamp, the **exact** expected
+     signer name and a Microsoft issuer. `Valid` alone is not proof of
+     who signed: it holds for any chain the PC trusts. Any miss aborts
+     with no zip. Do not add a skip flag or an unsigned fallback. Setup
+     and troubleshooting: [CODE-SIGNING.md](CODE-SIGNING.md).
    - Produces `SmartStreamer4-<tag>-win-x64.zip`, tag in the filename,
      so a tester can tell builds apart on disk.
    - Writes **no checksum sidecar** for a preview (removed 2026-09-20:
@@ -675,9 +689,13 @@ by design (operator decision, 2026-09-20). The bucket's
 prefix, which this repo does not use, so nothing we upload ever
 auto-expires. Do not add a pruning step without being asked.
 
-**Tell testers about SmartScreen up front.** No build is code-signed, so
-the warning fires on every Windows artifact. Unmentioned, it becomes the
-feedback instead of the bug report.
+**Tell testers about SmartScreen up front.** Builds are code-signed as of
+`v0.3.3-preview2`, so "unknown publisher" is gone, but SmartScreen's
+reputation builds with downloads and a caution can persist on first
+downloads for a while. Unmentioned, it becomes the feedback instead of
+the bug report. (`v0.3.3-preview2` itself was signed by hand after the
+fact and re-uploaded, before testers were given the link; every build
+since is signed by the script.)
 
 Preview builds carry no release notes: nothing reads
 `RELEASE_NOTES-<tag>.md` in this mode.
@@ -704,8 +722,9 @@ Before running it:
      every operator on the previous GA.
    - Fails fast **before** the build on a missing precondition: tag on
      `origin`, notes file present and non-empty.
-   - Runs the same tests, build, embedded-version check and zip as
-     `-Preview`, then writes the bare `SHA256SUMS.txt`.
+   - Runs the same signing preflight, tests, build, embedded-version
+     check, signing and zip as `-Preview`, then writes the bare
+     `SHA256SUMS.txt`.
    - Runs `gh release create $tag $zip SHA256SUMS.txt --title ...
      --notes-file ... --latest`, attaching the sidecar as a release
      asset. Nothing is committed, so `origin/main` HEAD stays equal to
@@ -788,7 +807,8 @@ Where to look first for common tasks:
   [ThrottledStatusEmitter.cs](ThrottledStatusEmitter.cs) +
   [FooterStatusBuffer.cs](FooterStatusBuffer.cs).
 - **Release pipeline**:
-  [publish-release.ps1](publish-release.ps1).
+  [publish-release.ps1](publish-release.ps1). Code signing setup, recipe
+  and troubleshooting: [CODE-SIGNING.md](CODE-SIGNING.md).
 
 ## Conventions
 
@@ -823,5 +843,7 @@ Where to look first for common tasks:
   builds against 4.2.20 as of issue #61).
 - [PLAN-skimmer-resync-and-refactor.md](PLAN-skimmer-resync-and-refactor.md) —
   current CW Skimmer sync redesign plan.
+- [CODE-SIGNING.md](CODE-SIGNING.md) — how builds are signed on the
+  Windows seat; the Azure half lives in SKCCLogger's document.
 - [README.md](README.md) — user-facing project description, install,
   usage.
