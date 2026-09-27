@@ -516,7 +516,11 @@ from this section; it fixes the order (Codex deep audit first, version
 settled once, gates, notes, declare final, then the operator's git and
 publish sequence). Where the skill and this section disagree on
 procedure, fix the skill and say so. This section stays as the record of
-what the script does and why.
+what the script does and why. Issue labels follow the `issue` skill
+(`.claude/skills/issue/SKILL.md`), the same vocabulary as SKCCLogger:
+`status: implemented-not-confirmed` when code is done and gates are
+green, `implemented-confirmed` once Chris's live test passes,
+`status: deferred`, `status: won't-do`, `Monitoring`.
 
 ```powershell
 dotnet build SmartStreamer4.sln                       # debug build (all projects incl. tests)

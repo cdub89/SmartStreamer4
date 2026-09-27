@@ -175,7 +175,10 @@ git push origin vX.Y.Z
 1. Chris posts the notes issue with the R2 link. Tell testers about
    SmartScreen up front, or it becomes the feedback instead of the bug
    report. Preview zips accumulate in the bucket by design; no pruning.
-2. Update memory: tag, commit, what shipped, what is being watched.
+2. When Chris or the reporter confirms a fix on the preview, flip it from
+   `status: implemented-not-confirmed` to `implemented-confirmed` through
+   the `issue` skill. Leave it open until the GA that carries it ships.
+3. Update memory: tag, commit, what shipped, what is being watched.
 
 ### GA
 
@@ -183,11 +186,14 @@ git push origin vX.Y.Z
    of the prior published release and confirm Check for Updates offers the
    new one; install it and confirm it reports up to date. If either fails,
    pull the release immediately.
-2. Close the shipped issues with a one-line comment naming the release.
-   Refresh the standing help and reporting issue (the "How to report
-   issues or get help" issue) so it describes the shipped app, not the
-   preview line.
-3. File follow-up issues for every audit finding adjudicated as deferred.
+2. Close the `implemented-confirmed` issues the release carries with a
+   one-line comment naming the release (the `issue` skill owns the label
+   lifecycle). An issue still at `status: implemented-not-confirmed` is
+   not closed by a release; it waits for its live test. Refresh the
+   standing help and reporting issue (the "How to report issues or get
+   help" issue) so it describes the shipped app, not the preview line.
+3. File follow-up issues for every audit finding adjudicated as deferred,
+   labelled `status: deferred` with the reopen triggers in the body.
 4. Update memory: what shipped, what is queued next, what the field is
    being watched for. wx7v.net links GA straight from GitHub Releases, so
    there is no site step.
