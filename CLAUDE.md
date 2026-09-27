@@ -509,6 +509,15 @@ without asking; ask before any other mutating operation (`pull`,
 
 ## Build & Release
 
+**The release procedure is the `release` skill**
+(`.claude/skills/release/SKILL.md`, ported from SKCCLogger 2026-09-27).
+Invoke it for any preview or GA cut rather than reconstructing the steps
+from this section; it fixes the order (Codex deep audit first, version
+settled once, gates, notes, declare final, then the operator's git and
+publish sequence). Where the skill and this section disagree on
+procedure, fix the skill and say so. This section stays as the record of
+what the script does and why.
+
 ```powershell
 dotnet build SmartStreamer4.sln                       # debug build (all projects incl. tests)
 dotnet build SmartStreamer4.sln -c Release            # release build
@@ -808,7 +817,8 @@ Where to look first for common tasks:
   [FooterStatusBuffer.cs](FooterStatusBuffer.cs).
 - **Release pipeline**:
   [publish-release.ps1](publish-release.ps1). Code signing setup, recipe
-  and troubleshooting: [CODE-SIGNING.md](CODE-SIGNING.md).
+  and troubleshooting: [CODE-SIGNING.md](CODE-SIGNING.md). Cutting a
+  preview or GA: invoke the `release` skill.
 
 ## Conventions
 
