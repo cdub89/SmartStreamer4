@@ -18,6 +18,34 @@
             <Setter Property="Padding" Value="2"/>
         </Style>
 
+        <!-- Update banner: a full-width bar above the tab strip, shown only
+             while an update is available, on every tab. It is a Button so a
+             click anywhere on it opens the release page and Space/Enter work.
+             Warn ink on a transparent ground with a hairline under it, so it
+             reads as a notice rather than a toolbar; hover lifts it to full
+             ink for affordance. Fluent's 32px button minimum goes, or the bar
+             would be taller than the tab strip beneath it. -->
+        <Style Selector="Button.update-banner">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Padding" Value="10,4"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AppPanelBorderBrush}"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="CornerRadius" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Foreground" Value="{DynamicResource AppWarnBrush}"/>
+        </Style>
+        <Style Selector="Button.update-banner /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector="Button.update-banner:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Foreground" Value="{DynamicResource AppInkBrush}"/>
+        </Style>
+
         <!-- Theme toggle, parked in the empty right end of the tab strip. Lives
              in Window.Styles rather than TabControl.Styles because the button
              sits outside the TabControl, overlaid on it. Icon only: the strip
@@ -123,8 +151,23 @@
          below) or the header font ever changes, they all move. Retemplating
          TabControl would remove the constants, at the cost of vendoring and
          maintaining a copy of Fluent's template. -->
-    <Grid>
-    <TabControl Margin="0" SelectedIndex="{Binding SelectedTabIndex, Mode=TwoWay}">
+    <Grid RowDefinitions="Auto,*">
+    <!-- Issue #87 (reported 2026-09-27, v0.3.3 GA): the "Update Available" cue
+         used to live inside the Help tab's header, which lengthened the tab
+         strip until it ran under the SmartDeck and theme buttons overlaid on
+         the strip's right end at the default 420px width. Moving the cue to
+         its own row above the strip keeps it unmissable on every tab and
+         means the strip never grows, so the overlay cannot be collided with
+         at any width. Shrinking the cue to a glyph and dropping it from the
+         strip were both rejected: the point is that the operator is told
+         without having to visit Help. -->
+    <Button Grid.Row="0"
+            Classes="update-banner"
+            Content="{Binding LatestAvailableTag, StringFormat='Update available: {0}. Click to open the download page.'}"
+            Command="{Binding OpenLatestReleaseCommand}"
+            IsVisible="{Binding IsUpdateAvailable}"
+            ToolTip.Tip="Opens the GitHub release page for the new version."/>
+    <TabControl Grid.Row="1" Margin="0" SelectedIndex="{Binding SelectedTabIndex, Mode=TwoWay}">
         <TabControl.Styles>
             <!-- 8,4 rather than 10,4: the strip has to carry five tabs plus the
                  SmartDeck button and the theme icon, and in Digital mode at
@@ -882,20 +925,7 @@
 
         <TabItem>
             <TabItem.Header>
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                    <TextBlock Text="Help" FontSize="11" FontWeight="Bold"/>
-                    <Button Content="Update Available"
-                            FontSize="11"
-                            FontWeight="Bold"
-                            Foreground="{DynamicResource AppWarnBrush}"
-                            Background="Transparent"
-                            BorderThickness="0"
-                            Padding="0"
-                            Margin="8,0,0,0"
-                            MinHeight="0"
-                            Command="{Binding OpenLatestReleaseCommand}"
-                            IsVisible="{Binding IsUpdateAvailable}"/>
-                </StackPanel>
+                <TextBlock Text="Help" FontSize="11" FontWeight="Bold"/>
             </TabItem.Header>
             <ScrollViewer Margin="8"
                           VerticalScrollBarVisibility="Auto"
@@ -973,7 +1003,8 @@
              through v0.3.0b5; both controls read as riding high in the strip on
              several test PCs, so the pair moved down 3px together rather than
              each being nudged separately (operator-reported 2026-08-05). -->
-        <StackPanel Orientation="Horizontal"
+        <StackPanel Grid.Row="1"
+                    Orientation="Horizontal"
                     Spacing="2"
                     HorizontalAlignment="Right"
                     VerticalAlignment="Top"
