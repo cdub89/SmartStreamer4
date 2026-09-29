@@ -4,6 +4,11 @@ Thanks for your interest. SmartStreamer4 is maintained by @cdub89 and
 welcomes bug fixes and small features from outside contributors. This
 guide takes you from a fresh machine to an open pull request.
 
+This guide assumes you're comfortable with Git and GitHub (forks,
+branches, pull requests). It covers what's specific to this project,
+not Git itself. Need a refresher? Start with GitHub's
+[Contributing to a project](https://docs.github.com/en/get-started/exploring-projects-on-github/contributing-to-a-project).
+
 ## Before you start
 
 For anything beyond a small, obvious fix (a new feature, a refactor,
