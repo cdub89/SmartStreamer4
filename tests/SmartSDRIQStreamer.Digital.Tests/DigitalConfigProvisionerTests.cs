@@ -66,16 +66,36 @@ public sealed class DigitalConfigProvisionerTests
     }
 
     [Fact]
+    public void Paths_DefaultToLocalAppData_WhenNoRootIsGiven()
+    {
+        // Production passes no root: the instance folder must be exactly where
+        // WSJT-X derives it from --rig-name (issue #84). Path assertion only,
+        // nothing is written.
+        var engine = DigitalEngines.WsjtX(@"C:\WSJT\wsjtx\bin\wsjtx.exe");
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+
+        Assert.Equal(
+            Path.Combine(localAppData, "WSJT-X - Slice-A"),
+            DigitalConfigProvisioner.InstanceConfigDir(engine, "Slice-A"));
+        Assert.StartsWith(localAppData, DigitalConfigProvisioner.InstanceConfigPath(engine, "Slice-A"));
+    }
+
+    // Tests that write do so under a throwaway root, never the real Local
+    // AppData (issue #84): a sandboxed run is refused that write and failed
+    // here on every Codex deep audit before 2026-09-27.
+    private static string TempRoot() =>
+        Path.Combine(Path.GetTempPath(), $"SmartStreamer4-ProvisionerTests-{Guid.NewGuid():N}");
+
+    [Fact]
     public void Provision_WritesInstanceConfig_FromBundledTemplate_WithOverrides()
     {
-        // Unique rig name so we never collide with a real instance dir; clean up after.
         var engine = DigitalEngines.WsjtX(@"C:\WSJT\wsjtx\bin\wsjtx.exe");
-        var rigName = $"UnitTest-{Guid.NewGuid():N}";
+        var root = TempRoot();
         var values = new DigitalProvisionValues("WX7V", "EM12ou", "FlexRadio 6xxx", 3, 60002, 2239);
 
         try
         {
-            var result = DigitalConfigProvisioner.Provision(engine, rigName, values);
+            var result = DigitalConfigProvisioner.Provision(engine, "Slice-A", values, root);
 
             Assert.Equal(DigitalProvisionOutcome.Success, result.Outcome);
             Assert.True(File.Exists(result.InstanceConfigPath));
@@ -85,12 +105,12 @@ public sealed class DigitalConfigProvisionerTests
             Assert.Contains("SoundInName=DAX RX 3 (FlexRadio DAX)", written);
             Assert.Contains("CATNetworkPort=127.0.0.1:60002", written);
             Assert.Contains("PTT_method_CAT", written);     // blob from bundled template
+            Assert.StartsWith(root, result.InstanceConfigPath);
         }
         finally
         {
-            var dir = DigitalConfigProvisioner.InstanceConfigDir(engine, rigName);
-            if (Directory.Exists(dir))
-                Directory.Delete(dir, recursive: true);
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
         }
     }
 
@@ -101,14 +121,14 @@ public sealed class DigitalConfigProvisionerTests
         // last protocol, band). A second Provision must preserve those and only
         // re-apply our keys -> seed from template on first run, preserve after.
         var engine = DigitalEngines.WsjtX(@"C:\WSJT\wsjtx\bin\wsjtx.exe");
-        var rigName = $"UnitTest-{Guid.NewGuid():N}";
+        var root = TempRoot();
         var values = new DigitalProvisionValues("WX7V", "EM12ou", "FlexRadio 6xxx", 1, 60_000, 2_237);
 
         try
         {
             // First run: seed from bundled template.
-            DigitalConfigProvisioner.Provision(engine, rigName, values);
-            var path = DigitalConfigProvisioner.InstanceConfigPath(engine, rigName);
+            DigitalConfigProvisioner.Provision(engine, "Slice-A", values, root);
+            var path = DigitalConfigProvisioner.InstanceConfigPath(engine, "Slice-A", root);
 
             // Simulate the engine saving operator changes on exit.
             var saved = File.ReadAllText(path)
@@ -119,7 +139,7 @@ public sealed class DigitalConfigProvisionerTests
 
             // Second run with a changed binding (different slice values).
             var rebind = new DigitalProvisionValues("WX7V", "EM12ou", "FlexRadio 6xxx", 2, 60_001, 2_238);
-            DigitalConfigProvisioner.Provision(engine, rigName, rebind);
+            DigitalConfigProvisioner.Provision(engine, "Slice-A", rebind, root);
 
             var result = File.ReadAllText(path);
             Assert.Contains("Mode=FT4", result);                          // operator protocol preserved
@@ -129,9 +149,8 @@ public sealed class DigitalConfigProvisionerTests
         }
         finally
         {
-            var dir = DigitalConfigProvisioner.InstanceConfigDir(engine, rigName);
-            if (Directory.Exists(dir))
-                Directory.Delete(dir, recursive: true);
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
         }
     }
 }

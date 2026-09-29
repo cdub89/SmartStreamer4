@@ -45,6 +45,17 @@ public static class DigitalConfigProvisioner
     private static string LocalAppData =>
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
 
+    // configRoot (issue #84, 2026-09-27): the per-instance folder must sit
+    // exactly where WSJT-X derives it from --rig-name, so production always
+    // passes null and gets Local AppData. The parameter exists so tests can
+    // write under a temp folder instead of the operator's real AppData, where
+    // a sandboxed run (the Codex deep audit) is refused the write and failed
+    // two tests on every audit. An optional argument was chosen over a static
+    // override (a mutable global that races across test classes) and over an
+    // instance class (an object for the sake of one string).
+    private static string RootOrDefault(string? configRoot) =>
+        string.IsNullOrWhiteSpace(configRoot) ? LocalAppData : configRoot;
+
     /// <summary>
     /// The engine's existing default config path. Used only by the harvester to
     /// prepopulate the Config tab; provisioning does not read it.
@@ -55,14 +66,14 @@ public static class DigitalConfigProvisioner
         return Path.Combine(LocalAppData, engine.ConfigRoot, $"{engine.ConfigRoot}.ini");
     }
 
-    public static string InstanceConfigDir(DigitalEngineDefinition engine, string rigName)
+    public static string InstanceConfigDir(DigitalEngineDefinition engine, string rigName, string? configRoot = null)
     {
         ArgumentNullException.ThrowIfNull(engine);
-        return Path.Combine(LocalAppData, $"{engine.ConfigRoot} - {rigName}");
+        return Path.Combine(RootOrDefault(configRoot), $"{engine.ConfigRoot} - {rigName}");
     }
 
-    public static string InstanceConfigPath(DigitalEngineDefinition engine, string rigName) =>
-        Path.Combine(InstanceConfigDir(engine, rigName), $"{engine.ConfigRoot} - {rigName}.ini");
+    public static string InstanceConfigPath(DigitalEngineDefinition engine, string rigName, string? configRoot = null) =>
+        Path.Combine(InstanceConfigDir(engine, rigName, configRoot), $"{engine.ConfigRoot} - {rigName}.ini");
 
     /// <summary>
     /// Pure transform (no I/O): apply the operator identity and per-slice
@@ -89,15 +100,17 @@ public static class DigitalConfigProvisioner
     /// Writes the per-instance config from the engine's bundled template with
     /// <paramref name="values"/> applied. Returns
     /// <see cref="DigitalProvisionOutcome.Failed"/> on any I/O error.
+    /// <paramref name="configRoot"/> is for tests only; see the note above
+    /// <see cref="RootOrDefault"/>.
     /// </summary>
     public static DigitalProvisionResult Provision(
-        DigitalEngineDefinition engine, string rigName, DigitalProvisionValues values)
+        DigitalEngineDefinition engine, string rigName, DigitalProvisionValues values, string? configRoot = null)
     {
         ArgumentNullException.ThrowIfNull(engine);
         ArgumentException.ThrowIfNullOrWhiteSpace(rigName);
         ArgumentNullException.ThrowIfNull(values);
 
-        var instancePath = InstanceConfigPath(engine, rigName);
+        var instancePath = InstanceConfigPath(engine, rigName, configRoot);
 
         try
         {
@@ -111,7 +124,7 @@ public static class DigitalConfigProvisioner
                 : DigitalTemplates.ForEngine(engine.Engine);
 
             var provisioned = ApplyOverrides(baseIni, values);
-            Directory.CreateDirectory(InstanceConfigDir(engine, rigName));
+            Directory.CreateDirectory(InstanceConfigDir(engine, rigName, configRoot));
             File.WriteAllText(instancePath, provisioned);
             return new DigitalProvisionResult(DigitalProvisionOutcome.Success, instancePath);
         }

@@ -47,13 +47,12 @@ build` is ambiguous); ignore MSB3245/3243/3277 from
 concrete operator failure scenario; findings outside the named files too;
 and, for GA, check `RELEASE_NOTES-<tag>.md` against the code.
 
-**Known sandbox artefacts, not findings.** The workspace-write sandbox blocks
-writes outside the repo, so inside Codex the Avalonia build telemetry log
-fails the first build (Codex sets `AVALONIA_TELEMETRY_OPTOUT=1` and
-retries) and the two Digital provisioner tests that write under the real
-`%LOCALAPPDATA%` fail. Gate evidence for those two comes from this seat's
-own `dotnet test` in step 3. Everything else Codex reports is real until
-adjudicated.
+**Known sandbox artefact, not a finding.** The workspace-write sandbox
+blocks writes outside the repo, so inside Codex the Avalonia build
+telemetry log fails the first build; Codex sets `AVALONIA_TELEMETRY_OPTOUT=1`
+and retries. Everything else Codex reports is real until adjudicated. (Two
+provisioner tests used to fail here too; #84 moved them to a temp root on
+2026-09-27, so a test failure inside Codex is now a real finding.)
 
 Adjudicate every finding with Chris before moving on: blocker, fix in this
 release, or follow-up issue. Re-derive any accepted fix through Edit
@@ -161,6 +160,12 @@ git push origin vX.Y.Z
   list without skipping pre-releases.
 - `--latest` is hard-coded, so publishing any clean tag prompts every
   operator it outranks.
+- **Never publish a release numbered below one already published, and
+  never delete and re-create an older release.** The updater takes the
+  first publishable entry GitHub lists, newest-created first, so either
+  action would offer operators the wrong release. Guarding against it in
+  code was declined (#85, 2026-09-27); this rule is the guard. Reopen
+  #85 if a hotfix on an older line is ever needed.
 - If the preview verify step fails after a good upload, check by hand with
   a cache-busted URL (`curl -sI "<url>?cb=<random>"`) before re-running.
   Never pre-check the plain URL; that caches a 404 at the edge.
