@@ -23,8 +23,8 @@ Dual-seat caveat: the Linux seat has no dotnet SDK, so `.cs` gates
 cannot run there; name every gate you could not run as deferred to the
 Windows seat instead of claiming it passed.
 
-- `.cs`: `dotnet build` (zero first-party warnings) and, for changes
-  under `src/` or `tests/`, `dotnet test` (Windows seat only)
+- `.cs`: `dotnet build SmartStreamer4.sln` (zero first-party warnings) and, for changes
+  under `src/` or `tests/`, `dotnet test SmartStreamer4.sln` (Windows seat only)
 - `.md`: the markdownlint-cli2 command from CLAUDE.md, run from the
   repo root
 

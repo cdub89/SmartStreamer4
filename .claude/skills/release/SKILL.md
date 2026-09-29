@@ -165,8 +165,8 @@ git push origin vX.Y.Z
   a cache-busted URL (`curl -sI "<url>?cb=<random>"`) before re-running.
   Never pre-check the plain URL; that caches a 404 at the edge.
 - If a build fails after the tag is pushed: `git push origin :refs/tags/<tag>`,
-  delete locally, fix, retag. The tag stays on origin only once the zip is
-  good.
+  delete locally, fix, retag. A tag stays on origin only if its build
+  succeeds.
 
 ## Phase 3: Post-ship housekeeping
 

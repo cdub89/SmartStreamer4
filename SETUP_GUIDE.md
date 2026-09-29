@@ -167,22 +167,20 @@ reference material if you are diagnosing what the wizard wrote.
 
 #### DAX IQ endpoint friendly names
 
-The Signal I/O Device dropdown the wizard auto-fills shows different
-friendly names depending on which SmartSDR version installed the DAX
-driver. The wizard matches on the `DAX IQ {N}` prefix so both forms
-work, but the strings you see in the dropdown (and in the Windows
-Sound control panel) differ:
+The Signal I/O Device dropdown the wizard auto-fills (and the Windows
+Sound control panel) shows these friendly names with SmartSDR 4.2.x. The
+wizard matches on the `DAX IQ {N}` prefix:
 
-| Channel | SmartSDR 4.2.x             | SmartSDR 4.1.5                              |
-| ------- | -------------------------- | ------------------------------------------- |
-| 1       | `DAX IQ 1 (FlexRadio DAX)` | `DAX IQ RX 1 (FlexRadio Systems DAX IQ)`    |
-| 2       | `DAX IQ 2 (FlexRadio DAX)` | `DAX IQ RX 2 (FlexRadio Systems DAX IQ)`    |
-| 3       | `DAX IQ 3 (FlexRadio DAX)` | `DAX IQ RX 3 (FlexRadio Systems DAX IQ)`    |
-| 4       | `DAX IQ 4 (FlexRadio DAX)` | `DAX IQ RX 4 (FlexRadio Systems DAX IQ)`    |
+| Channel | Friendly name              |
+| ------- | -------------------------- |
+| 1       | `DAX IQ 1 (FlexRadio DAX)` |
+| 2       | `DAX IQ 2 (FlexRadio DAX)` |
+| 3       | `DAX IQ 3 (FlexRadio DAX)` |
+| 4       | `DAX IQ 4 (FlexRadio DAX)` |
 
-If neither form appears in the dropdown, DAX is not installed or the
-DAX service is not running. The startup gate (added in v0.1.18b)
-catches the second case before you reach this step.
+If these do not appear in the dropdown, DAX is not installed or the
+DAX service is not running. The startup DAX check catches the second
+case.
 
 ### Operator and Network tabs
 
@@ -202,6 +200,11 @@ Configured on the CW Config tab independent of the wizard.
 - Use `Txt` to choose spot text color and `Bg` to choose spot background color.
 - Start with a readable combination (for example yellow text on transparent/dark background).
 - Validate by publishing at least one known spot and confirming appearance in SmartSDR panadapter.
+- Clear `Spots` `Enabled` to stop publishing spots to SmartSDR while
+  CW Skimmer keeps running.
+- Under `CW Skimmer Config`, `Open Folder` opens the folder holding the
+  streamer-managed channel INIs, and `Open ch 1` / `Open ch 2` open each
+  channel's INI file (enabled once that file exists).
 
 Streamer Config example:
 ![Streamer Config tab example](Assets/SetupWizard/image-f6601ad8-b7e1-485c-93aa-e2e9f46f62a8.png)
@@ -224,7 +227,7 @@ Normal flow:
 3. Wait for the CW Skimmer window and startup status.
 4. Verify decode activity and expected frequency behavior.
 
-Operating tab while skimming example:
+CW tab while skimming example:
 ![Connected operating view example](Assets/SetupWizard/image-5c26a00e-a128-4871-a1b8-7ac7a88e4355.png)
 
 To stop from streamer:
@@ -239,6 +242,10 @@ To stop manually (required if you've made config changes you want saved for the 
 
 If radio is disconnected from streamer, streamer should also stop active skimmer instances.
 
+The CW tab's `Network Status` panel shows the radio link health:
+`Connection Status`, `Latency (RTT)`, and `Max Latency (RTT)`. Click
+`Reset Status` to clear the maximum and start measuring again.
+
 ---
 
 ## CW Mode - Troubleshooting (Quick Decision Tree)
@@ -247,7 +254,8 @@ If radio is disconnected from streamer, streamer should also stop active skimmer
 
 - Recheck `CwSkimmer.exe` path in streamer `Config`.
 - Confirm DAX devices exist and are visible to CW Skimmer.
-- Check `artifacts/logs` and streamer `Logs` tab for launch diagnostics.
+- Check the streamer `Logs` tab for launch diagnostics (`Open Folder`
+  there opens the log files).
 - If CW Skimmer crashes within ~10 seconds with no message
   (`exit_code=-1073740771` / `STATUS_FATAL_USER_CALLBACK_EXCEPTION` in the
   logs), this is a known intermittent CW Skimmer startup fault. Click
@@ -264,8 +272,8 @@ If radio is disconnected from streamer, streamer should also stop active skimmer
   changes take effect.
 - Your manual `CwSkimmer.ini` baseline is never modified.
 - **Logs are separate** and not affected by Reset. They are append-only
-  diagnostic data under `artifacts/logs/`; if disk usage is a concern,
-  delete them manually.
+  diagnostic data in the logs folder (`Open Folder` on the Logs tab); if
+  disk usage is a concern, delete them manually.
 
 ### C) Settings not retained as expected
 
@@ -413,6 +421,9 @@ and a `Start` button.
 - `Start` provisions the instance's configuration and launches the active
   engine for that slice. The button is disabled until the slice has a
   DAX audio channel assigned in SmartSDR.
+- `Start` also refuses when nothing is listening on the slice's CAT port.
+  The slice row then shows a hint naming the port and the fix (add the
+  port in SmartSDR CAT, start SmartSDR CAT, or match the Config tab).
 - A notice appears if the slice's mode is not USB/DIGU (the engine needs
   USB/DIGU audio to decode); you can still launch.
 - `Streaming` means the instance is running; click it to stop. The
@@ -457,6 +468,10 @@ streams green/Streaming:
 - Recheck the engine `Path` on the Digital Config tab (JTDX's default
   path changes with its version).
 - Check the streamer `Logs` tab for launch diagnostics.
+- If `Start` does nothing and the slice row shows a CAT port hint, the
+  slice's CAT port is not listening. Follow the hint: add the TCP port in
+  SmartSDR CAT, start SmartSDR CAT if the port already exists, or set the
+  slice's CAT port on the Config tab to one SmartSDR CAT has.
 
 ### B) Audio devices show "(Not found)" in the engine
 
@@ -491,12 +506,14 @@ streams green/Streaming:
 
 ## Logs, Artifacts, and First-Time Validation
 
-Artifacts and logs reference:
+Artifacts and logs reference. Use the `Open Folder` buttons rather than
+typing paths: on the Logs tab for logs, and on the CW Config tab for the
+managed INIs. Both live under `%APPDATA%\SmartStreamer4\artifacts\`.
 
-- Streamer logs: `artifacts/logs/streamer-status.log`
-- Spot publish logs (CW Mode): `artifacts/logs/spot-publish.log`
-- CW Skimmer managed INIs: `artifacts/cwskimmer/ini`
-- Device diagnostic log: `artifacts/cwskimmer/ini/device-diagnostic.txt`
+- Streamer logs: `logs\streamer-status.log`
+- Spot publish logs (CW Mode): `logs\spot-publish.log`
+- CW Skimmer managed INIs: `cwskimmer\ini\`
+- Device diagnostic log: `cwskimmer\ini\device-diagnostic.txt`
 - Digital per-instance configs: `%LOCALAPPDATA%\<engine> - Slice<letter>\`
   (for example `WSJT-X - SliceA`)
 
@@ -506,7 +523,7 @@ Example of healthy connected operating state during validation:
 Recommended first-time CW Mode validation run:
 
 1. Connect and start CW Mode from the Launch tab.
-2. Start one channel with `START`.
+2. Start one channel with `Start`.
 3. Validate decode and sync for at least 5 minutes.
 4. Stop and restart once.
 5. Disconnect/reconnect radio once.
@@ -520,3 +537,46 @@ Recommended first-time Digital Mode validation run:
    (window layout, band) survived the restart.
 
 If all checks pass, the system is ready for normal operation.
+
+---
+
+## Other Features
+
+### SmartDeck
+
+While connected, the `SmartDeck` button on the tab strip opens a compact
+radio control window:
+
+- Live meters: `Fwd` (W), `SWR`, `Temp` (C), and `Volts`.
+- Slice selector and frequency (mouse wheel tunes). Click the mode to
+  cycle to the next one.
+- `Band` buttons. Each band remembers its last state, so returning to a
+  band restores where you left it.
+- `RX antenna` and `TX antenna` selection.
+- `DIV`, `NB`, `NR`, and `APF` toggles.
+- `RF Gain`, `AGC-T`, and `PWR` (mouse wheel adjusts). `RIT` and `XIT`:
+  click for on/off, wheel for 10 Hz steps.
+- `Keep on top` keeps the window above other apps.
+
+### Updates and theme
+
+- When a newer release exists, a banner above the tabs reads
+  `Update available`. Click it to open the GitHub release page.
+  `Check for Updates` on the Help tab checks on demand.
+- The sun/moon icon on the tab strip switches the whole app between
+  Light and Dark.
+
+### Help tab
+
+- `Setup Guide` opens this guide; `Get Support` opens the project's
+  GitHub issues page; `Check for Updates` is described above.
+- `About` shows the `Release`, `Commit`, and `Date` of the running build.
+
+### Logs tab
+
+- `Dump Audio Devices` writes every Windows audio endpoint (including DAX)
+  to `streamer-status.log`. Attach it when reporting audio problems.
+- `Open Folder` opens the logs folder.
+- The `Logging Mode` button toggles between `Debug Disabled` and
+  `Debug Enabled`. Leave debug off for normal operation; turn it on only when
+  asked to capture a detailed log.

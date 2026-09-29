@@ -11,7 +11,11 @@ alongside SmartSDR.
 
 License: MIT (see [LICENSE](LICENSE)).
 
-<img width="620" alt="SmartStreamer4 operating view" src="Assets/README/operating-screenshot-v0.1.11b.png" />
+| 1. Discover your radio | 2. Connect and pick a mode |
+|:---:|:---:|
+| <img width="360" alt="Launch tab listing a discovered radio" src="Assets/README/1-launch-discover.png" /> | <img width="360" alt="Launch tab connected, showing slices and the CW / Digital mode choice" src="Assets/README/2-launch-connected.png" /> |
+| **3. CW tab, channel ready** | **4. Streaming to CW Skimmer** |
+| <img width="360" alt="CW tab with DAX-IQ channel 1 ready and a Start button" src="Assets/README/3-cw-ready.png" /> | <img width="360" alt="CW tab with DAX-IQ channel 1 streaming" src="Assets/README/4-cw-streaming.png" /> |
 
 ## Status
 
@@ -40,10 +44,10 @@ Prerequisites:
 Build:
 
 ```powershell
-dotnet build SmartSDRIQStreamer.csproj
+dotnet build SmartStreamer4.sln
 ```
 
-Plain `dotnet build` from the repo root pulls in the vendor FlexLib API projects, which bring unresolvable WPF references on the Windows .NET SDK. Always point at the app csproj.
+Always name the solution: the repo root also holds the app's `.csproj`, so a bare `dotnet build` fails with `MSB1011`. Expect about 40 `MSB3245` / `MSB3243` / `MSB3277` warnings from the vendor `FlexLib_API_v4.2.20.41343/` projects; they are harmless and appear on every build.
 
 Run a debug build:
 
@@ -54,10 +58,10 @@ dotnet run --project SmartSDRIQStreamer.csproj
 ## Test
 
 ```powershell
-dotnet test tests/SmartSDRIQStreamer.CWSkimmer.Tests
+dotnet test SmartStreamer4.sln
 ```
 
-The tests cover INI generation and the CW Skimmer sync tracker. They do not exercise FlexLib or live radio behaviour. See [ARCHITECTURE.md](ARCHITECTURE.md#testing) for what is and isn't covered.
+This runs all three test projects: CW Skimmer (INI generation, sync tracker), Digital (WSJT-X / JTDX configuration and launch), and App (root-project services). They do not exercise FlexLib or live radio behaviour. See [ARCHITECTURE.md](ARCHITECTURE.md#testing) for what is and isn't covered.
 
 ## Release
 
@@ -90,7 +94,8 @@ See [PLAN.md](PLAN.md) for what's slated for the next release.
 SmartSDRIQStreamer.csproj          Avalonia app (root project, output: SmartStreamer4.exe)
 src/SmartSDRIQStreamer.FlexRadio   FlexLib isolation (radio discovery + connection)
 src/SmartSDRIQStreamer.CWSkimmer   CW Skimmer adapter (INI + launcher + telnet + sync)
-tests/                             xUnit tests (CWSkimmer module)
+src/SmartSDRIQStreamer.Digital     Digital Mode (WSJT-X / JTDX / WSJT-Z config + launch)
+tests/                             xUnit tests (CWSkimmer, Digital, App)
 tools/                             Diagnostic helpers (e.g. WinMM enumeration)
 artifacts/                         Runtime output (logs, generated INIs, release zips)
 Assets/                            Icons + screenshots referenced by the UI / docs
@@ -104,17 +109,18 @@ Assets/                            Icons + screenshots referenced by the UI / do
 | [SETUP_GUIDE.md](SETUP_GUIDE.md) | Operator guide for both modes. Embedded in the app; opens via **Setup Guide** on the Help tab. |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Module layout, sync model, threading, conventions. |
 | [PLAN.md](PLAN.md) | Current implementation plan. What's blocking the next release and what's deferred. |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | Branch / PR workflow for contributors. |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to build, test, and submit a pull request. |
 | [CLAUDE.md](CLAUDE.md) | Project guide for Claude Code sessions in this repo. |
-| [Flexlib4-2-Migration-Guide.md](Flexlib4-2-Migration-Guide.md) | FlexLib 4.1.5 → 4.2.18 API surface reference. |
+| [Flexlib4-2-Migration-Guide.md](Flexlib4-2-Migration-Guide.md) | FlexLib 4.1.5 → 4.2.x migration record. |
 
 ## Reporting bugs
 
 Open an issue on [GitHub](https://github.com/cdub89/SmartStreamer4/issues) and include:
 
-- SmartStreamer4 version (or commit hash)
+- SmartStreamer4 version (Help tab, About), or the commit hash if you built it
+- Mode (CW or Digital)
 - SmartSDR / FlexRadio firmware version
-- CW Skimmer version
+- CW Skimmer version, or WSJT-X / JTDX / WSJT-Z version
 - Windows version
 - Reproduction steps and what you expected vs. saw
-- Relevant lines from `artifacts/logs/streamer-status.log`
+- Relevant lines from `streamer-status.log` (click **Open Folder** on the Logs tab; it lives in `%APPDATA%\SmartStreamer4\artifacts\logs\`, or `artifacts\logs\` when run from source)

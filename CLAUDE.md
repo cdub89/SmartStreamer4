@@ -26,7 +26,7 @@ Follow this sequence for every code change. Do not skip or reorder steps.
    including the do-nothing or subtraction option. Exempt: fixes the
    blocking gates demand on a change the user already approved, and
    edits the user has already fully specified.
-2. **Locate.** Use the Quick Start table (bottom of this file) to find
+2. **Locate.** Use the Quick Start section (near the end of this file) to find
    the right files. Never guess a path, symbol name, or API; confirm
    with search (Grep or an Explore subagent) before editing.
 3. **Read first.** Read the code you are about to change, and its
@@ -82,20 +82,26 @@ list before reporting completion.
   enabled, Avalonia compiled bindings on by default.
 - **UI**: Avalonia 11.3.12 + `CommunityToolkit.Mvvm` 8.4.1, MVVM pattern.
   Root project (`SmartSDRIQStreamer.csproj`) hosts the App, MainWindow,
-  SetupWizard, ResetSkimmerWizard, ViewModels, and workflow services.
+  SmartDeck window, SetupWizard, ResetSkimmerWizard, ViewModels (CW,
+  Digital, SmartDeck), and workflow services.
 - **FlexRadio module**: `src/SmartSDRIQStreamer.FlexRadio/` wraps FlexLib
   4.2.20 (discovery, connection, slice/spot model). Project-references
   `..\..\FlexLib_API_v4.2.20.41343\FlexLib\FlexLib.csproj`.
 - **CW Skimmer module**: `src/SmartSDRIQStreamer.CWSkimmer/` owns INI
   generation, telnet client, launcher, sync tracker, frequency math, and
   WDM audio device discovery.
-- **Tests**: `tests/SmartSDRIQStreamer.CWSkimmer.Tests/` (xUnit-style
-  tests in the CWSkimmer module).
-- **FlexLib source folders** (`FlexLib_API_v4.1.5.39794/`,
-  `FlexLib_API_v4.2.18.41174/`, `FlexLib_API_v4.2.20.41343/`) are
-  gitignored and live outside the compiled tree. Only 4.2.20 is
-  project-referenced (issue #61); 4.1.5 and 4.2.18 are kept on disk for
-  historical reference only.
+- **Digital module**: `src/SmartSDRIQStreamer.Digital/` provisions and
+  launches WSJT-X / JTDX / WSJT-Z per slice (config seeding from
+  templates, CAT settings and port probe, profile harvesting). No
+  telnet or sync; setup and launch only.
+- **Tests**: three xUnit projects under `tests/`:
+  `SmartSDRIQStreamer.CWSkimmer.Tests`, `SmartSDRIQStreamer.Digital.Tests`,
+  and `SmartSDRIQStreamer.App.Tests` (root-project services and
+  ViewModels).
+- **FlexLib source**: `FlexLib_API_v4.2.20.41343/` sits at the repo root,
+  gitignored, and is the only version project-referenced (issue #61).
+  Older FlexLib source trees may exist on a seat for historical
+  reference; nothing compiles against them.
 - **Release**: `publish-release.ps1` takes exactly one of two mode
   flags. `-Preview` requires a `-previewN` tag: it builds, verifies the
   embedded version, signs the exe, zips
@@ -123,10 +129,12 @@ identically on both.
   still required before merge.
 - **Git is the only channel the two seats share.** Claude Code
   auto-memory is machine-local and never syncs. Durable cross-seat
-  knowledge belongs in this file (or TODO.md / PLAN.md for work state),
-  not in memory. Start every session with `git pull` and check
-  `git status` for "behind"; a stale clone invalidates file:line
-  references. Push at session end, even for doc-only changes.
+  knowledge belongs in this file (or PLAN.md for work state), not in
+  memory. The operator pulls and pushes (see Git). At session start,
+  check `git status` for "behind" and, if the clone looks stale, ask the
+  operator to pull before doing anything else; a stale clone invalidates
+  file:line references. At session end, remind the operator to commit
+  and push, even for doc-only changes.
 
 ## Design Philosophy
 
@@ -208,8 +216,19 @@ Unwrap with pattern checks (`is { } value`) at the boundary, never with
 
 ## Code Quality
 
+**Scope discipline**: Change only what the task needs. Do not reformat,
+reorder, rename, or tidy code or docs outside the change; unrelated
+edits bury the real change in review and cause merge conflicts. Raise
+cleanup separately instead.
+
+**Concise docs and comments**: Write Markdown and code comments that
+are clear and concise. Add or expand a doc only when it earns its place:
+no by-product summary or notes files, no restating what the code or
+another doc already says, no padding. Code comments explain why, not
+what, in as few lines as do the job.
+
 **Build gate**: **After every `.cs` change, immediately run
-`dotnet build` and fix any errors or warnings before proceeding.** This
+`dotnet build SmartStreamer4.sln` and fix any errors or warnings before proceeding.** This
 is a blocking gate. Zero errors and zero first-party warnings allowed.
 
 Third-party transitive warnings are exempt: the
@@ -229,10 +248,10 @@ and nothing loads it by `avares` URI, so the warning describes a
 capability the app does not use. It is scoped to that one code; a second
 window tripping it is a new decision, not covered by this one.
 
-**Test gate**: **After any change in
-`src/SmartSDRIQStreamer.CWSkimmer/`, `src/SmartSDRIQStreamer.FlexRadio/`,
-or `tests/`, immediately run `dotnet test` and fix any failures before
-proceeding.** Blocking. Zero failures allowed.
+**Test gate**: **After any `.cs` change under `src/` or `tests/`, or
+to a non-UI root-project service covered by `SmartSDRIQStreamer.App.Tests`,
+immediately run `dotnet test SmartStreamer4.sln` and fix any failures
+before proceeding.** Blocking. Zero failures allowed.
 
 **Live-radio smoke test gate**: **Before declaring done on any change
 that touches FlexLib calls, CW Skimmer sync logic, audio device
@@ -423,7 +442,8 @@ deep-audit shape wastes minutes on a one-line question.
 - Read the full response. Never paste Codex's diff into a file blind —
   re-derive the edit through Edit/Write so the change has actually been
   verified.
-- Run the relevant blocking gates (`dotnet build`, `dotnet test`,
+- Run the relevant blocking gates (`dotnet build SmartStreamer4.sln`,
+  `dotnet test SmartStreamer4.sln`,
   markdownlint, live-radio smoke) on anything applied.
 - If Codex disagrees with Claude's read: state the disagreement to the
   user explicitly, give both arguments, and pick the one Claude can
@@ -453,7 +473,7 @@ deep-audit shape wastes minutes on a one-line question.
   reviewing subagent output. Both subagents run the gates their seat
   supports before returning; spot-check their diffs.
 - **Context hygiene**: read only the relevant line ranges of large
-  files (`MainWindowViewModel.cs` is 3,000+ lines); use Explore/search
+  files (`MainWindowViewModel.cs` is 3,100+ lines); use Explore/search
   subagents for broad codebase questions instead of pulling whole files
   into main context; never re-read a file just edited; keep build
   output and test dumps out of the main context (pipe through
@@ -500,12 +520,18 @@ rationale") at secondary sites.
 
 ## Git
 
-Never create commits or write commit messages. The user maintains full
-control over all git write operations: staging, commits, pushes, tags,
-PR creation, and merges. Leave changes in the working tree and report
+Git operations are owned by the operator, not the agent. Never create
+commits or write commit messages. The operator runs every git write
+operation: staging, commits, pulls, pushes, tags, branches, PR
+creation, and merges. Leave changes in the working tree and report
 them. Read-only git commands (`status`, `log`, `diff`, `show`) are fine
-without asking; ask before any other mutating operation (`pull`,
-`checkout`, `stash`).
+without asking; ask before any other mutating operation (`checkout`,
+`stash`, `git mv`, `git rm`). Use plain file moves and deletes instead,
+which leave staging to the operator.
+
+The operator also runs every release: `publish-release.ps1` in either
+mode, preview and GA alike. Claude prepares (gates, notes, checks) and
+stops; see the `release` skill.
 
 ## Build & Release
 
@@ -571,8 +597,8 @@ series is retired — issue #56):
   (operator decision, 2026-09-20). The tag stays on origin as a record
   and is **not** retracted. Its testers need no manual nudge, because
   `v0.3.3` outranks `v0.3.2` numerically and their updater prompts when
-  GA ships. The last published release is `v0.3.1`, so `v0.3.3` release
-  notes diff from there, not from the `v0.3.2` tag.
+  GA ships. `v0.3.3` went GA on 2026-09-27 with notes diffed from the
+  prior published release `v0.3.1`, not from the `v0.3.2` tag.
 - The tooling still ranks `a`/`alpha`, `b`/`bN` and `rc` suffixes when
   reading old tags; `preview` shares the rank `b` held. A suffix-free
   tag outranks any suffixed tag at the same numeric version.
@@ -619,7 +645,7 @@ tag", shipping nothing.
 
 ### Preview — tester build (`.\publish-release.ps1 -Preview`)
 
-Steps 1–4 are the operator's; Claude runs step 5.
+Every step is the operator's. Claude never runs `publish-release.ps1`.
 
 1. Commit everything, including docs. The script tags nothing itself,
    and it **refuses a dirty working tree** (modified or untracked files;
@@ -733,8 +759,10 @@ Before running it:
      before 2026-09-08 reads the releases list without skipping
      pre-releases, so publishing a preview in any form would prompt
      every operator on the previous GA.
-   - Fails fast **before** the build on a missing precondition: tag on
-     `origin`, notes file present and non-empty.
+   - Fails fast **before** the build on a missing precondition: notes
+     file present and non-empty. Both modes also refuse before the build
+     when the tag is lightweight, missing from `origin`, or points at a
+     different commit there.
    - Runs the same signing preflight, tests, build, embedded-version
      check, signing and zip as `-Preview`, then writes the bare
      `SHA256SUMS.txt`.
@@ -807,6 +835,22 @@ Where to look first for common tasks:
   [MainWindow.axaml.cs](MainWindow.axaml.cs) +
   [MainWindowViewModel.cs](MainWindowViewModel.cs) +
   [SliceViewModel.cs](SliceViewModel.cs).
+- **Digital Mode (WSJT-X / JTDX / WSJT-Z)**:
+  [src/SmartSDRIQStreamer.Digital/DigitalAppLauncher.cs](src/SmartSDRIQStreamer.Digital/DigitalAppLauncher.cs) +
+  [DigitalConfigProvisioner.cs](src/SmartSDRIQStreamer.Digital/DigitalConfigProvisioner.cs);
+  ViewModels
+  [DigitalSliceConfigViewModel.cs](DigitalSliceConfigViewModel.cs) /
+  [DigitalOperatingRowViewModel.cs](DigitalOperatingRowViewModel.cs).
+  Tests:
+  [tests/SmartSDRIQStreamer.Digital.Tests/](tests/SmartSDRIQStreamer.Digital.Tests/).
+  Design record:
+  [docs/design/PLAN-issue28-multimode.md](docs/design/PLAN-issue28-multimode.md).
+- **SmartDeck window**:
+  [SmartDeckWindow.axaml](SmartDeckWindow.axaml) /
+  [SmartDeckWindow.axaml.cs](SmartDeckWindow.axaml.cs) +
+  [SmartDeckViewModel.cs](SmartDeckViewModel.cs) +
+  [BandMemory.cs](BandMemory.cs). Design record:
+  [docs/design/PLAN-issue59-smartdeck.md](docs/design/PLAN-issue59-smartdeck.md).
 - **Setup Guide viewer** (Help tab; despite the class name it is not the
   CW wizard):
   [SetupWizardWindow.axaml](SetupWizardWindow.axaml) /
@@ -850,13 +894,16 @@ Where to look first for common tasks:
 
 ## References
 
-- [CONTRIBUTING.md](CONTRIBUTING.md) — direct-commit workflow (owner);
-  branches park incomplete work; PRs for outside contributors.
+- [CONTRIBUTING.md](CONTRIBUTING.md) — contributor setup, build, and
+  PR workflow; the owner's direct-commit flow is summarized at the end.
+- [ARCHITECTURE.md](ARCHITECTURE.md) — module layout, sync model,
+  threading, Digital Mode, and SmartDeck.
+- [PLAN.md](PLAN.md) — deferred and planned work (roadmap TBD).
+- [docs/design/](docs/design/) — shipped design records (Digital Mode
+  #28, SmartDeck #59).
 - [Flexlib4-2-Migration-Guide.md](Flexlib4-2-Migration-Guide.md) —
   the 4.1.5 → 4.2.x migration record (corrected per issue #60; the app
   builds against 4.2.20 as of issue #61).
-- [PLAN-skimmer-resync-and-refactor.md](PLAN-skimmer-resync-and-refactor.md) —
-  current CW Skimmer sync redesign plan.
 - [CODE-SIGNING.md](CODE-SIGNING.md) — how builds are signed on the
   Windows seat; the Azure half lives in SKCCLogger's document.
 - [README.md](README.md) — user-facing project description, install,

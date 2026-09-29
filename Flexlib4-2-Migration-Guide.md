@@ -1,8 +1,8 @@
-# Migration Guide
+# FlexLib Migration Record (4.1.5 to 4.2.x)
 
 > **Verified against local source trees** (2026-08-02): baseline
-> **FlexLib 4.1.5.39794** and **4.2.18.41174** (the version this repo builds
-> against), cross-checked with the corrected general developer record in
+> **FlexLib 4.1.5.39794** and **4.2.18.41174** (the version this repo built
+> against at the time; it builds against 4.2.20.41343 since issue #61), cross-checked with the corrected general developer record in
 > [FlexLib-API-Docs](https://github.com/cdub89/FlexLib-API-Docs) at commit
 > `7983f65` (verified there against 4.2.20.41343). Each "new" or "changed"
 > claim in the 4.1.5-to-4.2.x section was confirmed against the 4.1.5 source
@@ -586,4 +586,4 @@ radio.PropertyChanged += (s, e) =>
 
 ---
 
-**Questions?** See [Getting Started](Getting-Started.md) or contact <support@flexradio.com>.
+**Questions?** See [FlexLib-API-Docs](https://github.com/cdub89/FlexLib-API-Docs) or contact <support@flexradio.com>.
